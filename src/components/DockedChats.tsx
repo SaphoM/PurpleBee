@@ -100,6 +100,22 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
     }
   }, [isExpanded, messages.length]);
 
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const newAttachments: Attachment[] = Array.from(files).map((f) => ({
+      id: uuidv4(),
+      name: f.name,
+      url: URL.createObjectURL(f),
+      type: f.type,
+      size: f.size,
+      previewUrl: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined,
+      uploadedAt: new Date(),
+    }));
+    setPendingAttachments((prev) => [...prev, ...newAttachments]);
+    e.target.value = '';
+  }, []);
+
   if (!conv) return null;
 
   const otherParticipant = conv.type === 'dm'
@@ -116,22 +132,6 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
     setInput('');
     setPendingAttachments([]);
   };
-
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    const newAttachments: Attachment[] = Array.from(files).map((f) => ({
-      id: uuidv4(),
-      name: f.name,
-      url: URL.createObjectURL(f),
-      type: f.type,
-      size: f.size,
-      previewUrl: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined,
-      uploadedAt: new Date(),
-    }));
-    setPendingAttachments((prev) => [...prev, ...newAttachments]);
-    e.target.value = '';
-  }, []);
 
   return (
     <div className="flex flex-col items-center flex-shrink-0">
