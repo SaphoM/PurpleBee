@@ -1,0 +1,405 @@
+import { create } from 'zustand';
+import { v4 as uuidv4 } from 'uuid';
+
+// ─── Project task template (suggested tasks for a project type) ────────
+export interface ProjectTaskTemplate {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  estimatedHours: number;
+  tags: string[];
+  order: number;
+}
+
+// ─── Project type templates with pre-built suggested tasks ─────────────
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  color: string;
+  tasks: Omit<ProjectTaskTemplate, 'id'>[];
+}
+
+export const projectTemplates: ProjectTemplate[] = [
+  {
+    id: 'web-app',
+    name: 'Web Application',
+    icon: '🌐',
+    description: 'Full-stack web application development',
+    color: '#7c3aed',
+    tasks: [
+      { title: 'Project setup & repository init', description: 'Initialize repo, configure linting, CI/CD, and dev environment', priority: 'high', estimatedHours: 4, tags: ['setup', 'devops'], order: 1 },
+      { title: 'Design system & UI kit', description: 'Create reusable component library, color palette, and typography', priority: 'high', estimatedHours: 16, tags: ['design', 'ui'], order: 2 },
+      { title: 'Database schema design', description: 'Design and implement data models, relationships, and migrations', priority: 'high', estimatedHours: 8, tags: ['database', 'backend'], order: 3 },
+      { title: 'Authentication & authorization', description: 'Implement user auth flow with OAuth, JWT, and role-based access', priority: 'urgent', estimatedHours: 12, tags: ['security', 'backend'], order: 4 },
+      { title: 'API development', description: 'Build REST/GraphQL endpoints for core business logic', priority: 'high', estimatedHours: 20, tags: ['backend', 'api'], order: 5 },
+      { title: 'Frontend pages & routing', description: 'Build main pages, navigation, and client-side routing', priority: 'high', estimatedHours: 16, tags: ['frontend', 'ui'], order: 6 },
+      { title: 'State management setup', description: 'Configure global state, caching, and data fetching patterns', priority: 'medium', estimatedHours: 6, tags: ['frontend', 'architecture'], order: 7 },
+      { title: 'Responsive design & mobile', description: 'Ensure all views work on mobile, tablet, and desktop', priority: 'medium', estimatedHours: 8, tags: ['design', 'testing'], order: 8 },
+      { title: 'Testing & QA', description: 'Write unit, integration, and E2E tests for critical flows', priority: 'high', estimatedHours: 14, tags: ['testing', 'qa'], order: 9 },
+      { title: 'Deployment & monitoring', description: 'Deploy to production, set up monitoring, and error tracking', priority: 'high', estimatedHours: 6, tags: ['devops', 'infrastructure'], order: 10 },
+    ],
+  },
+  {
+    id: 'mobile-app',
+    name: 'Mobile Application',
+    icon: '📱',
+    description: 'iOS and Android mobile app development',
+    color: '#2563eb',
+    tasks: [
+      { title: 'Project setup & tooling', description: 'Initialize React Native/Flutter project, configure build tools', priority: 'high', estimatedHours: 4, tags: ['setup', 'mobile'], order: 1 },
+      { title: 'UI/UX wireframes & prototypes', description: 'Design app screens, user flows, and interactive prototypes', priority: 'high', estimatedHours: 14, tags: ['design', 'ux'], order: 2 },
+      { title: 'Navigation & app structure', description: 'Implement tab navigation, stack navigators, and deep linking', priority: 'high', estimatedHours: 6, tags: ['mobile', 'architecture'], order: 3 },
+      { title: 'Authentication & onboarding', description: 'Build login, signup, and user onboarding screens', priority: 'urgent', estimatedHours: 10, tags: ['security', 'mobile'], order: 4 },
+      { title: 'Core feature screens', description: 'Build main feature screens with data fetching and state', priority: 'high', estimatedHours: 24, tags: ['mobile', 'frontend'], order: 5 },
+      { title: 'Push notifications', description: 'Integrate FCM/APNs for push notifications', priority: 'medium', estimatedHours: 8, tags: ['mobile', 'notifications'], order: 6 },
+      { title: 'Offline support & caching', description: 'Implement local storage, offline mode, and sync', priority: 'medium', estimatedHours: 10, tags: ['mobile', 'database'], order: 7 },
+      { title: 'Device testing & optimization', description: 'Test on multiple devices, optimize performance and memory', priority: 'high', estimatedHours: 8, tags: ['testing', 'mobile'], order: 8 },
+      { title: 'App store submission', description: 'Prepare assets, screenshots, and submit to App Store/Play Store', priority: 'high', estimatedHours: 6, tags: ['release', 'mobile'], order: 9 },
+    ],
+  },
+  {
+    id: 'marketing',
+    name: 'Marketing Campaign',
+    icon: '📣',
+    description: 'Plan and execute a marketing campaign',
+    color: '#ea580c',
+    tasks: [
+      { title: 'Market research & analysis', description: 'Analyze target audience, competitors, and market trends', priority: 'high', estimatedHours: 10, tags: ['research', 'marketing'], order: 1 },
+      { title: 'Campaign strategy & goals', description: 'Define KPIs, budget, timeline, and channel strategy', priority: 'urgent', estimatedHours: 6, tags: ['strategy', 'marketing'], order: 2 },
+      { title: 'Content creation', description: 'Write copy, blog posts, social media content, and email templates', priority: 'high', estimatedHours: 16, tags: ['content', 'marketing'], order: 3 },
+      { title: 'Visual design & assets', description: 'Create banners, social graphics, video content, and brand materials', priority: 'high', estimatedHours: 14, tags: ['design', 'marketing'], order: 4 },
+      { title: 'Landing page development', description: 'Build and optimize campaign landing pages with A/B variants', priority: 'high', estimatedHours: 10, tags: ['frontend', 'marketing'], order: 5 },
+      { title: 'Email campaign setup', description: 'Configure email sequences, automation, and list segmentation', priority: 'medium', estimatedHours: 8, tags: ['email', 'marketing'], order: 6 },
+      { title: 'Social media scheduling', description: 'Schedule posts across platforms, set up monitoring', priority: 'medium', estimatedHours: 6, tags: ['social', 'marketing'], order: 7 },
+      { title: 'Analytics & tracking setup', description: 'Configure UTMs, conversion tracking, and reporting dashboards', priority: 'high', estimatedHours: 4, tags: ['analytics', 'marketing'], order: 8 },
+      { title: 'Campaign launch & monitoring', description: 'Go live, monitor performance, and make real-time adjustments', priority: 'urgent', estimatedHours: 8, tags: ['launch', 'marketing'], order: 9 },
+    ],
+  },
+  {
+    id: 'api-service',
+    name: 'API / Microservice',
+    icon: '⚡',
+    description: 'Backend API or microservice development',
+    color: '#059669',
+    tasks: [
+      { title: 'Service architecture design', description: 'Define API contracts, data models, and service boundaries', priority: 'high', estimatedHours: 6, tags: ['architecture', 'backend'], order: 1 },
+      { title: 'Project scaffolding', description: 'Set up project structure, dependencies, and configuration', priority: 'high', estimatedHours: 3, tags: ['setup', 'backend'], order: 2 },
+      { title: 'Database setup & migrations', description: 'Configure database, write schemas, and seed data', priority: 'high', estimatedHours: 6, tags: ['database', 'backend'], order: 3 },
+      { title: 'Core API endpoints', description: 'Implement CRUD operations and business logic endpoints', priority: 'urgent', estimatedHours: 16, tags: ['api', 'backend'], order: 4 },
+      { title: 'Authentication middleware', description: 'Implement JWT validation, API keys, and rate limiting', priority: 'high', estimatedHours: 8, tags: ['security', 'backend'], order: 5 },
+      { title: 'Error handling & validation', description: 'Add input validation, error responses, and logging', priority: 'medium', estimatedHours: 6, tags: ['backend', 'quality'], order: 6 },
+      { title: 'API documentation', description: 'Write OpenAPI/Swagger docs with examples and schemas', priority: 'medium', estimatedHours: 6, tags: ['documentation', 'api'], order: 7 },
+      { title: 'Integration tests', description: 'Write comprehensive API tests with mocking and fixtures', priority: 'high', estimatedHours: 10, tags: ['testing', 'backend'], order: 8 },
+      { title: 'CI/CD & deployment', description: 'Configure pipelines, Docker, and deployment environments', priority: 'high', estimatedHours: 6, tags: ['devops', 'infrastructure'], order: 9 },
+    ],
+  },
+  {
+    id: 'design-system',
+    name: 'Design System',
+    icon: '🎨',
+    description: 'Create a design system and component library',
+    color: '#db2777',
+    tasks: [
+      { title: 'Design audit & inventory', description: 'Audit existing designs, identify patterns and inconsistencies', priority: 'high', estimatedHours: 8, tags: ['design', 'research'], order: 1 },
+      { title: 'Design tokens & foundations', description: 'Define colors, typography, spacing, shadows, and breakpoints', priority: 'urgent', estimatedHours: 6, tags: ['design', 'tokens'], order: 2 },
+      { title: 'Core components (atoms)', description: 'Build buttons, inputs, badges, icons, and typography components', priority: 'high', estimatedHours: 14, tags: ['components', 'ui'], order: 3 },
+      { title: 'Composite components (molecules)', description: 'Build cards, forms, modals, navigation, and data tables', priority: 'high', estimatedHours: 18, tags: ['components', 'ui'], order: 4 },
+      { title: 'Layout components', description: 'Build grid, flex containers, page layouts, and responsive helpers', priority: 'medium', estimatedHours: 8, tags: ['layout', 'ui'], order: 5 },
+      { title: 'Accessibility audit', description: 'Ensure WCAG compliance, keyboard navigation, and screen reader support', priority: 'high', estimatedHours: 8, tags: ['a11y', 'quality'], order: 6 },
+      { title: 'Storybook documentation', description: 'Document all components with stories, props, and usage examples', priority: 'medium', estimatedHours: 10, tags: ['documentation', 'ui'], order: 7 },
+      { title: 'Theme support', description: 'Implement dark mode, custom themes, and theme switching', priority: 'medium', estimatedHours: 8, tags: ['design', 'themes'], order: 8 },
+    ],
+  },
+  {
+    id: 'training',
+    name: 'Training Program',
+    icon: '🎓',
+    description: 'Employee training, onboarding, or learning program',
+    color: '#0891b2',
+    tasks: [
+      { title: 'Training needs assessment', description: 'Identify skill gaps, target audience, and learning objectives', priority: 'urgent', estimatedHours: 8, tags: ['research', 'planning'], order: 1 },
+      { title: 'Curriculum design & outline', description: 'Structure modules, topics, learning paths, and prerequisites', priority: 'high', estimatedHours: 12, tags: ['curriculum', 'planning'], order: 2 },
+      { title: 'Content development', description: 'Create slides, guides, worksheets, and reference materials', priority: 'high', estimatedHours: 20, tags: ['content', 'materials'], order: 3 },
+      { title: 'Video & multimedia production', description: 'Record tutorials, screencasts, and interactive demos', priority: 'medium', estimatedHours: 16, tags: ['video', 'multimedia'], order: 4 },
+      { title: 'LMS setup & configuration', description: 'Set up learning management system, enrol learners, and configure tracking', priority: 'high', estimatedHours: 8, tags: ['lms', 'setup'], order: 5 },
+      { title: 'Assessment & quiz creation', description: 'Design quizzes, practical exercises, and certification criteria', priority: 'high', estimatedHours: 10, tags: ['assessment', 'evaluation'], order: 6 },
+      { title: 'Trainer preparation & rehearsal', description: 'Brief facilitators, run dry-runs, and prepare session plans', priority: 'medium', estimatedHours: 6, tags: ['facilitation', 'preparation'], order: 7 },
+      { title: 'Pilot session & feedback', description: 'Run pilot with a small group, collect feedback, and iterate', priority: 'high', estimatedHours: 8, tags: ['pilot', 'feedback'], order: 8 },
+      { title: 'Rollout & scheduling', description: 'Schedule sessions, send invitations, and manage registrations', priority: 'medium', estimatedHours: 4, tags: ['rollout', 'logistics'], order: 9 },
+      { title: 'Evaluation & reporting', description: 'Track completion rates, scores, and measure training effectiveness', priority: 'medium', estimatedHours: 6, tags: ['analytics', 'reporting'], order: 10 },
+    ],
+  },
+  {
+    id: 'services',
+    name: 'Services Project',
+    icon: '💼',
+    description: 'Client-facing professional services or consulting engagement',
+    color: '#7c3aed',
+    tasks: [
+      { title: 'Client discovery & scoping', description: 'Understand client needs, define scope, deliverables, and success criteria', priority: 'urgent', estimatedHours: 8, tags: ['discovery', 'client'], order: 1 },
+      { title: 'Proposal & SOW preparation', description: 'Draft proposal, statement of work, timelines, and pricing', priority: 'high', estimatedHours: 10, tags: ['proposal', 'documentation'], order: 2 },
+      { title: 'Resource allocation & staffing', description: 'Assign team members, define roles, and plan capacity', priority: 'high', estimatedHours: 4, tags: ['resourcing', 'planning'], order: 3 },
+      { title: 'Project kickoff & onboarding', description: 'Run kickoff meeting, share access, and align on communication cadence', priority: 'high', estimatedHours: 4, tags: ['kickoff', 'client'], order: 4 },
+      { title: 'Requirements gathering', description: 'Conduct workshops, interviews, and document detailed requirements', priority: 'urgent', estimatedHours: 12, tags: ['requirements', 'analysis'], order: 5 },
+      { title: 'Solution design & architecture', description: 'Design technical or strategic solution based on requirements', priority: 'high', estimatedHours: 16, tags: ['design', 'architecture'], order: 6 },
+      { title: 'Implementation & delivery', description: 'Execute the core work — build, configure, or deliver agreed outputs', priority: 'high', estimatedHours: 40, tags: ['delivery', 'implementation'], order: 7 },
+      { title: 'Client review & UAT', description: 'Present deliverables, run user acceptance testing, gather sign-off', priority: 'high', estimatedHours: 8, tags: ['review', 'testing'], order: 8 },
+      { title: 'Knowledge transfer & documentation', description: 'Create handover docs, train client team, and document processes', priority: 'medium', estimatedHours: 10, tags: ['documentation', 'handover'], order: 9 },
+      { title: 'Project closure & retrospective', description: 'Final sign-off, invoice, lessons learned, and client feedback', priority: 'medium', estimatedHours: 4, tags: ['closure', 'retrospective'], order: 10 },
+    ],
+  },
+  {
+    id: 'custom',
+    name: 'Custom Project',
+    icon: '🔧',
+    description: 'Start from scratch with no template',
+    color: '#6b7280',
+    tasks: [],
+  },
+];
+
+// ─── Project entity ────────────────────────────────────────────────────
+export interface ProjectTask {
+  id: string;
+  title: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  estimatedHours: number;
+  tags: string[];
+  assignedTo?: string;
+  order: number;
+  linkedTaskId?: string; // Reference to actual task in taskStore once created
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  templateId: string;
+  status: 'planning' | 'active' | 'on-hold' | 'completed';
+  tasks: ProjectTask[];
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Store ─────────────────────────────────────────────────────────────
+interface ProjectStore {
+  projects: Project[];
+  selectedProjectId: string | null;
+
+  // Actions
+  createProject: (data: {
+    name: string;
+    description: string;
+    templateId: string;
+    icon: string;
+    color: string;
+    tasks: Omit<ProjectTask, 'id'>[];
+    createdBy: string;
+  }) => string; // returns project id
+  updateProject: (id: string, updates: Partial<Project>) => void;
+  deleteProject: (id: string) => void;
+  selectProject: (id: string | null) => void;
+
+  // Task management within project
+  addProjectTask: (projectId: string, task: Omit<ProjectTask, 'id'>) => void;
+  removeProjectTask: (projectId: string, taskId: string) => void;
+  updateProjectTask: (projectId: string, taskId: string, updates: Partial<ProjectTask>) => void;
+  assignProjectTask: (projectId: string, taskId: string, userId: string) => void;
+  linkProjectTask: (projectId: string, projectTaskId: string, linkedTaskId: string) => void;
+
+  // Queries
+  getProjectById: (id: string) => Project | undefined;
+  getProjectTasks: (projectId: string) => ProjectTask[];
+  getUnassignedTasks: (projectId: string) => ProjectTask[];
+  getAllProjectTaskTitles: () => { projectId: string; projectName: string; projectIcon: string; projectColor: string; taskId: string; taskTitle: string; taskDescription: string }[];
+  clearMockData: () => void;
+  restoreMockData: () => void;
+}
+
+// ─── Seed data ─────────────────────────────────────────────────────────
+const seedProjects: Project[] = [
+  {
+    id: 'proj-1',
+    name: 'Client Portal',
+    description: 'Build a self-service portal for clients to track orders, invoices, and support tickets',
+    icon: '🌐',
+    color: '#7c3aed',
+    templateId: 'web-app',
+    status: 'active',
+    createdBy: 'user-1',
+    createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
+    updatedAt: new Date(),
+    tasks: [
+      { id: 'pt-1', title: 'Design system & UI kit', description: 'Create reusable component library, color palette, and typography', priority: 'high', estimatedHours: 16, tags: ['design', 'ui'], assignedTo: 'user-2', order: 1 },
+      { id: 'pt-2', title: 'Database schema design', description: 'Design and implement data models, relationships, and migrations', priority: 'high', estimatedHours: 8, tags: ['database', 'backend'], assignedTo: 'user-1', order: 2 },
+      { id: 'pt-3', title: 'Authentication & authorization', description: 'Implement user auth flow with OAuth, JWT, and role-based access', priority: 'urgent', estimatedHours: 12, tags: ['security', 'backend'], assignedTo: 'user-3', order: 3 },
+      { id: 'pt-4', title: 'API development', description: 'Build REST/GraphQL endpoints for core business logic', priority: 'high', estimatedHours: 20, tags: ['backend', 'api'], assignedTo: 'user-3', order: 4 },
+      { id: 'pt-5', title: 'Frontend pages & routing', description: 'Build main pages, navigation, and client-side routing', priority: 'high', estimatedHours: 16, tags: ['frontend', 'ui'], assignedTo: 'user-5', order: 5 },
+      { id: 'pt-6', title: 'Testing & QA', description: 'Write unit, integration, and E2E tests for critical flows', priority: 'high', estimatedHours: 14, tags: ['testing', 'qa'], order: 6 },
+      { id: 'pt-7', title: 'Deployment & monitoring', description: 'Deploy to production, set up monitoring, and error tracking', priority: 'high', estimatedHours: 6, tags: ['devops', 'infrastructure'], assignedTo: 'user-4', order: 7 },
+    ],
+  },
+  {
+    id: 'proj-2',
+    name: 'Winter Campaign',
+    description: 'Plan and execute the Q3 winter product launch marketing campaign',
+    icon: '📣',
+    color: '#f59e0b',
+    templateId: 'marketing',
+    status: 'active',
+    createdBy: 'user-4',
+    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    updatedAt: new Date(),
+    tasks: [
+      { id: 'pt-20', title: 'Market research & competitor analysis', description: 'Analyse competitor positioning and identify key differentiators', priority: 'high', estimatedHours: 10, tags: ['research', 'strategy'], assignedTo: 'user-5', order: 1 },
+      { id: 'pt-21', title: 'Campaign messaging & creative brief', description: 'Draft core messaging, tone of voice, and visual direction', priority: 'high', estimatedHours: 8, tags: ['branding', 'content'], assignedTo: 'user-2', order: 2 },
+      { id: 'pt-22', title: 'Content calendar & copy', description: 'Create content schedule and write copy for all channels', priority: 'medium', estimatedHours: 14, tags: ['marketing', 'content'], assignedTo: 'user-2', order: 3 },
+      { id: 'pt-23', title: 'Social media assets', description: 'Design graphics and video for social media posts', priority: 'medium', estimatedHours: 12, tags: ['design', 'social'], assignedTo: 'user-2', order: 4 },
+      { id: 'pt-24', title: 'Email sequences', description: 'Build drip campaigns for leads, customers, and re-engagement', priority: 'medium', estimatedHours: 10, tags: ['email', 'automation'], assignedTo: 'user-5', order: 5 },
+    ],
+  },
+  {
+    id: 'proj-3',
+    name: 'Ops & Compliance',
+    description: 'Operational improvements, vendor management, and regulatory compliance tasks',
+    icon: '🛡️',
+    color: '#0891b2',
+    templateId: 'services',
+    status: 'active',
+    createdBy: 'user-1',
+    createdAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000),
+    updatedAt: new Date(),
+    tasks: [
+      { id: 'pt-30', title: 'POPIA compliance audit', description: 'Review all data processes against POPIA requirements', priority: 'high', estimatedHours: 16, tags: ['compliance', 'security'], assignedTo: 'user-5', order: 1 },
+      { id: 'pt-31', title: 'Vendor contract renewals', description: 'Negotiate and renew annual contracts with key suppliers', priority: 'urgent', estimatedHours: 10, tags: ['legal', 'procurement'], assignedTo: 'user-3', order: 2 },
+      { id: 'pt-32', title: 'Infrastructure migration', description: 'Move staging and production to new hosting provider', priority: 'high', estimatedHours: 8, tags: ['devops', 'infrastructure'], assignedTo: 'user-4', order: 3 },
+      { id: 'pt-33', title: 'New hire onboarding process', description: 'Standardise onboarding checklists and orientation schedules', priority: 'medium', estimatedHours: 12, tags: ['hr', 'onboarding'], assignedTo: 'user-5', order: 4 },
+      { id: 'pt-34', title: 'Payment gateway testing', description: 'Validate all payment flows and error handling end-to-end', priority: 'medium', estimatedHours: 8, tags: ['testing', 'payments'], assignedTo: 'user-3', order: 5 },
+    ],
+  },
+];
+
+export const useProjectStore = create<ProjectStore>((set, get) => ({
+  projects: seedProjects,
+  selectedProjectId: null,
+
+  createProject: (data) => {
+    const id = uuidv4();
+    const project: Project = {
+      id,
+      name: data.name,
+      description: data.description,
+      templateId: data.templateId,
+      icon: data.icon,
+      color: data.color,
+      status: 'planning',
+      tasks: data.tasks.map((t) => ({ ...t, id: uuidv4() })),
+      createdBy: data.createdBy,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    set((state) => ({ projects: [project, ...state.projects] }));
+    return id;
+  },
+
+  updateProject: (id, updates) => {
+    set((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === id ? { ...p, ...updates, updatedAt: new Date() } : p
+      ),
+    }));
+  },
+
+  deleteProject: (id) => {
+    set((state) => ({
+      projects: state.projects.filter((p) => p.id !== id),
+      selectedProjectId: state.selectedProjectId === id ? null : state.selectedProjectId,
+    }));
+  },
+
+  selectProject: (id) => set({ selectedProjectId: id }),
+
+  addProjectTask: (projectId, task) => {
+    set((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === projectId
+          ? { ...p, tasks: [...p.tasks, { ...task, id: uuidv4() }], updatedAt: new Date() }
+          : p
+      ),
+    }));
+  },
+
+  removeProjectTask: (projectId, taskId) => {
+    set((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === projectId
+          ? { ...p, tasks: p.tasks.filter((t) => t.id !== taskId), updatedAt: new Date() }
+          : p
+      ),
+    }));
+  },
+
+  updateProjectTask: (projectId, taskId, updates) => {
+    set((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === projectId
+          ? {
+              ...p,
+              tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t)),
+              updatedAt: new Date(),
+            }
+          : p
+      ),
+    }));
+  },
+
+  assignProjectTask: (projectId, taskId, userId) => {
+    get().updateProjectTask(projectId, taskId, { assignedTo: userId });
+  },
+
+  linkProjectTask: (projectId, projectTaskId, linkedTaskId) => {
+    get().updateProjectTask(projectId, projectTaskId, { linkedTaskId });
+  },
+
+  getProjectById: (id) => get().projects.find((p) => p.id === id),
+
+  getProjectTasks: (projectId) => {
+    const project = get().projects.find((p) => p.id === projectId);
+    return project?.tasks || [];
+  },
+
+  getUnassignedTasks: (projectId) => {
+    const project = get().projects.find((p) => p.id === projectId);
+    return (project?.tasks || []).filter((t) => !t.assignedTo);
+  },
+
+  getAllProjectTaskTitles: () => {
+    const projects = get().projects;
+    const results: { projectId: string; projectName: string; projectIcon: string; projectColor: string; taskId: string; taskTitle: string; taskDescription: string }[] = [];
+    projects.forEach((p) => {
+      p.tasks.forEach((t) => {
+        results.push({
+          projectId: p.id,
+          projectName: p.name,
+          projectIcon: p.icon,
+          projectColor: p.color,
+          taskId: t.id,
+          taskTitle: t.title,
+          taskDescription: t.description,
+        });
+      });
+    });
+    return results;
+  },
+
+  clearMockData: () => set({ projects: [], selectedProjectId: null }),
+
+  restoreMockData: () => set({ projects: seedProjects, selectedProjectId: null }),
+}));
