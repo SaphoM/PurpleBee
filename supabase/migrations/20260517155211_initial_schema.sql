@@ -39,6 +39,20 @@ CREATE TABLE public.profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- ── Helper functions (must exist before RLS policies reference them) ─────────
+CREATE OR REPLACE FUNCTION public.get_my_role()
+RETURNS app_role AS $$
+  SELECT role FROM public.profiles WHERE id = auth.uid();
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.is_admin_or_manager()
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role IN ('admin', 'manager')
+  );
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
 -- ─── Teams ────────────────────────────────────────────────────────────────────
 CREATE TABLE public.teams (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -528,21 +542,6 @@ ALTER TABLE public.focus_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.calendar_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
-
--- ── Helper: get current user's role ───────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.get_my_role()
-RETURNS app_role AS $$
-  SELECT role FROM public.profiles WHERE id = auth.uid();
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
-
--- ── Helper: check if user is admin or manager ─────────────────────────────────
-CREATE OR REPLACE FUNCTION public.is_admin_or_manager()
-RETURNS BOOLEAN AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id = auth.uid() AND role IN ('admin', 'manager')
-  );
-$$ LANGUAGE sql STABLE SECURITY DEFINER;
 
 -- ─── Profiles ─────────────────────────────────────────────────────────────────
 CREATE POLICY "Profiles are viewable by authenticated users"
