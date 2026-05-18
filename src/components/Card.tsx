@@ -13,7 +13,7 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={clsx(
-          'rounded-xl p-6',
+          'rounded-xl p-4 sm:p-6',
           glass
             ? 'bg-white border border-gray-200 shadow-sm dark:bg-slate-800/40 dark:backdrop-blur-xl dark:border-slate-700/50'
             : 'bg-white border border-gray-200 dark:bg-slate-800 dark:border-slate-700',

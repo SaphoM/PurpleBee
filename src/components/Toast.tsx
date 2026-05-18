@@ -96,7 +96,7 @@ const ToastNotification: React.FC<{ toast: ToastItem; onClose: () => void }> = (
   return (
     <div
       className={clsx(
-        'toast-enter relative w-80 rounded-xl overflow-hidden shadow-2xl border border-l-4 pointer-events-auto',
+        'toast-enter relative w-72 sm:w-80 rounded-xl overflow-hidden shadow-2xl border border-l-4 pointer-events-auto',
         'bg-white dark:bg-slate-800',
         'border-gray-200 dark:border-slate-700',
         borderColorMap[toast.type],
@@ -135,7 +135,7 @@ export const ToastContainer: React.FC = () => {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-24 right-6 z-[100] flex flex-col gap-3 pointer-events-none lg:right-8">
+    <div className="fixed top-20 sm:top-24 right-3 sm:right-6 z-[100] flex flex-col gap-3 pointer-events-none lg:right-8">
       {toasts.map((toast) => (
         <ToastNotification
           key={toast.id}

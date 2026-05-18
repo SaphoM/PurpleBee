@@ -165,7 +165,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700/50 bg-white dark:bg-slate-800 rounded-t-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 dark:border-slate-700/50 bg-white dark:bg-slate-800 rounded-t-2xl">
           <div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">Create New Task</h2>
             <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Fill in the details for your new task</p>
@@ -179,7 +179,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
           {/* Title with project task dropdown */}
           <div className="relative">
             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
@@ -308,7 +308,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           </div>
 
           {/* Status & Priority */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Status</label>
               <select
@@ -348,7 +348,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           </div>
 
           {/* Due Date & Estimated Hours */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
                 <CalendarDays size={14} className="inline mr-1" /> Due Date

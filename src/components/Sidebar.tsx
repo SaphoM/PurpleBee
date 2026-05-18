@@ -80,7 +80,7 @@ export const Sidebar: React.FC = () => {
       {/* Mobile menu button */}
       <button
         onClick={toggleSidebar}
-        className="fixed left-4 top-4 z-40 lg:hidden p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors"
+        className="fixed left-4 top-4 z-50 lg:hidden p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-800 transition-colors"
         aria-label="Toggle menu"
       >
         {sidebarOpen ? <X size={24} /> : <Menu size={24} />}

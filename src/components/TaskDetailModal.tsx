@@ -347,7 +347,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         />
 
         {/* Header */}
-        <div className="flex items-start justify-between p-6 pb-4">
+        <div className="flex items-start justify-between p-4 sm:p-6 pb-4">
           <div className="flex-1 min-w-0 pr-4">
             {isEditing ? (
               <input
@@ -422,7 +422,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         </div>
 
         {/* Body */}
-        <div className="px-6 pb-6 space-y-6">
+        <div className="px-4 sm:px-6 pb-6 space-y-6">
           {/* Description */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">
@@ -1015,7 +1015,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 {task.attachments && task.attachments.length > 0 && (
                   <div className="space-y-2">
                     {task.attachments.filter((a) => a.type.startsWith('image/')).length > 0 && (
-                      <div className="grid grid-cols-3 gap-2 mb-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-2">
                         {task.attachments
                           .filter((a) => a.type.startsWith('image/'))
                           .map((attachment) => (
@@ -1112,7 +1112,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           </div>
 
           {/* Info Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             {/* Status */}
             <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4">
               <label className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider block mb-2">
@@ -1229,7 +1229,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 <Timer size={14} />
                 Time Tracking
               </h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
                     <Clock size={18} className="text-blue-600 dark:text-blue-400" />
