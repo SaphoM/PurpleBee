@@ -788,7 +788,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2 text-gray-500 dark:text-slate-400 text-xs mb-1">
             <Layers size={14} /> Total Tasks

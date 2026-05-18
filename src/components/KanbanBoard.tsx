@@ -32,7 +32,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   const config = statusConfig[status];
 
   return (
-    <div className="flex-1 min-w-[300px] flex flex-col">
+    <div className="flex-1 min-w-[260px] sm:min-w-[300px] flex flex-col">
       {/* Column Header */}
       <div className="flex items-center justify-between mb-4 px-2">
         <div className="flex items-center gap-3">
@@ -148,7 +148,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex gap-6 overflow-x-auto pb-6">
+      <div className="flex gap-4 sm:gap-6 overflow-x-auto pb-6">
         {statusOrder.map((status) => (
           <KanbanColumn
             key={status}

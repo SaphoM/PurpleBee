@@ -113,7 +113,7 @@ const App: React.FC = () => {
       <Sidebar />
       <TopBar />
 
-      <main className="lg:ml-64 mt-20 p-6 lg:p-8 transition-[padding] duration-300" style={{ paddingBottom: hasDockedChats ? 480 : undefined }}>
+      <main className="lg:ml-64 mt-20 p-3 sm:p-6 lg:p-8 transition-[padding] duration-300" style={{ paddingBottom: hasDockedChats ? 480 : undefined }}>
         <div className="max-w-7xl mx-auto">
           {/* Quick View banner */}
           {viewingAsId && (() => {

@@ -49,9 +49,9 @@ export const Tasks: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-slate-100">Tasks</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-slate-100">Tasks</h1>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-gray-500 dark:text-slate-400">
               {tasks.length} tasks • {tasks.filter((t) => t.status === 'in-progress').length}{' '}
@@ -65,7 +65,7 @@ export const Tasks: React.FC = () => {
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <Button variant="secondary" icon={<Filter size={18} />}>
             Filters
           </Button>

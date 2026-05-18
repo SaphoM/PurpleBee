@@ -184,9 +184,9 @@ export const TopBar: React.FC = () => {
       'bg-white border-b border-gray-200',
       'dark:bg-slate-900 dark:border-slate-800'
     )}>
-      <div className="h-full px-6 flex items-center justify-between">
+      <div className="h-full px-3 sm:px-4 md:px-6 flex items-center justify-between">
         {/* Search Bar */}
-        <div ref={searchRef} className="flex-1 max-w-2xl relative">
+        <div ref={searchRef} className="flex-1 max-w-2xl relative ml-12 lg:ml-0">
           <div className="relative">
             <Search
               size={18}
@@ -275,7 +275,7 @@ export const TopBar: React.FC = () => {
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-4 ml-6">
+        <div className="flex items-center gap-2 sm:gap-4 ml-3 sm:ml-6">
           {/* Notifications */}
           <div ref={notifRef} className="relative">
             <Tip content="View notifications — assignments, mentions, and updates" position="bottom" beacon>
@@ -301,7 +301,7 @@ export const TopBar: React.FC = () => {
             {/* ── Notification Dropdown ── */}
             {showNotifications && (
               <div className={clsx(
-                'absolute top-full right-0 mt-2 w-[420px] rounded-2xl shadow-2xl overflow-hidden z-50',
+                'absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-[420px] rounded-2xl shadow-2xl overflow-hidden z-50',
                 'bg-white border border-gray-200',
                 'dark:bg-slate-800 dark:border-slate-700'
               )}>
@@ -604,7 +604,7 @@ export const TopBar: React.FC = () => {
 
             {showRoleSwitcher && (
               <div className={clsx(
-                'absolute top-full right-0 mt-2 w-72 rounded-xl shadow-xl overflow-hidden z-50',
+                'absolute top-full right-0 mt-2 w-64 sm:w-72 rounded-xl shadow-xl overflow-hidden z-50',
                 'bg-white border border-gray-200',
                 'dark:bg-slate-800 dark:border-slate-700'
               )}>

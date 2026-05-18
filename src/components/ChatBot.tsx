@@ -248,7 +248,7 @@ export const ChatBot: React.FC = () => {
         <button
           onClick={() => setIsOpen(true)}
           className={clsx(
-            'fixed bottom-6 right-6 z-50',
+            'fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50',
             'w-14 h-14 rounded-full',
             'bg-gradient-to-r from-purple-600 to-blue-600',
             'text-white shadow-lg shadow-purple-500/40',
@@ -266,11 +266,11 @@ export const ChatBot: React.FC = () => {
       {isOpen && (
         <div
           className={clsx(
-            'fixed bottom-6 right-6 z-50',
-            'w-96 h-[560px] flex flex-col',
+            'fixed bottom-0 right-0 sm:bottom-6 sm:right-6 z-50',
+            'w-full sm:w-96 h-[100dvh] sm:h-[560px] flex flex-col',
             'bg-white dark:bg-slate-900',
-            'border border-gray-200 dark:border-slate-700',
-            'rounded-2xl shadow-2xl overflow-hidden'
+            'border-0 sm:border border-gray-200 dark:border-slate-700',
+            'sm:rounded-2xl shadow-2xl overflow-hidden'
           )}
         >
           {/* Chat Header */}
