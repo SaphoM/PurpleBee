@@ -95,8 +95,10 @@ export const Tasks: React.FC = () => {
               </button>
             </div>
           </Tip>
+        </div>
+        <div className="w-full sm:w-auto [&>*]:w-full sm:[&>*]:w-auto">
           <Tip content="Create a new task and assign it to a column" position="bottom" beacon>
-            <Button icon={<Plus size={18} />} onClick={() => handleNewTask()}>
+            <Button icon={<Plus size={18} />} onClick={() => handleNewTask()} className="w-full sm:w-auto">
               New Task
             </Button>
           </Tip>

@@ -1090,7 +1090,7 @@ export const Projects: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100 flex items-center gap-3">
             <FolderKanban size={28} className="text-purple-600 dark:text-purple-400" />
@@ -1102,7 +1102,7 @@ export const Projects: React.FC = () => {
           <button
             onClick={() => setShowCreate(true)}
             className={clsx(
-              'px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2',
+              'w-full sm:w-auto px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2',
               'bg-gradient-to-r from-purple-600 to-blue-600 text-white',
               'shadow-lg shadow-purple-500/30 hover:shadow-xl hover:shadow-purple-500/40',
               'hover:from-purple-700 hover:to-blue-700 transition-all'

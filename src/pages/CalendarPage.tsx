@@ -311,7 +311,7 @@ export const CalendarPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-slate-100">Calendar</h1>
           <p className="text-gray-500 dark:text-slate-400 mt-1">
@@ -353,19 +353,19 @@ export const CalendarPage: React.FC = () => {
               </button>
             ))}
           </div>
-          <button
-            onClick={() => handleAddTask()}
-            className={clsx(
-              'inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold',
-              'bg-gradient-to-r from-purple-600 to-blue-600 text-white',
-              'hover:from-purple-700 hover:to-blue-700',
-              'shadow-md shadow-purple-500/20 transition-all'
-            )}
-          >
-            <Plus size={16} />
-            Add Task
-          </button>
         </div>
+        <button
+          onClick={() => handleAddTask()}
+          className={clsx(
+            'w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold',
+            'bg-gradient-to-r from-purple-600 to-blue-600 text-white',
+            'hover:from-purple-700 hover:to-blue-700',
+            'shadow-md shadow-purple-500/20 transition-all'
+          )}
+        >
+          <Plus size={16} />
+          Add Task
+        </button>
       </div>
 
       {/* Filters bar */}

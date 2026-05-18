@@ -584,14 +584,14 @@ export const AIInsights: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center">
               <Brain size={18} className="text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-slate-100">AI Insights</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-slate-100">AI Insights</h1>
               <p className="text-gray-500 dark:text-slate-400 mt-0.5 text-sm">
                 AI-powered productivity analysis • {allInsights.filter((i) => !dismissed.has(i.id)).length} active insights
               </p>
@@ -601,7 +601,7 @@ export const AIInsights: React.FC = () => {
         <button
           onClick={() => { setRefreshKey((k) => k + 1); setDismissed(new Set()); }}
           className={clsx(
-            'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold',
+            'w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold',
             'bg-gradient-to-r from-purple-600 to-blue-600 text-white',
             'hover:shadow-lg hover:shadow-purple-500/25 transition-all'
           )}
