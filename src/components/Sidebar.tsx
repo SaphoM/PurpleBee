@@ -58,7 +58,7 @@ const bottomItems: NavItem[] = [
 ];
 
 export const Sidebar: React.FC = () => {
-  const { sidebarOpen, toggleSidebar, darkMode, toggleDarkMode } = useUIStore();
+  const { sidebarOpen, toggleSidebar, setSidebarOpen, darkMode, toggleDarkMode } = useUIStore();
   const { user, logout } = useUserStore();
   const totalUnread = useChatStore((s) => s.getTotalUnread());
   const projectCount = useProjectStore((s) => s.projects.length);
@@ -128,9 +128,11 @@ export const Sidebar: React.FC = () => {
                 : item.href === '#projects' && projectCount > 0 ? projectCount
                 : item.href === '#tasks' && taskCount > 0 ? taskCount
                 : item.badge;
+              const closeMobile = () => { if (window.innerWidth < 1024) setSidebarOpen(false); };
               const link = (
                 <a
                   href={item.href}
+                  onClick={closeMobile}
                   className={clsx(
                     'flex items-center gap-3 px-4 py-3 rounded-lg',
                     'transition-colors duration-200',
@@ -188,6 +190,7 @@ export const Sidebar: React.FC = () => {
               <li key={item.href}>
                 <a
                   href={item.href}
+                  onClick={() => { if (window.innerWidth < 1024) setSidebarOpen(false); }}
                   className={clsx(
                     'flex items-center gap-3 px-4 py-3 rounded-lg',
                     'transition-colors duration-200',

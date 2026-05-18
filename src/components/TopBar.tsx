@@ -180,13 +180,15 @@ export const TopBar: React.FC = () => {
 
   return (
     <header className={clsx(
-      'fixed top-0 right-0 left-0 lg:left-64 h-20 z-20',
+      'fixed top-0 right-0 left-0 lg:left-64 z-20',
       'bg-white border-b border-gray-200',
       'dark:bg-slate-900 dark:border-slate-800'
     )}>
-      <div className="h-full px-3 sm:px-4 md:px-6 flex items-center justify-between">
-        {/* Search Bar */}
-        <div ref={searchRef} className="flex-1 max-w-2xl relative ml-12 lg:ml-0">
+      <div className="px-3 sm:px-4 md:px-6 flex flex-wrap lg:flex-nowrap items-center justify-between py-2 lg:py-0 lg:h-20">
+        {/* Spacer for hamburger button on mobile */}
+        <div className="order-1 w-10 lg:hidden" />
+        {/* Search Bar — second row on mobile, inline on desktop */}
+        <div ref={searchRef} className="order-3 lg:order-1 w-full lg:w-auto lg:flex-1 max-w-2xl relative pb-2 pt-1 lg:py-0 ml-0 lg:ml-0">
           <div className="relative">
             <Search
               size={18}
@@ -275,7 +277,7 @@ export const TopBar: React.FC = () => {
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-2 sm:gap-4 ml-3 sm:ml-6">
+        <div className="order-2 flex items-center gap-2 sm:gap-4 ml-auto">
           {/* Notifications */}
           <div ref={notifRef} className="relative">
             <Tip content="View notifications — assignments, mentions, and updates" position="bottom" beacon>
