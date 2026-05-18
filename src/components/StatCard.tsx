@@ -50,7 +50,7 @@ export const StatCard: React.FC<StatCardProps> = ({
   return (
     <div
       className={clsx(
-        'rounded-xl border p-5 transition-all duration-300',
+        'w-full rounded-xl border p-5 transition-all duration-300',
         'bg-white border-gray-200 shadow-sm hover:shadow-md',
         'dark:bg-slate-800/50 dark:border-slate-700/50 dark:backdrop-blur-sm dark:hover:shadow-lg dark:hover:shadow-black/20'
       )}

@@ -301,7 +301,7 @@ export const TopBar: React.FC = () => {
             {/* ── Notification Dropdown ── */}
             {showNotifications && (
               <div className={clsx(
-                'absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-[420px] rounded-2xl shadow-2xl overflow-hidden z-50',
+                'fixed sm:absolute top-[4.5rem] sm:top-full right-2 sm:right-0 sm:mt-2 w-[calc(100vw-1rem)] sm:w-[420px] rounded-2xl shadow-2xl overflow-hidden z-50',
                 'bg-white border border-gray-200',
                 'dark:bg-slate-800 dark:border-slate-700'
               )}>
