@@ -439,9 +439,12 @@ export const Chat: React.FC = () => {
   const onlineCount = teamMembers.filter((m) => m.online).length;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className={clsx(mobileShowChat ? 'space-y-0 -mx-3 sm:mx-0' : 'space-y-6')}>
+      {/* Header — hidden on mobile when chat is open */}
+      <div className={clsx(
+        'flex flex-wrap items-center justify-between gap-3',
+        mobileShowChat && 'hidden md:flex'
+      )}>
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-slate-100">Chat</h1>
           <p className="text-gray-500 dark:text-slate-400 mt-1">
@@ -464,10 +467,13 @@ export const Chat: React.FC = () => {
 
       {/* Chat Layout */}
       <div className={clsx(
-        'flex rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700/50',
+        'flex overflow-hidden border border-gray-200 dark:border-slate-700/50',
         'bg-white dark:bg-slate-800/50',
         'shadow-sm',
-        'h-[calc(100vh-220px)] min-h-[500px]'
+        mobileShowChat
+          ? 'rounded-none md:rounded-2xl border-x-0 sm:border-x h-[calc(100dvh-8.25rem)] md:h-[calc(100vh-220px)]'
+          : 'rounded-2xl h-[calc(100vh-220px)]',
+        'min-h-[300px] md:min-h-[500px]'
       )}>
         {/* Sidebar - Conversation List */}
         <div className={clsx(
@@ -545,6 +551,7 @@ export const Chat: React.FC = () => {
                       e.dataTransfer.effectAllowed = 'move';
                     }}
                     onClick={() => handleSelectConversation(conv.id)}
+                    onDoubleClick={() => handleSelectConversation(conv.id)}
                     className={clsx(
                       'w-full flex items-start gap-3 px-3 py-3 rounded-xl text-left transition-all',
                       activeConversationId === conv.id
