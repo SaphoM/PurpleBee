@@ -456,9 +456,9 @@ export const DockedChats: React.FC = () => {
   return (
     <>
       <DropZone isDragOver={isDragOver} />
-      {/* Docked bubbles — always below the ChatBot (z-50) */}
+      {/* Docked bubbles — desktop only, always below the ChatBot (z-50) */}
       <div
-        className="fixed bottom-6 z-[45] transition-all duration-300"
+        className="hidden md:block fixed bottom-6 z-[45] transition-all duration-300"
         style={{ right: chatBotOpen ? 420 : 88, left: 0, pointerEvents: 'none' }}
       >
         <div

@@ -24,7 +24,7 @@ import { useUserStore } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useTaskStore } from '@stores/taskStore';
-import { Tip } from '@components/Tip';
+import { Tip, showMobileToast } from '@components/Tip';
 
 interface NavItem {
   icon: React.ReactNode;
@@ -128,7 +128,10 @@ export const Sidebar: React.FC = () => {
                 : item.href === '#projects' && projectCount > 0 ? projectCount
                 : item.href === '#tasks' && taskCount > 0 ? taskCount
                 : item.badge;
-              const closeMobile = () => { if (window.innerWidth < 1024) setSidebarOpen(false); };
+              const closeMobile = () => {
+                if (window.innerWidth < 1024) setSidebarOpen(false);
+                if (window.innerWidth < 768 && item.tip) showMobileToast(item.tip);
+              };
               const link = (
                 <a
                   href={item.href}

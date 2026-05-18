@@ -15,7 +15,7 @@ import { LoginPage } from '@pages/LoginPage';
 import { ChatBot } from '@components/ChatBot';
 import { DockedChats } from '@components/DockedChats';
 import { ToastContainer } from '@components/Toast';
-import { WelcomeTipsModal } from '@components/Tip';
+import { WelcomeTipsModal, MobileToastProvider } from '@components/Tip';
 import { useUIStore } from '@stores/uiStore';
 import { useUserStore, teamProfiles } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
@@ -145,6 +145,7 @@ const App: React.FC = () => {
       <DockedChats />
       {currentPage !== 'chat' && <ChatBot />}
       <ToastContainer />
+      <MobileToastProvider />
       <WelcomeTipsModal />
     </div>
   );

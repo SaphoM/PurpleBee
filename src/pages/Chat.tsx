@@ -612,11 +612,11 @@ export const Chat: React.FC = () => {
                       </div>
                     </div>
                   </button>
-                  {/* Dock to bottom button */}
+                  {/* Dock to bottom button — desktop only */}
                   <button
                     onClick={(e) => { e.stopPropagation(); dockChat(conv.id); }}
                     className={clsx(
-                      'absolute top-2 right-2 p-1.5 rounded-lg transition-all',
+                      'hidden md:block absolute top-2 right-2 p-1.5 rounded-lg transition-all',
                       'bg-white dark:bg-slate-700 shadow-sm border border-gray-200 dark:border-slate-600',
                       'text-gray-400 hover:text-purple-600 dark:text-slate-400 dark:hover:text-purple-400',
                       'opacity-0 group-hover/conv:opacity-100 hover:scale-110',

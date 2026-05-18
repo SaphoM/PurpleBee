@@ -49,6 +49,47 @@ interface TipProps {
   beacon?: boolean;
 }
 
+// ─── Mobile toast state (shared across all Tip instances) ────────────
+let mobileToastTimeout: ReturnType<typeof setTimeout> | null = null;
+let setMobileToastGlobal: ((msg: string | null) => void) | null = null;
+
+export const MobileToastProvider: React.FC = () => {
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    setMobileToastGlobal = setToast;
+    return () => { setMobileToastGlobal = null; };
+  }, []);
+
+  if (!toast) return null;
+
+  return createPortal(
+    <div
+      className="tip-enter pointer-events-none fixed top-24 left-4 right-4 z-[9999] flex justify-center"
+    >
+      <div className={clsx(
+        'px-4 py-3 rounded-xl shadow-lg',
+        'bg-purple-600',
+        'text-white text-sm font-medium',
+        'max-w-sm text-center leading-relaxed',
+      )}>
+        {toast}
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+export const showMobileToast = (msg: string) => {
+  if (mobileToastTimeout) clearTimeout(mobileToastTimeout);
+  setMobileToastGlobal?.(msg);
+  mobileToastTimeout = setTimeout(() => {
+    setMobileToastGlobal?.(null);
+  }, 2500);
+};
+
+// Detect mobile via viewport width
+const isMobileViewport = () => typeof window !== 'undefined' && window.innerWidth < 768;
+
 export const Tip: React.FC<TipProps> = ({
   content,
   position = 'top',
@@ -97,7 +138,7 @@ export const Tip: React.FC<TipProps> = ({
   }, [position]);
 
   useEffect(() => {
-    if (isActive) {
+    if (isActive && !isMobileViewport()) {
       timeoutRef.current = setTimeout(() => {
         computePosition();
         setVisible(true);
@@ -121,34 +162,12 @@ export const Tip: React.FC<TipProps> = ({
     let { top, left } = coords;
     let changed = false;
 
-    // Right edge
-    if (position === 'right' && left + tt.width > vw - 8) {
-      left = vw - tt.width - 8;
-      changed = true;
-    }
-    // Left edge
-    if ((position === 'left') && left - tt.width < 8) {
-      left = 8 + tt.width;
-      changed = true;
-    }
-    // Top / bottom for centered
-    if ((position === 'top' || position === 'bottom') && left - tt.width / 2 < 8) {
-      left = 8 + tt.width / 2;
-      changed = true;
-    }
-    if ((position === 'top' || position === 'bottom') && left + tt.width / 2 > vw - 8) {
-      left = vw - 8 - tt.width / 2;
-      changed = true;
-    }
-    // Vertical clamp
-    if (position === 'top' && top - tt.height < 8) {
-      top = 8 + tt.height;
-      changed = true;
-    }
-    if (position === 'bottom' && top + tt.height > vh - 8) {
-      top = vh - 8 - tt.height;
-      changed = true;
-    }
+    if (position === 'right' && left + tt.width > vw - 8) { left = vw - tt.width - 8; changed = true; }
+    if ((position === 'left') && left - tt.width < 8) { left = 8 + tt.width; changed = true; }
+    if ((position === 'top' || position === 'bottom') && left - tt.width / 2 < 8) { left = 8 + tt.width / 2; changed = true; }
+    if ((position === 'top' || position === 'bottom') && left + tt.width / 2 > vw - 8) { left = vw - 8 - tt.width / 2; changed = true; }
+    if (position === 'top' && top - tt.height < 8) { top = 8 + tt.height; changed = true; }
+    if (position === 'bottom' && top + tt.height > vh - 8) { top = vh - 8 - tt.height; changed = true; }
 
     if (changed) setCoords({ top, left });
   }, [visible, coords, position]);
@@ -164,13 +183,18 @@ export const Tip: React.FC<TipProps> = ({
     right: 'translate(0, -50%)',
   };
 
-  // Arrow positions for portal tooltip
   const arrowStyle: Record<TipPosition, React.CSSProperties> = {
     top: { bottom: -9, left: '50%', transform: 'translateX(-50%)', borderWidth: 5, borderColor: 'rgb(147 51 234) transparent transparent transparent' },
     bottom: { top: -9, left: '50%', transform: 'translateX(-50%)', borderWidth: 5, borderColor: 'transparent transparent rgb(147 51 234) transparent' },
     left: { right: -9, top: '50%', transform: 'translateY(-50%)', borderWidth: 5, borderColor: 'transparent transparent transparent rgb(147 51 234)' },
     right: { left: -9, top: '50%', transform: 'translateY(-50%)', borderWidth: 5, borderColor: 'transparent rgb(147 51 234) transparent transparent' },
   };
+
+  // On mobile: render children with zero wrapper interference.
+  // Tips are shown as toasts via a global provider (rendered once in the tree).
+  if (isMobileViewport()) {
+    return <>{children}</>;
+  }
 
   return (
     <div
