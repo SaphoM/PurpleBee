@@ -439,12 +439,9 @@ export const Chat: React.FC = () => {
   const onlineCount = teamMembers.filter((m) => m.online).length;
 
   return (
-    <div className={clsx(mobileShowChat ? 'space-y-0 -mx-3 sm:mx-0' : 'space-y-6')}>
-      {/* Header — hidden on mobile when chat is open */}
-      <div className={clsx(
-        'flex flex-wrap items-center justify-between gap-3',
-        mobileShowChat && 'hidden md:flex'
-      )}>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-slate-100">Chat</h1>
           <p className="text-gray-500 dark:text-slate-400 mt-1">
@@ -467,19 +464,13 @@ export const Chat: React.FC = () => {
 
       {/* Chat Layout */}
       <div className={clsx(
-        'flex overflow-hidden border border-gray-200 dark:border-slate-700/50',
+        'flex rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700/50',
         'bg-white dark:bg-slate-800/50',
         'shadow-sm',
-        mobileShowChat
-          ? 'rounded-none md:rounded-2xl border-x-0 sm:border-x h-[calc(100dvh-8.25rem)] md:h-[calc(100vh-220px)]'
-          : 'rounded-2xl h-[calc(100vh-220px)]',
-        'min-h-[300px] md:min-h-[500px]'
+        'h-[calc(100vh-220px)] min-h-[500px]'
       )}>
         {/* Sidebar - Conversation List */}
-        <div className={clsx(
-          'w-full md:w-80 lg:w-96 flex-shrink-0 border-r border-gray-200 dark:border-slate-700/50 flex flex-col',
-          mobileShowChat && 'hidden md:flex'
-        )}>
+        <div className="w-full md:w-80 lg:w-96 flex-shrink-0 border-r border-gray-200 dark:border-slate-700/50 flex flex-col">
           {/* Category Tabs */}
           <div className="p-3 border-b border-gray-100 dark:border-slate-700/30">
             <div className="flex gap-1 overflow-x-auto scrollbar-hide">
@@ -642,11 +633,8 @@ export const Chat: React.FC = () => {
           </div>
         </div>
 
-        {/* Chat Area */}
-        <div className={clsx(
-          'flex-1 flex flex-col',
-          !mobileShowChat && 'hidden md:flex'
-        )}>
+        {/* Chat Area — desktop inline */}
+        <div className="hidden md:flex flex-1 flex-col">
           {activeConversation ? (
             <>
               {/* Chat Header */}
@@ -981,6 +969,224 @@ export const Chat: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Mobile Floating Chat Overlay */}
+      {mobileShowChat && activeConversation && (
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col" onClick={() => { setMobileShowChat(false); setActiveConversation(null); }}>
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+
+          {/* Chat Bubble */}
+          <div
+            className={clsx(
+              'relative mt-auto mx-2 mb-2 flex flex-col',
+              'bg-white dark:bg-slate-800 rounded-2xl shadow-2xl',
+              'border border-gray-200 dark:border-slate-700',
+              'h-[75dvh] max-h-[600px]',
+              'animate-[slideUp_0.25s_ease-out]',
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Overlay Chat Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700/50 rounded-t-2xl bg-gray-50/80 dark:bg-slate-800/80">
+              <div className="flex items-center gap-3">
+                {activeConversation.type === 'dm' ? (
+                  <div className="relative">
+                    <img
+                      src={activeConversation.participants.find((p) => p.userId !== currentUserId)?.avatar}
+                      alt={activeConversation.name}
+                      className="w-9 h-9 rounded-full"
+                    />
+                    <span className={clsx(
+                      'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-gray-50 dark:border-slate-800',
+                      activeConversation.participants.find((p) => p.userId !== currentUserId)?.online ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-slate-600'
+                    )} />
+                  </div>
+                ) : (
+                  <div className={clsx(
+                    'w-9 h-9 rounded-full flex items-center justify-center',
+                    activeConversation.type === 'task' && 'bg-purple-100 dark:bg-purple-900/30',
+                    activeConversation.type === 'team' && 'bg-emerald-100 dark:bg-emerald-900/30',
+                    activeConversation.type === 'announcement' && 'bg-amber-100 dark:bg-amber-900/30',
+                  )}>
+                    {getConversationIcon(activeConversation.type)}
+                  </div>
+                )}
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100">{activeConversation.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <span className={clsx('inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase', getTypeBadgeClass(activeConversation.type))}>
+                      {activeConversation.type}
+                    </span>
+                    <span className="text-[11px] text-gray-400 dark:text-slate-500">
+                      {activeConversation.participants.length} members
+                      {activeConversation.type === 'dm' && (
+                        activeConversation.participants.find((p) => p.userId !== currentUserId)?.online
+                          ? ' • Online'
+                          : ' • Offline'
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => { setMobileShowChat(false); setActiveConversation(null); }}
+                className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Overlay Messages */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+              {activeMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center">
+                  <div className={clsx(
+                    'w-14 h-14 rounded-2xl flex items-center justify-center mb-3',
+                    activeConversation.type === 'task' && 'bg-purple-100 dark:bg-purple-900/20',
+                    activeConversation.type === 'dm' && 'bg-blue-100 dark:bg-blue-900/20',
+                    activeConversation.type === 'team' && 'bg-emerald-100 dark:bg-emerald-900/20',
+                    activeConversation.type === 'announcement' && 'bg-amber-100 dark:bg-amber-900/20',
+                  )}>
+                    {getConversationIcon(activeConversation.type)}
+                  </div>
+                  <p className="text-sm font-medium text-gray-500 dark:text-slate-400">Start the conversation</p>
+                </div>
+              ) : (
+                activeMessages.map((msg, idx) => {
+                  const isMe = msg.senderId === currentUserId;
+                  const showAvatar = idx === 0 || activeMessages[idx - 1].senderId !== msg.senderId;
+                  const showTimeSeparator = idx === 0 || (
+                    new Date(msg.timestamp).getTime() - new Date(activeMessages[idx - 1].timestamp).getTime() > 30 * 60 * 1000
+                  );
+
+                  return (
+                    <React.Fragment key={msg.id}>
+                      {showTimeSeparator && (
+                        <div className="flex items-center gap-3 py-2">
+                          <div className="flex-1 h-px bg-gray-200 dark:bg-slate-700/50" />
+                          <span className="text-[10px] font-medium text-gray-400 dark:text-slate-500 uppercase tracking-wider">
+                            {formatFullTime(new Date(msg.timestamp))}
+                          </span>
+                          <div className="flex-1 h-px bg-gray-200 dark:bg-slate-700/50" />
+                        </div>
+                      )}
+                      <div className={clsx('flex gap-2.5', isMe && 'flex-row-reverse')}>
+                        {showAvatar ? (
+                          <img src={msg.senderAvatar} alt={msg.senderName} className="w-7 h-7 rounded-full flex-shrink-0 mt-0.5" />
+                        ) : (
+                          <div className="w-7 flex-shrink-0" />
+                        )}
+                        <div className={clsx('max-w-[75%]', isMe && 'items-end')}>
+                          {showAvatar && (
+                            <p className={clsx('text-[11px] font-semibold mb-1', isMe ? 'text-right' : 'text-left', 'text-gray-500 dark:text-slate-400')}>
+                              {isMe ? 'You' : msg.senderName}
+                            </p>
+                          )}
+                          <div className={clsx(
+                            'px-3 py-2 rounded-2xl text-sm leading-relaxed',
+                            isMe
+                              ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-tr-md'
+                              : 'bg-gray-100 dark:bg-slate-700/50 text-gray-800 dark:text-slate-200 rounded-tl-md'
+                          )}>
+                            {msg.text}
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="space-y-1">
+                                {msg.attachments.map((att) => (
+                                  <AttachmentBubble key={att.id} attachment={att} isMe={isMe} compact />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <ReactionBar
+                            reactions={msg.reactions || []}
+                            onToggle={(emoji) => toggleReaction(msg.conversationId, msg.id, emoji)}
+                            currentUserId={currentUserId}
+                          />
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  );
+                })
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Overlay Input */}
+            <div className="px-3 py-2.5 border-t border-gray-200 dark:border-slate-700/50 rounded-b-2xl bg-gray-50/80 dark:bg-slate-800/80">
+              {pendingAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {pendingAttachments.map((att) => (
+                    <div key={att.id} className="relative flex items-center gap-2 px-2 py-1 rounded-lg bg-gray-100 dark:bg-slate-700/50 border border-gray-200 dark:border-slate-600">
+                      {att.type.startsWith('image/') && att.previewUrl ? (
+                        <img src={att.previewUrl} alt={att.name} className="w-7 h-7 rounded object-cover" />
+                      ) : (
+                        <File size={12} className="text-gray-400 dark:text-slate-500" />
+                      )}
+                      <p className="text-[10px] font-medium text-gray-700 dark:text-slate-300 truncate max-w-[100px]">{att.name}</p>
+                      <button onClick={() => removePendingAttachment(att.id)} className="p-0.5 rounded-full bg-gray-200 dark:bg-slate-600 text-gray-500 hover:text-red-500 transition-colors">
+                        <X size={9} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.csv" />
+                <button onClick={() => fileInputRef.current?.click()} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 dark:text-slate-500 dark:hover:bg-slate-700 transition-colors" title="Attach file">
+                  <Paperclip size={18} />
+                </button>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  placeholder={`Message ${activeConversation.name}...`}
+                  className={clsx(
+                    'flex-1 rounded-xl px-3 py-2 text-sm',
+                    'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
+                    'dark:bg-slate-800 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                  )}
+                />
+                <button
+                  ref={emojiButtonRef}
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className={clsx(
+                    'p-2 rounded-lg transition-colors',
+                    showEmojiPicker
+                      ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
+                      : 'text-gray-400 hover:bg-gray-100 dark:text-slate-500 dark:hover:bg-slate-700'
+                  )}
+                  title="Emoji"
+                >
+                  <Smile size={18} />
+                </button>
+                <button
+                  onClick={handleSend}
+                  disabled={!messageInput.trim() && pendingAttachments.length === 0}
+                  className={clsx(
+                    'p-2 rounded-xl transition-all',
+                    (messageInput.trim() || pendingAttachments.length > 0)
+                      ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-md shadow-purple-500/20'
+                      : 'bg-gray-100 text-gray-300 dark:bg-slate-700/30 dark:text-slate-600 cursor-not-allowed'
+                  )}
+                >
+                  <Send size={18} />
+                </button>
+              </div>
+              {showEmojiPicker && (
+                <EmojiPicker
+                  onSelect={handleEmojiSelect}
+                  onClose={() => setShowEmojiPicker(false)}
+                  anchorRef={emojiButtonRef as React.RefObject<HTMLElement>}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New DM Modal */}
       <NewDMModal isOpen={showNewDM} onClose={() => setShowNewDM(false)} />
