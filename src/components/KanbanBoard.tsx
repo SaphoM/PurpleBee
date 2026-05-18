@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import clsx from 'clsx';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import { TaskStatus, Task } from '@/types/index';
 import { TaskCard } from './TaskCard';
-import { Plus, MoreVertical } from 'lucide-react';
+import { Plus, MoreVertical, ChevronDown } from 'lucide-react';
 import { useTaskStore } from '@stores/taskStore';
 import { useUserStore } from '@stores/userStore';
 
@@ -16,11 +16,21 @@ const statusConfig: Record<TaskStatus, { label: string; color: string }> = {
 
 const statusOrder: TaskStatus[] = ['todo', 'in-progress', 'review', 'completed'];
 
+const statusColorMap: Record<string, string> = {
+  slate: 'bg-gray-500',
+  blue: 'bg-blue-500',
+  amber: 'bg-amber-500',
+  emerald: 'bg-emerald-500',
+};
+
 interface KanbanColumnProps {
   status: TaskStatus;
   tasks: Task[];
   onAddTask: () => void;
   onTaskClick?: (task: Task) => void;
+  /** When true, renders a collapsible mobile-style column */
+  mobile?: boolean;
+  defaultOpen?: boolean;
 }
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({
@@ -28,11 +38,67 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   tasks,
   onAddTask,
   onTaskClick,
+  mobile = false,
+  defaultOpen = false,
 }) => {
   const config = statusConfig[status];
+  const [open, setOpen] = useState(defaultOpen);
+
+  if (mobile) {
+    return (
+      <div className="rounded-xl border border-gray-200 dark:border-slate-700/50 overflow-hidden">
+        {/* Collapsible header */}
+        <button
+          onClick={() => setOpen(!open)}
+          className={clsx(
+            'w-full flex items-center justify-between px-4 py-3',
+            'bg-gray-50 dark:bg-slate-800/50',
+            'transition-colors'
+          )}
+        >
+          <div className="flex items-center gap-3">
+            <span className={clsx('w-2.5 h-2.5 rounded-full', statusColorMap[config.color])} />
+            <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-sm">{config.label}</h3>
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300">
+              {tasks.length}
+            </span>
+          </div>
+          <ChevronDown size={18} className={clsx('text-gray-400 transition-transform', open && 'rotate-180')} />
+        </button>
+
+        {/* Cards */}
+        {open && (
+          <div className="p-3 space-y-3">
+            {tasks.length === 0 ? (
+              <div className="py-6 text-center">
+                <p className="text-sm text-gray-400 dark:text-slate-500">No tasks</p>
+              </div>
+            ) : (
+              tasks.map((task) => (
+                <TaskCard key={task.id} task={task} onClick={() => onTaskClick?.(task)} />
+              ))
+            )}
+            <button
+              onClick={onAddTask}
+              className={clsx(
+                'w-full flex items-center justify-center gap-2 py-2.5 rounded-lg',
+                'border border-dashed border-gray-300 text-gray-400',
+                'hover:border-gray-400 hover:text-gray-500 hover:bg-gray-50',
+                'dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-500',
+                'transition-all duration-200 text-sm'
+              )}
+            >
+              <Plus size={16} />
+              Add Task
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="flex-1 min-w-[260px] sm:min-w-[300px] flex flex-col">
+    <div className="flex-1 min-w-[300px] flex flex-col">
       {/* Column Header */}
       <div className="flex items-center justify-between mb-4 px-2">
         <div className="flex items-center gap-3">
@@ -148,7 +214,23 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick
 
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex gap-4 sm:gap-6 overflow-x-auto pb-6">
+      {/* Mobile: stacked collapsible columns */}
+      <div className="flex flex-col gap-3 lg:hidden">
+        {statusOrder.map((status, i) => (
+          <KanbanColumn
+            key={status}
+            status={status}
+            tasks={getColumnTasks(status)}
+            onAddTask={() => handleAddTask(status)}
+            onTaskClick={onTaskClick}
+            mobile
+            defaultOpen={i === 0}
+          />
+        ))}
+      </div>
+
+      {/* Desktop: horizontal drag-and-drop columns */}
+      <div className="hidden lg:flex gap-6 overflow-x-auto pb-6">
         {statusOrder.map((status) => (
           <KanbanColumn
             key={status}
