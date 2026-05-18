@@ -13,7 +13,7 @@ interface UIStore extends UIState {
 }
 
 export const useUIStore = create<UIStore>((set) => ({
-  sidebarOpen: true,
+  sidebarOpen: typeof window !== 'undefined' && window.innerWidth >= 1024,
   darkMode: false,
   isModalOpen: false,
   viewMode: 'kanban',
