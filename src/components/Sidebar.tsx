@@ -25,6 +25,7 @@ import { useChatStore } from '@stores/chatStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useTaskStore } from '@stores/taskStore';
 import { Tip, showMobileToast } from '@components/Tip';
+import { useSettingsStore } from '@stores/settingsStore';
 
 interface NavItem {
   icon: React.ReactNode;
@@ -67,6 +68,7 @@ export const Sidebar: React.FC = () => {
     if (canViewAllTasks()) return s.tasks.filter((t) => t.status !== 'completed').length;
     return s.tasks.filter((t) => t.assignedTo === getEffectiveUserId() && t.status !== 'completed').length;
   });
+  const showTips = useSettingsStore((s) => s.showTips);
   const [activePage, setActivePage] = useState(window.location.hash || '#dashboard');
 
   useEffect(() => {
@@ -130,7 +132,7 @@ export const Sidebar: React.FC = () => {
                 : item.badge;
               const closeMobile = () => {
                 if (window.innerWidth < 1024) setSidebarOpen(false);
-                if (window.innerWidth < 768 && item.tip) showMobileToast(item.tip);
+                if (window.innerWidth < 768 && item.tip && showTips) showMobileToast(item.tip);
               };
               const link = (
                 <a
