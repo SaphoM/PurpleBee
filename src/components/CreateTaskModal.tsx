@@ -62,16 +62,17 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     return acc;
   }, {});
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click (use pointerdown + RAF so touch taps on
+  // dropdown items register their onClick before the dropdown closes)
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
+    const handleClick = (e: PointerEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
           titleInputRef.current && !titleInputRef.current.contains(e.target as Node)) {
-        setShowTitleDropdown(false);
+        requestAnimationFrame(() => setShowTitleDropdown(false));
       }
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('pointerdown', handleClick);
+    return () => document.removeEventListener('pointerdown', handleClick);
   }, []);
 
   const handleSelectProjectTask = (pt: typeof projectTasks[0]) => {
@@ -267,8 +268,10 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                           key={pt.taskId}
                           type="button"
                           onClick={() => handleSelectProjectTask(pt)}
+                          onTouchEnd={(e) => { e.preventDefault(); handleSelectProjectTask(pt); }}
                           className={clsx(
-                            'w-full text-left px-3 py-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors',
+                            'w-full text-left px-3 py-3 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors',
+                            'active:bg-purple-100 dark:active:bg-purple-900/30',
                             'flex items-start gap-2'
                           )}
                         >

@@ -99,7 +99,7 @@ export const Sidebar: React.FC = () => {
       {/* Sidebar */}
       <aside
         className={clsx(
-          'fixed left-0 top-0 h-screen w-64',
+          'fixed left-0 top-0 h-[100dvh] w-64',
           'bg-white border-r border-gray-200',
           'dark:bg-gradient-to-b dark:from-slate-900 dark:to-slate-950 dark:border-slate-800',
           'flex flex-col transition-all duration-300 z-40',
@@ -173,7 +173,7 @@ export const Sidebar: React.FC = () => {
         <div className="border-t border-gray-200 dark:border-slate-800" />
 
         {/* Bottom Actions */}
-        <nav className="px-4 py-4">
+        <nav className="px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto flex-shrink-0">
           {/* Dark Mode Toggle */}
           <button
             onClick={toggleDarkMode}
