@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   ChevronDown,
+  Filter,
 } from 'lucide-react';
 import { useTaskStore } from '@stores/taskStore';
 import { useUserStore } from '@stores/userStore';
@@ -115,10 +116,10 @@ const UpcomingGroup: React.FC<{
   const overdue = isPast(date) && !dayIsToday;
 
   return (
-    <div className="bg-white dark:bg-slate-800/30 rounded-xl border border-gray-100 dark:border-slate-700/30 overflow-hidden">
+    <div className="rounded-xl overflow-hidden bg-white dark:bg-slate-800/30 border border-gray-100 dark:border-slate-700/30">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left"
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors"
       >
         <div className="flex items-center gap-2">
           <span className={clsx(
@@ -134,44 +135,43 @@ const UpcomingGroup: React.FC<{
           </span>
         </div>
         <ChevronDown size={16} className={clsx(
-          'text-gray-400 transition-transform',
+          'text-gray-400 dark:text-slate-500 transition-transform',
           expanded && 'rotate-180'
         )} />
       </button>
       {expanded && (
-        <div className="px-4 pb-3 space-y-2">
-          {dayTasks.map((task) => {
-            const colors = statusColors[task.status];
-            return (
-              <button
-                key={task.id}
-                onClick={() => onTaskClick(task.id)}
-                className="w-full flex items-center gap-3 py-2 text-left group"
-              >
-                <div
-                  className="w-1 h-8 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: priorityAccent[task.priority] }}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className={clsx(
-                    'text-sm font-medium truncate',
-                    task.status === 'completed' ? 'line-through text-gray-400 dark:text-slate-500' : 'text-gray-800 dark:text-slate-200'
-                  )}>
-                    {task.title}
-                  </p>
-                  <p className="text-[10px] text-gray-400 dark:text-slate-500">
-                    {task.status === 'in-progress' ? 'In Progress' : task.status.charAt(0).toUpperCase() + task.status.slice(1)}
-                    {task.tags.length > 0 && ` · ${task.tags[0]}`}
-                  </p>
-                </div>
+        <div className="px-4 pb-3 pt-1 space-y-1">
+          {dayTasks.map((task) => (
+            <button
+              key={task.id}
+              onClick={() => onTaskClick(task.id)}
+              className="w-full flex items-center gap-3 py-2.5 text-left border-b border-gray-100 dark:border-slate-700/30 last:border-b-0"
+            >
+              <div
+                className="w-1 h-8 rounded-full flex-shrink-0"
+                style={{ backgroundColor: statusColors[task.status].accent }}
+              />
+              <div className="flex-1 min-w-0">
+                <p className={clsx(
+                  'text-sm font-medium truncate',
+                  task.status === 'completed' ? 'line-through text-gray-400 dark:text-slate-500' : 'text-gray-800 dark:text-slate-200'
+                )}>
+                  {task.title}
+                </p>
+                <p className="text-[10px] text-gray-400 dark:text-slate-500">
+                  {task.status === 'in-progress' ? 'In Progress' : task.status.charAt(0).toUpperCase() + task.status.slice(1)}
+                  {task.tags.length > 0 && ` · ${task.tags[0]}`}
+                </p>
+              </div>
+              <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
                 {task.dueDate && (
-                  <span className="text-[11px] font-medium text-gray-400 dark:text-slate-500 flex-shrink-0">
+                  <span className="text-[11px] font-bold text-gray-500 dark:text-slate-400">
                     {format(new Date(task.dueDate), 'h:mm a')}
                   </span>
                 )}
-              </button>
-            );
-          })}
+              </div>
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -190,6 +190,7 @@ export const CalendarPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<'month' | 'week' | 'agenda'>('month');
 
   const selectedTask = selectedTaskId ? tasks.find((t) => t.id === selectedTaskId) ?? null : null;
 
@@ -274,24 +275,32 @@ export const CalendarPage: React.FC = () => {
     return tasksByDate.get(key) || [];
   };
 
-  // Check if a date has tasks (for dots)
-  const getDateIndicators = (date: Date): string[] => {
+  // Get the dominant circle color for a date based on task statuses
+  const getDateCircleColor = (date: Date): string | null => {
     const dayTasks = getTasksForDate(date);
-    const colors: string[] = [];
-    const seen = new Set<string>();
-    dayTasks.forEach((t) => {
-      const c = statusColors[t.status].accent;
-      if (!seen.has(c)) { seen.add(c); colors.push(c); }
-    });
-    return colors.slice(0, 3);
+    if (dayTasks.length === 0) return null;
+    // Priority: in-progress (blue) > review (amber) > todo (pink) > completed (green)
+    const priority: TaskStatus[] = ['in-progress', 'review', 'todo', 'completed'];
+    for (const status of priority) {
+      if (dayTasks.some((t) => t.status === status)) return statusColors[status].accent;
+    }
+    return statusColors['todo'].accent;
+  };
+
+  // Palette of circle ring colors for dates with tasks (matching reference)
+  const dateRingColors: Record<string, { ring: string; bg: string; text: string }> = {
+    '#3b82f6': { ring: 'ring-blue-400/60', bg: 'bg-blue-100 dark:bg-blue-900/40', text: 'text-blue-700 dark:text-blue-300' },
+    '#f59e0b': { ring: 'ring-amber-400/60', bg: 'bg-amber-100 dark:bg-amber-900/40', text: 'text-amber-700 dark:text-amber-300' },
+    '#9ca3af': { ring: 'ring-pink-400/60', bg: 'bg-pink-100 dark:bg-pink-900/40', text: 'text-pink-700 dark:text-pink-300' },
+    '#10b981': { ring: 'ring-emerald-400/60', bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-700 dark:text-emerald-300' },
   };
 
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* ─── MOBILE LAYOUT ─── */}
-      <div className="lg:hidden">
+      <div className="lg:hidden space-y-4">
         {/* Month header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button onClick={() => navigateMonth('prev')} className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
               <ChevronLeft size={20} />
@@ -303,94 +312,157 @@ export const CalendarPage: React.FC = () => {
               <ChevronRight size={20} />
             </button>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-purple-500/30"
-          >
-            <Plus size={20} />
-          </button>
         </div>
 
-        {/* Compact calendar grid */}
-        <div className="bg-white dark:bg-slate-800/40 rounded-2xl p-3 border border-gray-200 dark:border-slate-700/50 shadow-sm mb-4">
-          {/* Day headers */}
-          <div className="grid grid-cols-7 mb-2">
-            {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-              <div key={i} className={clsx(
-                'text-center text-xs font-semibold py-1',
-                i >= 5 ? 'text-purple-400 dark:text-purple-500' : 'text-gray-400 dark:text-slate-500'
-              )}>
-                {d}
-              </div>
+        {/* Filters + View Toggle */}
+        <div className="flex items-center gap-3">
+          <button className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+            <Filter size={16} />
+            Filters
+          </button>
+          <div className="flex rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+            {(['month', 'week', 'agenda'] as const).map((view) => (
+              <button
+                key={view}
+                onClick={() => setMobileView(view)}
+                className={clsx(
+                  'px-4 py-2.5 text-sm font-semibold transition-colors capitalize',
+                  mobileView === view
+                    ? 'bg-purple-600 text-white'
+                    : 'text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800'
+                )}
+              >
+                {view === 'agenda' ? 'Agenda' : view.charAt(0).toUpperCase() + view.slice(1)}
+              </button>
             ))}
           </div>
-
-          {/* Date grid */}
-          <div className="grid grid-cols-7 gap-y-1">
-            {calendarDays.map((date) => {
-              const inMonth = isSameMonth(date, currentDate);
-              const today = isToday(date);
-              const selected = selectedDate && isSameDay(date, selectedDate);
-              const indicators = getDateIndicators(date);
-              const hasOverdue = getTasksForDate(date).some(
-                (t) => t.status !== 'completed' && isPast(date) && !isToday(date)
-              );
-
-              return (
-                <button
-                  key={date.toISOString()}
-                  onClick={() => setSelectedDate(date)}
-                  className={clsx(
-                    'relative flex flex-col items-center py-1.5 rounded-xl transition-all',
-                    'active:scale-95',
-                    selected
-                      ? 'bg-purple-600 text-white shadow-md shadow-purple-500/30'
-                      : today
-                        ? 'bg-purple-100 dark:bg-purple-900/30'
-                        : 'hover:bg-gray-100 dark:hover:bg-slate-700/40'
-                  )}
-                >
-                  <span
-                    className={clsx(
-                      'text-sm font-semibold leading-6',
-                      selected
-                        ? 'text-white'
-                        : today
-                          ? 'text-purple-700 dark:text-purple-300'
-                          : inMonth
-                            ? 'text-gray-800 dark:text-slate-200'
-                            : 'text-gray-300 dark:text-slate-600'
-                    )}
-                  >
-                    {format(date, 'd')}
-                  </span>
-
-                  {/* Task indicator dots */}
-                  {indicators.length > 0 && (
-                    <div className="flex gap-0.5 mt-0.5">
-                      {indicators.map((color, i) => (
-                        <span
-                          key={i}
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: selected ? 'rgba(255,255,255,0.8)' : color }}
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Overdue indicator */}
-                  {hasOverdue && !selected && (
-                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
         </div>
+
+        {/* + Add Task button */}
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className={clsx(
+            'w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl text-sm font-bold',
+            'bg-gradient-to-r from-purple-600 to-blue-600 text-white',
+            'shadow-lg shadow-purple-500/25',
+            'active:scale-[0.98] transition-transform'
+          )}
+        >
+          <Plus size={18} strokeWidth={2.5} />
+          Add Task
+        </button>
+
+        {/* Calendar grid card */}
+        {mobileView === 'month' && (
+          <div className="bg-white dark:bg-slate-800/40 rounded-2xl p-4 border border-gray-200 dark:border-slate-700/50 shadow-sm">
+            {/* Day headers */}
+            <div className="grid grid-cols-7 mb-3">
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+                <div key={i} className={clsx(
+                  'text-center text-[11px] font-bold uppercase tracking-wider py-1',
+                  i >= 5 ? 'text-purple-400 dark:text-purple-500' : 'text-gray-400 dark:text-slate-500'
+                )}>
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {/* Date grid */}
+            <div className="grid grid-cols-7 gap-y-2">
+              {calendarDays.map((date) => {
+                const inMonth = isSameMonth(date, currentDate);
+                const today = isToday(date);
+                const selected = selectedDate && isSameDay(date, selectedDate);
+                const circleColor = getDateCircleColor(date);
+                const ringStyle = circleColor ? dateRingColors[circleColor] : null;
+                const hasOverdue = getTasksForDate(date).some(
+                  (t) => t.status !== 'completed' && isPast(date) && !isToday(date)
+                );
+
+                return (
+                  <button
+                    key={date.toISOString()}
+                    onClick={() => setSelectedDate(date)}
+                    className="relative flex items-center justify-center py-0.5"
+                  >
+                    <span
+                      className={clsx(
+                        'w-9 h-9 flex items-center justify-center rounded-full text-sm font-semibold transition-all',
+                        selected
+                          ? 'bg-gradient-to-br from-purple-500 to-purple-700 text-white shadow-lg shadow-purple-500/40 scale-110'
+                          : today
+                            ? 'bg-gradient-to-br from-pink-400 to-pink-500 text-white shadow-md shadow-pink-400/30'
+                            : ringStyle && inMonth
+                              ? `${ringStyle.bg} ${ringStyle.text} ring-2 ${ringStyle.ring}`
+                              : inMonth
+                                ? 'text-gray-700 dark:text-slate-300'
+                                : 'text-gray-300 dark:text-slate-600'
+                      )}
+                    >
+                      {format(date, 'd')}
+                    </span>
+
+                    {/* Overdue tiny dot */}
+                    {hasOverdue && !selected && (
+                      <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-red-500" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Week view */}
+        {mobileView === 'week' && (() => {
+          const weekStart = startOfWeek(selectedDate || new Date());
+          const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+          return (
+            <div className="bg-white dark:bg-slate-800/40 rounded-2xl p-4 border border-gray-200 dark:border-slate-700/50 shadow-sm">
+              <div className="grid grid-cols-7 gap-1">
+                {weekDays.map((date) => {
+                  const today = isToday(date);
+                  const selected = selectedDate && isSameDay(date, selectedDate);
+                  const dayTasks = getTasksForDate(date);
+                  const circleColor = getDateCircleColor(date);
+                  const ringStyle = circleColor ? dateRingColors[circleColor] : null;
+                  return (
+                    <button
+                      key={date.toISOString()}
+                      onClick={() => setSelectedDate(date)}
+                      className="flex flex-col items-center gap-1 py-2"
+                    >
+                      <span className="text-[10px] font-bold uppercase text-gray-400 dark:text-slate-500">
+                        {format(date, 'EEE')}
+                      </span>
+                      <span
+                        className={clsx(
+                          'w-10 h-10 flex items-center justify-center rounded-full text-sm font-semibold transition-all',
+                          selected
+                            ? 'bg-gradient-to-br from-purple-500 to-purple-700 text-white shadow-lg shadow-purple-500/40'
+                            : today
+                              ? 'bg-gradient-to-br from-pink-400 to-pink-500 text-white shadow-md shadow-pink-400/30'
+                              : ringStyle
+                                ? `${ringStyle.bg} ${ringStyle.text} ring-2 ${ringStyle.ring}`
+                                : 'text-gray-700 dark:text-slate-300'
+                        )}
+                      >
+                        {format(date, 'd')}
+                      </span>
+                      <span className="text-[9px] font-medium text-gray-400 dark:text-slate-500">
+                        {dayTasks.length > 0 ? `${dayTasks.length}` : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Selected date task list */}
         <div className="space-y-3">
-          {selectedDate && (
+          {selectedDate && (mobileView === 'month' || mobileView === 'week') && (
             <div className="flex items-center justify-between px-1">
               <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100">
                 {isToday(selectedDate) ? 'Today' : format(selectedDate, 'EEE, d MMM yyyy')}
@@ -401,7 +473,7 @@ export const CalendarPage: React.FC = () => {
             </div>
           )}
 
-          {selectedDateTasks.length === 0 && selectedDate && (
+          {selectedDateTasks.length === 0 && selectedDate && mobileView !== 'agenda' && (
             <div className="text-center py-10 bg-white dark:bg-slate-800/30 rounded-2xl border border-gray-200 dark:border-slate-700/50">
               <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gray-100 dark:bg-slate-700/40 flex items-center justify-center">
                 <CalendarIcon size={28} className="text-gray-300 dark:text-slate-600" />
@@ -416,7 +488,7 @@ export const CalendarPage: React.FC = () => {
             </div>
           )}
 
-          {selectedDateTasks.map((task) => {
+          {mobileView !== 'agenda' && selectedDateTasks.map((task) => {
             const colors = statusColors[task.status];
             const overdue = task.dueDate && isPast(new Date(task.dueDate)) && task.status !== 'completed' && !isToday(new Date(task.dueDate));
             return (
@@ -431,9 +503,7 @@ export const CalendarPage: React.FC = () => {
                 )}
                 style={{ borderLeftColor: priorityAccent[task.priority] }}
               >
-                {/* Status indicator */}
                 <div className={clsx('w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0', colors.dot)} />
-
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className={clsx(
@@ -448,24 +518,14 @@ export const CalendarPage: React.FC = () => {
                       </span>
                     )}
                   </div>
-                  {task.description && (
-                    <p className="text-xs text-gray-500 dark:text-slate-400 truncate mt-0.5">{task.description}</p>
-                  )}
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className={clsx('text-[10px] font-semibold px-2 py-0.5 rounded-full', colors.bg, colors.text)}>
-                      {task.status === 'in-progress' ? 'In Progress' : task.status.charAt(0).toUpperCase() + task.status.slice(1)}
-                    </span>
-                    {task.tags.slice(0, 2).map((tag) => (
-                      <span key={tag} className="text-[10px] text-gray-400 dark:text-slate-500 font-medium">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
+                  <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">
+                    {task.status === 'in-progress' ? 'In Progress' : task.status.charAt(0).toUpperCase() + task.status.slice(1)}
+                    {task.tags.length > 0 && ` · ${task.tags[0]}`}
+                  </p>
                 </div>
-
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
                   {task.dueDate && (
-                    <span className="text-[11px] font-semibold text-gray-500 dark:text-slate-400">
+                    <span className="text-[11px] font-bold text-gray-500 dark:text-slate-400">
                       {format(new Date(task.dueDate), 'h:mm a')}
                     </span>
                   )}
@@ -475,9 +535,31 @@ export const CalendarPage: React.FC = () => {
             );
           })}
 
-          {/* Upcoming tasks section */}
-          {(!selectedDate || selectedDateTasks.length === 0) && agendaGrouped.length > 0 && (
-            <div className="mt-4 space-y-3">
+          {/* Agenda view — show all grouped tasks */}
+          {mobileView === 'agenda' && agendaGrouped.length > 0 && (
+            <div className="space-y-3">
+              {agendaGrouped.map(({ date, dateStr, tasks: dayTasks }, idx) => (
+                <UpcomingGroup
+                  key={dateStr}
+                  date={date}
+                  dateStr={dateStr}
+                  tasks={dayTasks}
+                  defaultExpanded={isToday(date) || idx < 3}
+                  onTaskClick={(id) => setSelectedTaskId(id)}
+                />
+              ))}
+            </div>
+          )}
+          {mobileView === 'agenda' && agendaGrouped.length === 0 && (
+            <div className="text-center py-10 bg-white dark:bg-slate-800/30 rounded-2xl border border-gray-200 dark:border-slate-700/50">
+              <CalendarIcon size={28} className="mx-auto mb-2 text-gray-300 dark:text-slate-600" />
+              <p className="text-sm font-medium text-gray-400 dark:text-slate-500">No tasks this month</p>
+            </div>
+          )}
+
+          {/* Upcoming tasks section (month/week views) */}
+          {mobileView !== 'agenda' && (!selectedDate || selectedDateTasks.length === 0) && agendaGrouped.length > 0 && (
+            <div className="mt-2 space-y-3">
               <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 px-1">Upcoming</h3>
               {agendaGrouped.slice(0, 5).map(({ date, dateStr, tasks: dayTasks }, idx) => (
                 <UpcomingGroup
