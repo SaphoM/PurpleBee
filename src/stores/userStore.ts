@@ -152,6 +152,11 @@ export const useUserStore = create<UserStore>((set, get) => ({
       useNotificationStore.getState().clearMockData();
       get().clearViewAs();
     }
+
+    // Always ensure team members are loaded (they're core data, not mock)
+    if (useChatStore.getState().teamMembers.length === 0) {
+      useChatStore.getState().loadForUser(profile.id);
+    }
     return true;
   },
 
