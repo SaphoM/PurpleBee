@@ -46,9 +46,11 @@ export const TopBar: React.FC = () => {
   const {
     notifications, unreadCount, markAsRead, markAllAsRead,
     markGroupAsRead, removeNotification, clearRead, getGroupedNotifications,
+    preferences: notifPrefs,
   } = useNotificationStore();
   const { user, viewAs, clearViewAs, isViewingOther, getViewingProfile, canManageTeam } = useUserStore();
   const keepMockData = useSettingsStore((s) => s.keepMockData);
+  const showTips = useSettingsStore((s) => s.showTips);
   const dockChat = useChatStore((s) => s.dockChat);
   const tasks = useTaskStore((s) => s.tasks);
   const projects = useProjectStore((s) => s.projects);
@@ -282,17 +284,19 @@ export const TopBar: React.FC = () => {
           <div ref={notifRef} className="relative">
             <Tip content="View notifications — assignments, mentions, and updates" position="bottom" beacon>
               <button
-                onClick={() => setShowNotifications(!showNotifications)}
+                onClick={() => notifPrefs.inApp && setShowNotifications(!showNotifications)}
                 className={clsx(
                   'relative p-2.5 rounded-lg transition-colors',
-                  showNotifications
-                    ? 'bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400'
-                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
+                  !notifPrefs.inApp
+                    ? 'text-gray-400 dark:text-slate-500 cursor-default'
+                    : showNotifications
+                      ? 'bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400'
+                      : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
                 )}
                 aria-label="Notifications"
               >
-                <Bell size={20} />
-                {unreadCount > 0 && (
+                {notifPrefs.inApp ? <Bell size={20} /> : <BellOff size={20} />}
+                {notifPrefs.inApp && unreadCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
@@ -301,7 +305,7 @@ export const TopBar: React.FC = () => {
             </Tip>
 
             {/* ── Notification Dropdown ── */}
-            {showNotifications && (
+            {showNotifications && notifPrefs.inApp && (
               <div className={clsx(
                 'fixed sm:absolute top-[4.5rem] sm:top-full right-2 sm:right-0 sm:mt-2 w-[calc(100vw-1rem)] sm:w-[420px] rounded-2xl shadow-2xl overflow-hidden z-50',
                 'bg-white border border-gray-200',

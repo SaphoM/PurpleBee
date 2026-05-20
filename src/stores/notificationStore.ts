@@ -276,10 +276,19 @@ function generateNotificationsForUser(userId: string, userName: string): Notific
   return notifications;
 }
 
+// Load persisted notification preferences
+function loadNotifPrefs(): NotificationPreferences {
+  try {
+    const raw = localStorage.getItem('purplebee-notif-prefs');
+    if (raw) return { ...defaultPreferences, ...JSON.parse(raw) };
+  } catch {}
+  return { ...defaultPreferences };
+}
+
 export const useNotificationStore = create<NotificationStore>((set, get) => ({
   notifications: [],
   unreadCount: 0,
-  preferences: { ...defaultPreferences },
+  preferences: loadNotifPrefs(),
 
   addNotification: (notification) => {
     const prefs = get().preferences;
@@ -368,13 +377,14 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   updatePreferences: (prefs) => {
-    set((state) => ({
-      preferences: { ...state.preferences, ...prefs },
-    }));
+    const updated = { ...get().preferences, ...prefs };
+    set({ preferences: updated });
+    try { localStorage.setItem('purplebee-notif-prefs', JSON.stringify(updated)); } catch {}
   },
 
   resetPreferences: () => {
     set({ preferences: { ...defaultPreferences } });
+    try { localStorage.removeItem('purplebee-notif-prefs'); } catch {}
   },
 
   clearMockData: () => {
