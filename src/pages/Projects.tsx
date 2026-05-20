@@ -813,19 +813,17 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">Project Tasks</h2>
-          {canManage && (
-            <button
-              onClick={() => setShowAddTask(true)}
-              className={clsx(
-                'px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5',
-                'bg-purple-100 text-purple-700 hover:bg-purple-200',
-                'dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50',
-                'transition-colors'
-              )}
-            >
-              <Plus size={14} /> Add Task
-            </button>
-          )}
+          <button
+            onClick={() => setShowAddTask(true)}
+            className={clsx(
+              'px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5',
+              'bg-purple-100 text-purple-700 hover:bg-purple-200',
+              'dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50',
+              'transition-colors'
+            )}
+          >
+            <Plus size={14} /> Add Task
+          </button>
         </div>
 
         {showAddTask && (
@@ -1046,7 +1044,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                       <span className="text-xs text-gray-400 dark:text-slate-500 italic">Unassigned</span>
                     )}
 
-                    {(canManage || task.assignedTo === currentUserId) && !task.linkedTaskId && (
+                    {!task.linkedTaskId && (
                       <button
                         onClick={() => handleCreateActualTask(task)}
                         title="Add to my Tasks board"
