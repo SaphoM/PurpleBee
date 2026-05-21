@@ -367,7 +367,7 @@ const MemberDetailModal: React.FC<{
 };
 
 export const Team: React.FC = () => {
-  const { teamMembers, createDM } = useChatStore();
+  const { teamMembers, createDM, conversations, currentUserId } = useChatStore();
   const { tasks } = useTaskStore();
   const { canInviteMembers, canManageTeam } = useUserStore();
 
@@ -443,6 +443,18 @@ export const Team: React.FC = () => {
     const set = new Set(membersData.map((m) => m.department));
     return Array.from(set).sort();
   }, [membersData]);
+
+  // Build a map of userId → unread DM count for badge display
+  const unreadByUser = useMemo(() => {
+    const map: Record<string, number> = {};
+    conversations.forEach((c) => {
+      if (c.type === 'dm' && c.unreadCount > 0) {
+        const other = c.participants.find((p) => p.userId !== currentUserId);
+        if (other) map[other.userId] = c.unreadCount;
+      }
+    });
+    return map;
+  }, [conversations, currentUserId]);
 
   const handleMessage = (userId: string) => {
     const member = teamMembers.find((m) => m.userId === userId);
@@ -632,10 +644,15 @@ export const Team: React.FC = () => {
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleMessage(m.member.userId); }}
-                    className="p-2 rounded-lg text-gray-400 hover:bg-purple-50 hover:text-purple-600 dark:text-slate-500 dark:hover:bg-purple-900/20 dark:hover:text-purple-400 transition-colors lg:opacity-0 lg:group-hover:opacity-100"
+                    className="relative p-2 rounded-lg text-gray-400 hover:bg-purple-50 hover:text-purple-600 dark:text-slate-500 dark:hover:bg-purple-900/20 dark:hover:text-purple-400 transition-colors lg:opacity-0 lg:group-hover:opacity-100"
                     title="Message"
                   >
                     <MessageSquare size={16} />
+                    {(unreadByUser[m.member.userId] ?? 0) > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-800">
+                        {unreadByUser[m.member.userId]}
+                      </span>
+                    )}
                   </button>
                 </div>
 
