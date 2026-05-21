@@ -447,8 +447,14 @@ export const Team: React.FC = () => {
   const handleMessage = (userId: string) => {
     const member = teamMembers.find((m) => m.userId === userId);
     if (member) {
-      createDM(member);
-      window.location.hash = 'chat';
+      const convId = createDM(member);
+      const isMobile = window.innerWidth < 1024;
+      if (isMobile) {
+        // On mobile, open the chat as a docked bubble instead of navigating away
+        useChatStore.getState().dockChat(convId);
+      } else {
+        window.location.hash = 'chat';
+      }
     }
   };
 
@@ -626,7 +632,7 @@ export const Team: React.FC = () => {
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleMessage(m.member.userId); }}
-                    className="p-2 rounded-lg text-gray-400 hover:bg-purple-50 hover:text-purple-600 dark:text-slate-500 dark:hover:bg-purple-900/20 dark:hover:text-purple-400 transition-colors opacity-0 group-hover:opacity-100"
+                    className="p-2 rounded-lg text-gray-400 hover:bg-purple-50 hover:text-purple-600 dark:text-slate-500 dark:hover:bg-purple-900/20 dark:hover:text-purple-400 transition-colors lg:opacity-0 lg:group-hover:opacity-100"
                     title="Message"
                   >
                     <MessageSquare size={16} />

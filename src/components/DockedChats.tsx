@@ -138,11 +138,13 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
       {/* Expanded chat window */}
       {isExpanded && (
         <div className={clsx(
-          'mb-2 w-80 h-96 flex flex-col',
+          'flex flex-col',
           'bg-white dark:bg-slate-900',
           'border border-gray-200 dark:border-slate-700',
-          'rounded-2xl shadow-2xl',
+          'shadow-2xl',
           'animate-in slide-in-from-bottom-2',
+          // Mobile: full screen; Desktop: small docked window
+          'w-full h-full rounded-none md:mb-2 md:w-80 md:h-96 md:rounded-2xl',
         )} style={{ overflow: 'hidden', isolation: 'isolate', transform: 'translateZ(0)', zIndex: 60 }}>
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white">
@@ -162,19 +164,21 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
               </div>
             </div>
             <div className="flex items-center gap-0.5 flex-shrink-0">
+              {/* Minimize — desktop only (mobile has no bubble to re-expand) */}
               <button
                 onClick={() => setIsExpanded(false)}
-                className="p-1 rounded hover:bg-white/20 transition-colors"
+                className="hidden md:block p-1 rounded hover:bg-white/20 transition-colors"
                 title="Minimize"
               >
                 <Minimize2 size={14} />
               </button>
               <button
                 onClick={() => undockChat(conversationId)}
-                className="p-1 rounded hover:bg-white/20 transition-colors"
+                className="p-1.5 md:p-1 rounded hover:bg-white/20 transition-colors"
                 title="Close"
               >
-                <X size={14} />
+                <X size={18} className="md:hidden" />
+                <X size={14} className="hidden md:block" />
               </button>
             </div>
           </div>
@@ -335,7 +339,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
         </div>
       )}
 
-      {/* Bubble */}
+      {/* Bubble — hidden on mobile (full-screen overlay used instead) */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className={clsx(
@@ -343,7 +347,8 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
           'shadow-lg hover:shadow-xl hover:scale-110',
           'transition-all duration-200',
           'ring-2 ring-white dark:ring-slate-900',
-          'group'
+          'group',
+          'hidden md:block'
         )}
         title={displayName}
       >
@@ -456,6 +461,14 @@ export const DockedChats: React.FC = () => {
   return (
     <>
       <DropZone isDragOver={isDragOver} />
+
+      {/* Mobile: full-screen chat overlay (only show the last docked chat) */}
+      {dockedChatIds.length > 0 && (
+        <div className="md:hidden fixed inset-0 z-[60] flex flex-col bg-white dark:bg-slate-900">
+          <DockedChatWindow conversationId={dockedChatIds[dockedChatIds.length - 1]} />
+        </div>
+      )}
+
       {/* Docked bubbles — desktop only, always below the ChatBot (z-50) */}
       <div
         className="hidden md:block fixed bottom-6 z-[45] transition-all duration-300"
