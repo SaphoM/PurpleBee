@@ -414,12 +414,76 @@ const DropZone: React.FC<{ isDragOver: boolean }> = ({ isDragOver }) => (
   </div>
 );
 
+// Mobile bottom-sheet with swipe-to-dismiss
+const MobileBottomSheet: React.FC<{ conversationId: string; onDismiss: () => void }> = ({ conversationId, onDismiss }) => {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef<{ startY: number; currentY: number; dragging: boolean }>({ startY: 0, currentY: 0, dragging: false });
+  const DISMISS_THRESHOLD = 120; // px to drag before auto-dismiss
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    dragState.current = { startY: e.touches[0].clientY, currentY: e.touches[0].clientY, dragging: true };
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!dragState.current.dragging) return;
+    const currentY = e.touches[0].clientY;
+    const deltaY = Math.max(0, currentY - dragState.current.startY); // only allow downward drag
+    dragState.current.currentY = currentY;
+    if (sheetRef.current) {
+      sheetRef.current.style.transform = `translateY(${deltaY}px)`;
+      sheetRef.current.style.transition = 'none';
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (!dragState.current.dragging) return;
+    const deltaY = dragState.current.currentY - dragState.current.startY;
+    dragState.current.dragging = false;
+
+    if (deltaY > DISMISS_THRESHOLD) {
+      // Animate off-screen then dismiss
+      if (sheetRef.current) {
+        sheetRef.current.style.transition = 'transform 0.25s ease-out';
+        sheetRef.current.style.transform = 'translateY(100%)';
+      }
+      setTimeout(onDismiss, 250);
+    } else {
+      // Snap back
+      if (sheetRef.current) {
+        sheetRef.current.style.transition = 'transform 0.2s ease-out';
+        sheetRef.current.style.transform = 'translateY(0)';
+      }
+    }
+  }, [onDismiss]);
+
+  return (
+    <div
+      ref={sheetRef}
+      className="md:hidden fixed bottom-0 left-0 right-0 z-[60] flex flex-col bg-white dark:bg-slate-900 rounded-t-2xl shadow-[0_-4px_30px_rgba(0,0,0,0.15)] border-t border-gray-200 dark:border-slate-700"
+      style={{ height: '70dvh', transform: 'translateY(0)', willChange: 'transform' }}
+    >
+      {/* Drag handle — touch target */}
+      <div
+        className="flex justify-center py-3 flex-shrink-0 cursor-grab active:cursor-grabbing"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        <div className="w-10 h-1.5 rounded-full bg-gray-300 dark:bg-slate-600" />
+      </div>
+      <div className="flex-1 min-h-0 flex flex-col">
+        <DockedChatWindow conversationId={conversationId} />
+      </div>
+    </div>
+  );
+};
+
 // Main DockedChats container — renders all docked bubbles
 export const DockedChats: React.FC = () => {
   const dockedChatIds = useChatStore((s) => s.dockedChatIds);
   const chatBotOpen = useChatStore((s) => s.chatBotOpen);
   const [isDragOver, setIsDragOver] = useState(false);
-  const { dockChat } = useChatStore();
+  const { dockChat, undockChat } = useChatStore();
 
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
@@ -462,17 +526,12 @@ export const DockedChats: React.FC = () => {
     <>
       <DropZone isDragOver={isDragOver} />
 
-      {/* Mobile: bottom-docked chat panel overlaying the page */}
+      {/* Mobile: bottom-sheet chat panel with swipe-to-dismiss */}
       {dockedChatIds.length > 0 && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-[60] flex flex-col bg-white dark:bg-slate-900 rounded-t-2xl shadow-[0_-4px_30px_rgba(0,0,0,0.15)] border-t border-gray-200 dark:border-slate-700" style={{ height: '70dvh' }}>
-          {/* Drag handle */}
-          <div className="flex justify-center py-2 flex-shrink-0">
-            <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-slate-600" />
-          </div>
-          <div className="flex-1 min-h-0 flex flex-col">
-            <DockedChatWindow conversationId={dockedChatIds[dockedChatIds.length - 1]} />
-          </div>
-        </div>
+        <MobileBottomSheet
+          conversationId={dockedChatIds[dockedChatIds.length - 1]}
+          onDismiss={() => undockChat(dockedChatIds[dockedChatIds.length - 1])}
+        />
       )}
 
       {/* Docked bubbles — desktop only, always below the ChatBot (z-50) */}
