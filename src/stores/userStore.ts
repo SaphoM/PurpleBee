@@ -157,6 +157,11 @@ export const useUserStore = create<UserStore>((set, get) => ({
     if (useChatStore.getState().teamMembers.length === 0) {
       useChatStore.getState().loadForUser(profile.id);
     }
+
+    // Always ensure notifications are loaded (essential UX, not just mock)
+    if (useNotificationStore.getState().notifications.length === 0) {
+      useNotificationStore.getState().loadForUser(profile.id, profile.name);
+    }
     return true;
   },
 
