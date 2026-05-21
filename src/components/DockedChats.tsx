@@ -134,20 +134,20 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
   };
 
   return (
-    <div className="flex flex-col items-center flex-shrink-0">
+    <div className="flex flex-col items-center flex-1 min-h-0 md:flex-initial md:flex-shrink-0">
       {/* Expanded chat window */}
       {isExpanded && (
         <div className={clsx(
-          'flex flex-col',
+          'flex flex-col flex-1 min-h-0',
           'bg-white dark:bg-slate-900',
-          'border border-gray-200 dark:border-slate-700',
-          'shadow-2xl',
+          'md:border md:border-gray-200 md:dark:border-slate-700',
+          'md:shadow-2xl md:overflow-hidden',
           'animate-in slide-in-from-bottom-2',
-          // Mobile: full screen; Desktop: small docked window
-          'w-full h-full rounded-none md:mb-2 md:w-80 md:h-96 md:rounded-2xl',
-        )} style={{ overflow: 'hidden', isolation: 'isolate', transform: 'translateZ(0)', zIndex: 60 }}>
+          // Mobile: fill parent bottom sheet; Desktop: small docked window
+          'w-full rounded-none md:mb-2 md:w-80 md:h-96 md:flex-initial md:rounded-2xl',
+        )} style={{ isolation: 'isolate', transform: 'translateZ(0)', zIndex: 60 }}>
           {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white">
+          <div className="flex items-center justify-between px-3 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white flex-shrink-0">
             <div className="flex items-center gap-2 min-w-0">
               <img src={avatar} alt={displayName} className="w-7 h-7 rounded-full flex-shrink-0" />
               <div className="min-w-0">
@@ -184,7 +184,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2.5 bg-white dark:bg-slate-900">
+          <div className="flex-1 min-h-0 overflow-y-auto px-3 pt-2 pb-2.5 space-y-2.5 bg-white dark:bg-slate-900">
             {messages.length === 0 ? (
               <div className="h-full flex items-center justify-center">
                 <p className="text-xs text-gray-400 dark:text-slate-500">No messages yet. Say hi!</p>
@@ -271,7 +271,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
           </div>
 
           {/* Input */}
-          <div className="px-2.5 py-2 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+          <div className="px-2.5 py-2 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex-shrink-0">
             {/* Pending attachments */}
             {pendingAttachments.length > 0 && (
               <div className="flex flex-wrap gap-1 mb-1.5">
@@ -462,10 +462,16 @@ export const DockedChats: React.FC = () => {
     <>
       <DropZone isDragOver={isDragOver} />
 
-      {/* Mobile: full-screen chat overlay (only show the last docked chat) */}
+      {/* Mobile: bottom-docked chat panel overlaying the page */}
       {dockedChatIds.length > 0 && (
-        <div className="md:hidden fixed inset-0 z-[60] flex flex-col bg-white dark:bg-slate-900">
-          <DockedChatWindow conversationId={dockedChatIds[dockedChatIds.length - 1]} />
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-[60] flex flex-col bg-white dark:bg-slate-900 rounded-t-2xl shadow-[0_-4px_30px_rgba(0,0,0,0.15)] border-t border-gray-200 dark:border-slate-700" style={{ height: '70dvh' }}>
+          {/* Drag handle */}
+          <div className="flex justify-center py-2 flex-shrink-0">
+            <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-slate-600" />
+          </div>
+          <div className="flex-1 min-h-0 flex flex-col">
+            <DockedChatWindow conversationId={dockedChatIds[dockedChatIds.length - 1]} />
+          </div>
         </div>
       )}
 
