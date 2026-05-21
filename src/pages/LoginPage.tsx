@@ -103,15 +103,16 @@ const OnboardToggle: React.FC<{
 type PageMode = 'login' | 'create';
 
 export const LoginPage: React.FC = () => {
-  const { login, error, setError } = useUserStore();
-  const { setKeepMockData, setShowTips } = useSettingsStore();
+  const { login, loginWithEmail, signUpWithEmail, error, setError, isLoading: storeLoading } = useUserStore();
+  const { setKeepMockData, setShowTips, hideQuickLogin, setHideQuickLogin } = useSettingsStore();
 
   const [pageMode, setPageMode] = useState<PageMode>('login');
-  const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
   const [password, setPassword] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [loginMode, setLoginMode] = useState<'select' | 'credentials'>('select');
+  const [loginMode, setLoginMode] = useState<'select' | 'credentials'>(hideQuickLogin ? 'credentials' : 'select');
+  const [signUpDone, setSignUpDone] = useState(false); // "Check your email" screen
 
   // ── Create Account state ──
   const [createStep, setCreateStep] = useState(0); // 0 = details, 1 = workspace, 2 = preferences
@@ -125,7 +126,7 @@ export const LoginPage: React.FC = () => {
   const [mockDataEnabled, setMockDataEnabled] = useState(true);
   const [tipsEnabled, setTipsEnabled] = useState(true);
 
-  // ── Login handlers ──
+  // ── Demo Quick Login ──
   const handleSelectLogin = (profileId: string) => {
     setIsLoading(true);
     setError(null);
@@ -135,29 +136,35 @@ export const LoginPage: React.FC = () => {
     }, 600);
   };
 
-  const handleCredentialLogin = (e: React.FormEvent) => {
+  // ── Real Supabase Auth login ──
+  const handleCredentialLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProfile) { setError('Please select a user'); return; }
+    if (!loginEmail.trim()) { setError('Please enter your email'); return; }
+    if (!password.trim()) { setError('Please enter your password'); return; }
     setIsLoading(true);
     setError(null);
-    setTimeout(() => {
-      login(selectedProfile, password);
-      setIsLoading(false);
-    }, 600);
+    const success = await loginWithEmail(loginEmail, password);
+    setIsLoading(false);
+    if (!success && !error) {
+      setError('Invalid email or password');
+    }
   };
 
-  // ── Create Account handler ──
-  const handleCreateAccount = () => {
+  // ── Real Supabase Auth sign-up ──
+  const handleCreateAccount = async () => {
     setIsLoading(true);
-    // Apply preferences before login
     setKeepMockData(mockDataEnabled);
     setShowTips(tipsEnabled);
 
-    setTimeout(() => {
-      // In demo mode, create as admin (user-1) with the entered details
-      login('user-1', 'demo');
-      setIsLoading(false);
-    }, 800);
+    const result = await signUpWithEmail(email, createPassword, fullName);
+    setIsLoading(false);
+
+    if (result.success && result.needsConfirmation) {
+      setSignUpDone(true);
+    } else if (result.success) {
+      // No confirmation needed — auto-login (rare if email confirm is on)
+      await loginWithEmail(email, createPassword);
+    }
   };
 
   const canProceedStep0 = fullName.trim() && email.trim() && createPassword.trim();
@@ -209,20 +216,22 @@ export const LoginPage: React.FC = () => {
             )}>
               {/* Tab Toggle */}
               <div className="flex border-b border-gray-200 dark:border-slate-700/50">
-                <button
-                  onClick={() => { setLoginMode('select'); setError(null); }}
-                  className={clsx(
-                    'flex-1 py-3.5 text-sm font-semibold transition-colors relative',
-                    loginMode === 'select'
-                      ? 'text-purple-600 dark:text-purple-400'
-                      : 'text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300'
-                  )}
-                >
-                  Quick Login
-                  {loginMode === 'select' && (
-                    <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-600 dark:bg-purple-400" />
-                  )}
-                </button>
+                {!hideQuickLogin && (
+                  <button
+                    onClick={() => { setLoginMode('select'); setError(null); }}
+                    className={clsx(
+                      'flex-1 py-3.5 text-sm font-semibold transition-colors relative',
+                      loginMode === 'select'
+                        ? 'text-purple-600 dark:text-purple-400'
+                        : 'text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300'
+                    )}
+                  >
+                    Quick Login
+                    {loginMode === 'select' && (
+                      <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-600 dark:bg-purple-400" />
+                    )}
+                  </button>
+                )}
                 <button
                   onClick={() => { setLoginMode('credentials'); setError(null); }}
                   className={clsx(
@@ -288,24 +297,22 @@ export const LoginPage: React.FC = () => {
                 ) : (
                   <form onSubmit={handleCredentialLogin} className="space-y-4">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1.5">Select User</label>
+                      <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1.5">Email Address</label>
                       <div className="relative">
                         <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
-                        <select
-                          value={selectedProfile || ''}
-                          onChange={(e) => setSelectedProfile(e.target.value)}
+                        <input
+                          type="email"
+                          value={loginEmail}
+                          onChange={(e) => setLoginEmail(e.target.value)}
+                          placeholder="you@company.com"
+                          autoComplete="email"
                           className={clsx(
-                            'w-full rounded-xl pl-10 pr-4 py-3 text-sm appearance-none',
-                            'bg-gray-50 border border-gray-200 text-gray-800',
-                            'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                            'w-full rounded-xl pl-10 pr-4 py-3 text-sm',
+                            'bg-gray-50 border border-gray-200 text-gray-800 placeholder-gray-400',
+                            'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
                             'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all'
                           )}
-                        >
-                          <option value="">Choose a user...</option>
-                          {teamProfiles.map((p) => (
-                            <option key={p.id} value={p.id}>{p.name} ({roleConfig[p.role].label})</option>
-                          ))}
-                        </select>
+                        />
                       </div>
                     </div>
                     <div>
@@ -316,7 +323,8 @@ export const LoginPage: React.FC = () => {
                           type={showPassword ? 'text' : 'password'}
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          placeholder="Enter any password (demo)"
+                          placeholder="Enter your password"
+                          autoComplete="current-password"
                           className={clsx(
                             'w-full rounded-xl pl-10 pr-12 py-3 text-sm',
                             'bg-gray-50 border border-gray-200 text-gray-800 placeholder-gray-400',
@@ -340,7 +348,7 @@ export const LoginPage: React.FC = () => {
                     </div>
                     <button
                       type="submit"
-                      disabled={isLoading || !selectedProfile}
+                      disabled={isLoading || storeLoading || !loginEmail.trim() || !password.trim()}
                       className={clsx(
                         'w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold',
                         'bg-gradient-to-r from-purple-600 to-blue-600 text-white',
@@ -349,14 +357,14 @@ export const LoginPage: React.FC = () => {
                         'disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200'
                       )}
                     >
-                      {isLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><LogIn size={16} />Sign In</>}
+                      {(isLoading || storeLoading) ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><LogIn size={16} />Sign In</>}
                     </button>
                   </form>
                 )}
               </div>
             </div>
 
-            {/* Footer: Create Account CTA + Demo hint */}
+            {/* Footer: Create Account CTA + Quick Login toggle */}
             <div className="mt-6 space-y-3">
               <div className="text-center">
                 <p className="text-sm text-gray-500 dark:text-slate-400">
@@ -369,14 +377,84 @@ export const LoginPage: React.FC = () => {
                   </button>
                 </p>
               </div>
-              <div className="text-center">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700/40">
-                  <Sparkles size={12} className="text-purple-500" />
-                  <span className="text-[11px] text-purple-600 dark:text-purple-400 font-medium">
-                    Demo mode — any password works. Choose a role to explore.
-                  </span>
+              {loginMode === 'select' && !hideQuickLogin && (
+                <div className="text-center">
+                  <button
+                    onClick={() => {
+                      setHideQuickLogin(true);
+                      setLoginMode('credentials');
+                    }}
+                    className="text-[11px] text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors underline underline-offset-2"
+                  >
+                    Don't show Quick Login again
+                  </button>
                 </div>
+              )}
+              {loginMode === 'select' && (
+                <div className="text-center">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700/40">
+                    <Sparkles size={12} className="text-purple-500" />
+                    <span className="text-[11px] text-purple-600 dark:text-purple-400 font-medium">
+                      Demo mode — any password works. Choose a role to explore.
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        {/* EMAIL CONFIRMATION SCREEN                                      */}
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        {signUpDone && (
+          <>
+            <div className={clsx(
+              'bg-white dark:bg-slate-800/60 dark:backdrop-blur-xl',
+              'rounded-2xl shadow-xl shadow-gray-200/50 dark:shadow-slate-900/50',
+              'border border-gray-200 dark:border-slate-700/50',
+              'p-8 text-center'
+            )}>
+              <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mx-auto mb-5">
+                <Mail size={28} className="text-emerald-600 dark:text-emerald-400" />
               </div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-2">Check your email</h2>
+              <p className="text-sm text-gray-500 dark:text-slate-400 mb-1">
+                We've sent a confirmation link to
+              </p>
+              <p className="text-sm font-semibold text-purple-600 dark:text-purple-400 mb-6">{email}</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 leading-relaxed mb-6">
+                Click the link in the email to activate your account, then come back here to sign in.
+              </p>
+              <button
+                onClick={() => {
+                  setSignUpDone(false);
+                  setPageMode('login');
+                  setLoginMode('credentials');
+                  setLoginEmail(email); // Pre-fill email for convenience
+                  setError(null);
+                }}
+                className={clsx(
+                  'w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold',
+                  'bg-gradient-to-r from-purple-600 to-blue-600 text-white',
+                  'hover:from-purple-700 hover:to-blue-700',
+                  'shadow-md shadow-purple-500/20 transition-all'
+                )}
+              >
+                <LogIn size={16} />
+                Back to Sign In
+              </button>
+            </div>
+            <div className="text-center mt-4">
+              <p className="text-xs text-gray-400 dark:text-slate-500">
+                Didn't receive the email? Check your spam folder or{' '}
+                <button
+                  onClick={() => { setSignUpDone(false); setPageMode('create'); setCreateStep(0); }}
+                  className="text-purple-600 dark:text-purple-400 font-medium hover:text-purple-700"
+                >
+                  try again
+                </button>
+              </p>
             </div>
           </>
         )}
@@ -384,7 +462,7 @@ export const LoginPage: React.FC = () => {
         {/* ═══════════════════════════════════════════════════════════════ */}
         {/* CREATE ACCOUNT MODE                                            */}
         {/* ═══════════════════════════════════════════════════════════════ */}
-        {pageMode === 'create' && (
+        {pageMode === 'create' && !signUpDone && (
           <>
             <div className={clsx(
               'bg-white dark:bg-slate-800/60 dark:backdrop-blur-xl',

@@ -5,11 +5,13 @@ export interface AppSettings {
   showTips: boolean;
   hasSeenWelcomeTips: boolean;
   showWelcomeModal: boolean;
+  hideQuickLogin: boolean;
 }
 
 interface SettingsStore extends AppSettings {
   setKeepMockData: (v: boolean) => void;
   setShowTips: (v: boolean) => void;
+  setHideQuickLogin: (v: boolean) => void;
   markWelcomeTipsSeen: () => void;
   openWelcomeModal: () => void;
   closeWelcomeModal: () => void;
@@ -23,6 +25,7 @@ const defaults: AppSettings = {
   showTips: true,
   hasSeenWelcomeTips: false,
   showWelcomeModal: false,
+  hideQuickLogin: false,
 };
 
 // Load persisted settings from localStorage
@@ -43,6 +46,7 @@ function persistSettings(state: AppSettings) {
       keepMockData: state.keepMockData,
       showTips: state.showTips,
       hasSeenWelcomeTips: state.hasSeenWelcomeTips,
+      hideQuickLogin: state.hideQuickLogin,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
   } catch {
@@ -62,6 +66,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setShowTips: (v) => {
     set({ showTips: v });
     persistSettings({ ...get(), showTips: v });
+  },
+
+  setHideQuickLogin: (v) => {
+    set({ hideQuickLogin: v });
+    persistSettings({ ...get(), hideQuickLogin: v });
   },
 
   markWelcomeTipsSeen: () => {

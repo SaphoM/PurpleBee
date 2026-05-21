@@ -27,6 +27,8 @@ const App: React.FC = () => {
   const { darkMode } = useUIStore();
   const hasDockedChats = useChatStore((s) => s.dockedChatIds.length > 0);
   const isAuthenticated = useUserStore((s) => s.isAuthenticated);
+  const authChecked = useUserStore((s) => s.authChecked);
+  const initSession = useUserStore((s) => s.initSession);
   const viewingAsId = useUserStore((s) => s.viewingAsId);
   const getViewingProfile = useUserStore((s) => s.getViewingProfile);
   const clearViewAs = useUserStore((s) => s.clearViewAs);
@@ -35,6 +37,11 @@ const App: React.FC = () => {
     const hash = window.location.hash.slice(1).split('?')[0];
     return (hash || 'dashboard') as PageType;
   });
+
+  // Restore Supabase session on app load
+  useEffect(() => {
+    initSession();
+  }, [initSession]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -88,6 +95,18 @@ const App: React.FC = () => {
         return <Dashboard />;
     }
   };
+
+  // Show loading spinner while checking session
+  if (!authChecked) {
+    return (
+      <div className={clsx(
+        'min-h-screen flex items-center justify-center',
+        'bg-gray-50 dark:bg-slate-950'
+      )}>
+        <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   // Show login page if not authenticated
   if (!isAuthenticated) {

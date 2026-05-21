@@ -5,7 +5,8 @@ import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
-import { isDbConnected } from '@/lib/supabase';
+import { supabase, isDbConnected } from '@/lib/supabase';
+import { authDb } from '@/lib/dataService';
 
 export type AppRole = 'admin' | 'manager' | 'user';
 
@@ -72,13 +73,20 @@ interface UserStore {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  authChecked: boolean; // true once initSession has run
   error: string | null;
 
   // "View As" — admin/manager peek at a member's dashboard
   viewingAsId: string | null; // null = viewing own data
 
-  // Actions
+  // Actions — demo login (Quick Login)
   login: (profileId: string, password: string) => boolean;
+
+  // Actions — Supabase Auth (real email/password)
+  loginWithEmail: (email: string, password: string) => Promise<boolean>;
+  signUpWithEmail: (email: string, password: string, name: string) => Promise<{ success: boolean; needsConfirmation: boolean }>;
+  initSession: () => Promise<void>; // Restore session on app load
+
   setUser: (user: User) => void;
   logout: () => void;
   setLoading: (loading: boolean) => void;
@@ -104,13 +112,49 @@ interface UserStore {
   canAssignTasks: () => boolean;
 }
 
+// ── Shared helper: populate stores after any login ────────────────────
+function hydrateStores(userId: string, userName: string) {
+  const { keepMockData } = useSettingsStore.getState();
+
+  if (keepMockData) {
+    // ── Mock data ON: populate in-memory stores only, never touch DB ──
+    useNotificationStore.getState().restoreMockData(userId, userName);
+    useChatStore.getState().restoreMockData(userId);
+    useTaskStore.getState().restoreMockData();
+    useProjectStore.getState().restoreMockData();
+  } else if (isDbConnected()) {
+    // ── Mock data OFF + DB connected: hydrate from Supabase ──
+    useTaskStore.getState().hydrateFromDb(userId);
+    useChatStore.getState().hydrateFromDb(userId);
+    // Future: projectStore.hydrateFromDb, notificationStore.hydrateFromDb, etc.
+  } else {
+    // ── Mock data OFF + no DB: start with clean empty state ──
+    useTaskStore.getState().clearMockData();
+    useProjectStore.getState().clearMockData();
+    useChatStore.getState().clearMockData();
+    useNotificationStore.getState().clearMockData();
+  }
+
+  // Always ensure team members are loaded (they're core data, not mock)
+  if (useChatStore.getState().teamMembers.length === 0) {
+    useChatStore.getState().loadForUser(userId);
+  }
+
+  // Always ensure notifications are loaded (essential UX, not just mock)
+  if (useNotificationStore.getState().notifications.length === 0) {
+    useNotificationStore.getState().loadForUser(userId, userName);
+  }
+}
+
 export const useUserStore = create<UserStore>((set, get) => ({
   user: null,
   isAuthenticated: false,
   isLoading: false,
+  authChecked: false,
   error: null,
   viewingAsId: null,
 
+  // ── Demo / Quick Login (existing) ──────────────────────────────────
   login: (profileId, _password) => {
     const profile = teamProfiles.find((p) => p.id === profileId);
     if (!profile) {
@@ -131,45 +175,123 @@ export const useUserStore = create<UserStore>((set, get) => ({
       viewingAsId: null,
       error: null,
     });
-    const { keepMockData } = useSettingsStore.getState();
-
-    if (keepMockData) {
-      // ── Mock data ON: populate in-memory stores only, never touch DB ──
-      useNotificationStore.getState().restoreMockData(profile.id, profile.name);
-      useChatStore.getState().restoreMockData(profile.id);
-      useTaskStore.getState().restoreMockData();
-      useProjectStore.getState().restoreMockData();
-    } else if (isDbConnected()) {
-      // ── Mock data OFF + DB connected: hydrate from Supabase ──
-      useTaskStore.getState().hydrateFromDb(profile.id);
-      useChatStore.getState().hydrateFromDb(profile.id);
-      // Future: projectStore.hydrateFromDb, notificationStore.hydrateFromDb, etc.
-    } else {
-      // ── Mock data OFF + no DB: start with clean empty state ──
-      useTaskStore.getState().clearMockData();
-      useProjectStore.getState().clearMockData();
-      useChatStore.getState().clearMockData();
-      useNotificationStore.getState().clearMockData();
-      get().clearViewAs();
-    }
-
-    // Always ensure team members are loaded (they're core data, not mock)
-    if (useChatStore.getState().teamMembers.length === 0) {
-      useChatStore.getState().loadForUser(profile.id);
-    }
-
-    // Always ensure notifications are loaded (essential UX, not just mock)
-    if (useNotificationStore.getState().notifications.length === 0) {
-      useNotificationStore.getState().loadForUser(profile.id, profile.name);
-    }
+    hydrateStores(profile.id, profile.name);
     return true;
+  },
+
+  // ── Supabase Auth: email + password sign-in ────────────────────────
+  loginWithEmail: async (email, password) => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await authDb.signIn(email, password);
+      if (!result || !result.user) {
+        set({ error: 'Invalid email or password', isLoading: false });
+        return false;
+      }
+
+      const supaUser = result.user;
+      // Fetch profile from profiles table
+      const profile = await authDb.getProfile(supaUser.id);
+      const name = profile?.name || supaUser.user_metadata?.name || email.split('@')[0];
+      const avatar = profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
+      const role: AppRole = profile?.role || 'user';
+
+      set({
+        user: {
+          id: supaUser.id,
+          email: supaUser.email || email,
+          name,
+          role,
+          avatar,
+          createdAt: new Date(supaUser.created_at),
+          updatedAt: new Date(),
+        },
+        isAuthenticated: true,
+        viewingAsId: null,
+        error: null,
+        isLoading: false,
+      });
+
+      hydrateStores(supaUser.id, name);
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Login failed';
+      set({ error: msg, isLoading: false });
+      return false;
+    }
+  },
+
+  // ── Supabase Auth: email + password sign-up ────────────────────────
+  signUpWithEmail: async (email, password, name) => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await authDb.signUp(email, password, name);
+      if (!result || !result.user) {
+        set({ error: 'Sign-up failed. Please try again.', isLoading: false });
+        return { success: false, needsConfirmation: false };
+      }
+
+      // If email confirmation is required, user.identities will be empty
+      // or session will be null
+      const needsConfirmation = !result.session;
+
+      set({ isLoading: false, error: null });
+      return { success: true, needsConfirmation };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Sign-up failed';
+      set({ error: msg, isLoading: false });
+      return { success: false, needsConfirmation: false };
+    }
+  },
+
+  // ── Restore session on app load ────────────────────────────────────
+  initSession: async () => {
+    if (!isDbConnected()) {
+      set({ authChecked: true });
+      return;
+    }
+    set({ isLoading: true });
+    try {
+      const session = await authDb.getSession();
+      if (session?.user) {
+        const supaUser = session.user;
+        const profile = await authDb.getProfile(supaUser.id);
+        const name = profile?.name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User';
+        const avatar = profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
+        const role: AppRole = profile?.role || 'user';
+
+        set({
+          user: {
+            id: supaUser.id,
+            email: supaUser.email || '',
+            name,
+            role,
+            avatar,
+            createdAt: new Date(supaUser.created_at),
+            updatedAt: new Date(),
+          },
+          isAuthenticated: true,
+          viewingAsId: null,
+          error: null,
+        });
+        hydrateStores(supaUser.id, name);
+      }
+    } catch {
+      // No session — that's fine, show login
+    }
+    set({ isLoading: false, authChecked: true });
   },
 
   setUser: (user) =>
     set({ user, isAuthenticated: true, error: null }),
 
-  logout: () =>
-    set({ user: null, isAuthenticated: false, viewingAsId: null, error: null }),
+  logout: () => {
+    // Sign out of Supabase if connected
+    if (isDbConnected()) {
+      authDb.signOut().catch(() => {});
+    }
+    set({ user: null, isAuthenticated: false, viewingAsId: null, error: null });
+  },
 
   setLoading: (loading) => set({ isLoading: loading }),
   setError: (error) => set({ error }),
