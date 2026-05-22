@@ -208,14 +208,15 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
       <div className="fixed inset-0 bg-black/50" />
       <div
         className={clsx(
-          'relative w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto',
+          'relative w-full max-w-3xl mx-0 sm:mx-4 max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto',
           'bg-white dark:bg-gradient-to-b dark:from-slate-800 dark:to-slate-900',
-          'border border-gray-200 dark:border-slate-700/50 rounded-2xl shadow-2xl'
+          'border-0 sm:border border-gray-200 dark:border-slate-700/50 rounded-none sm:rounded-2xl shadow-2xl',
+          'h-[100dvh] sm:h-auto'
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700/50 bg-white dark:bg-slate-800 rounded-t-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 dark:border-slate-700/50 bg-white dark:bg-slate-800 rounded-none sm:rounded-t-2xl">
           <div className="flex items-center gap-3">
             {step > 1 && (
               <button onClick={() => setStep((s) => (s - 1) as 1 | 2 | 3)} className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
@@ -250,7 +251,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
           </div>
         </div>
 
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {/* Step 1: Template selection + name */}
           {step === 1 && (
             <div className="space-y-6">
@@ -295,7 +296,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                   <Sparkles size={14} className="inline mr-1 text-purple-500" />
                   Choose a template — we'll suggest the most practical tasks
                 </label>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {projectTemplates.map((tmpl) => (
                     <button
                       key={tmpl.id}
@@ -490,7 +491,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                 {template && !isCustom && template.tasks.map((task, i) => {
                   if (!selectedTasks.has(i)) return null;
                   return (
-                    <div key={`t-${i}`} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+                    <div key={`t-${i}`} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-xl bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{task.title}</p>
                         <span className={clsx('text-[10px] font-medium', priorityConfig[task.priority].color)}>
@@ -501,7 +502,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                         value={assignments[i] || ''}
                         onChange={(e) => setAssignments({ ...assignments, [i]: e.target.value })}
                         className={clsx(
-                          'rounded-lg px-3 py-1.5 text-xs w-44',
+                          'rounded-lg px-3 py-2 sm:py-1.5 text-sm sm:text-xs w-full sm:w-44',
                           'bg-white border border-gray-300 text-gray-800',
                           'dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100',
                           'focus:outline-none focus:border-purple-500'
@@ -518,7 +519,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
 
                 {/* Custom tasks */}
                 {customTasks.map((ct, i) => (
-                  <div key={`c-${i}`} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+                  <div key={`c-${i}`} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-xl bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{ct.title}</p>
                       <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">Medium</span>
@@ -527,7 +528,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                       value={assignments[1000 + i] || ''}
                       onChange={(e) => setAssignments({ ...assignments, [1000 + i]: e.target.value })}
                       className={clsx(
-                        'rounded-lg px-3 py-1.5 text-xs w-44',
+                        'rounded-lg px-3 py-2 sm:py-1.5 text-sm sm:text-xs w-full sm:w-44',
                         'bg-white border border-gray-300 text-gray-800',
                         'dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100',
                         'focus:outline-none focus:border-purple-500'
@@ -746,44 +747,52 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   return (
     <div className="space-y-6">
       {/* Back + Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-start gap-4">
-          <button onClick={onBack} className="mt-1 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <button onClick={onBack} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
             <ArrowLeft size={20} className="text-gray-500 dark:text-slate-400" />
           </button>
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30">
-                {getTemplateIcon(project.templateId, 28)}
-              </span>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{project.name}</h1>
+          <span className="text-sm text-gray-400 dark:text-slate-500">Back to Projects</span>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 flex-shrink-0">
+              {getTemplateIcon(project.templateId, 28)}
+            </span>
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-slate-100">{project.name}</h1>
+              {project.description && (
                 <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{project.description}</p>
+              )}
+              <div className="flex items-center gap-2 mt-2 text-[11px] text-gray-400 dark:text-slate-500">
+                <span>Created {new Date(project.createdAt).toLocaleDateString()}</span>
+                <span>&middot;</span>
+                <span className="capitalize">{project.templateId.replace('-', ' ')} template</span>
               </div>
             </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={clsx('px-3 py-1 rounded-full text-xs font-semibold', sc.bg, sc.color)}>
-            {sc.label}
-          </span>
-          {canManage && (
-            <select
-              value={project.status}
-              onChange={(e) => updateProject(project.id, { status: e.target.value as any })}
-              className={clsx(
-                'rounded-lg px-3 py-1.5 text-xs',
-                'bg-white border border-gray-300 text-gray-800',
-                'dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100',
-                'focus:outline-none focus:border-purple-500'
-              )}
-            >
-              <option value="planning">Planning</option>
-              <option value="active">Active</option>
-              <option value="on-hold">On Hold</option>
-              <option value="completed">Completed</option>
-            </select>
-          )}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={clsx('px-3 py-1 rounded-full text-xs font-semibold', sc.bg, sc.color)}>
+              {sc.label}
+            </span>
+            {canManage && (
+              <select
+                value={project.status}
+                onChange={(e) => updateProject(project.id, { status: e.target.value as any })}
+                className={clsx(
+                  'rounded-lg px-3 py-2 sm:py-1.5 text-sm sm:text-xs flex-1 sm:flex-none',
+                  'bg-white border border-gray-300 text-gray-800',
+                  'dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100',
+                  'focus:outline-none focus:border-purple-500'
+                )}
+              >
+                <option value="planning">Planning</option>
+                <option value="active">Active</option>
+                <option value="on-hold">On Hold</option>
+                <option value="completed">Completed</option>
+              </select>
+            )}
+          </div>
         </div>
       </div>
 
@@ -811,12 +820,12 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
 
       {/* Task list */}
       <div>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 gap-3">
           <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">Project Tasks</h2>
           <button
             onClick={() => setShowAddTask(true)}
             className={clsx(
-              'px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5',
+              'px-4 py-2 sm:px-3 sm:py-1.5 rounded-lg text-sm sm:text-xs font-medium flex items-center gap-1.5',
               'bg-purple-100 text-purple-700 hover:bg-purple-200',
               'dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50',
               'transition-colors'
@@ -945,8 +954,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                   </div>
                 )}
               </div>
-              <button onClick={handleAddTaskToProject} className="px-3 py-2.5 rounded-lg bg-purple-600 text-white text-sm hover:bg-purple-700 transition-colors flex-shrink-0">Add</button>
-              <button onClick={() => { setShowAddTask(false); setShowSuggestions(false); }} className="px-3 py-2.5 rounded-lg bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 text-sm hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors flex-shrink-0">Cancel</button>
+              <button onClick={handleAddTaskToProject} className="px-4 py-2.5 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 transition-colors flex-shrink-0">Add</button>
+              <button onClick={() => { setShowAddTask(false); setShowSuggestions(false); }} className="px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors flex-shrink-0">Cancel</button>
             </div>
           </div>
         )}
@@ -962,19 +971,20 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
               const assignee = task.assignedTo ? teamProfiles.find((p) => p.id === task.assignedTo) : null;
               const pc = priorityConfig[task.priority];
               return (
-                <div key={task.id} className="flex items-center gap-3 p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700 hover:shadow-sm transition-shadow">
+                <div key={task.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700 hover:shadow-sm transition-shadow">
+                  {/* Task info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <h4 className="text-sm font-semibold text-gray-900 dark:text-slate-100 truncate">{task.title}</h4>
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <h4 className="text-sm font-semibold text-gray-900 dark:text-slate-100">{task.title}</h4>
                       <span className={clsx('flex items-center gap-1 text-[10px] font-medium flex-shrink-0', pc.color)}>
                         <span className={clsx('w-1.5 h-1.5 rounded-full', pc.dot)} />
                         {pc.label}
                       </span>
                     </div>
                     {task.description && (
-                      <p className="text-xs text-gray-500 dark:text-slate-400 truncate">{task.description}</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 line-clamp-2 sm:truncate">{task.description}</p>
                     )}
-                    <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                       <span className="text-[10px] text-gray-400 dark:text-slate-500 flex items-center gap-1">
                         <Clock size={10} /> {task.estimatedHours}h
                       </span>
@@ -986,10 +996,10 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                     </div>
                   </div>
 
-                  {/* Assignee */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* Assignee + actions — full width on mobile */}
+                  <div className="flex items-center gap-2 flex-shrink-0 border-t sm:border-t-0 border-gray-100 dark:border-slate-700/50 pt-3 sm:pt-0">
                     {assignee ? (
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
                         <button
                           onClick={() => openDmChat(assignee.id)}
                           className="flex items-center gap-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg px-2 py-1 transition-colors cursor-pointer"
@@ -1029,7 +1039,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                           if (e.target.value) assignProjectTask(project.id, task.id, e.target.value);
                         }}
                         className={clsx(
-                          'rounded-lg px-2 py-1 text-xs',
+                          'rounded-lg px-3 py-2 sm:py-1 text-sm sm:text-xs flex-1 sm:flex-initial',
                           'bg-white border border-dashed border-gray-300 text-gray-400',
                           'dark:bg-slate-700 dark:border-slate-600 dark:text-slate-400',
                           'focus:outline-none focus:border-purple-500'
@@ -1048,18 +1058,18 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                       <button
                         onClick={() => handleCreateActualTask(task)}
                         title="Add to my Tasks board"
-                        className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 transition-colors"
+                        className="p-2 sm:p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 transition-colors"
                       >
-                        <CheckCircle2 size={16} />
+                        <CheckCircle2 size={18} className="sm:w-4 sm:h-4" />
                       </button>
                     )}
 
                     {canManage && (
                       <button
                         onClick={() => removeProjectTask(project.id, task.id)}
-                        className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                        className="p-2 sm:p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={16} className="sm:w-3.5 sm:h-3.5" />
                       </button>
                     )}
                   </div>
@@ -1170,8 +1180,21 @@ export const Projects: React.FC = () => {
                 </div>
 
                 {project.description && (
-                  <p className="text-xs text-gray-500 dark:text-slate-400 line-clamp-2 mb-3">{project.description}</p>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 line-clamp-2 mb-2">{project.description}</p>
                 )}
+
+                {/* Extra info: template type + date */}
+                <div className="flex items-center gap-2 mb-3 text-[10px] text-gray-400 dark:text-slate-500">
+                  <span className="capitalize">{project.templateId.replace('-', ' ')}</span>
+                  <span>&middot;</span>
+                  <span>{new Date(project.createdAt).toLocaleDateString()}</span>
+                  {members.length > 0 && (
+                    <>
+                      <span>&middot;</span>
+                      <span>{members.length} member{members.length !== 1 ? 's' : ''}</span>
+                    </>
+                  )}
+                </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
