@@ -32,7 +32,7 @@ const App: React.FC = () => {
   const viewingAsId = useUserStore((s) => s.viewingAsId);
   const getViewingProfile = useUserStore((s) => s.getViewingProfile);
   const clearViewAs = useUserStore((s) => s.clearViewAs);
-  const { showTips, hasSeenWelcomeTips, openWelcomeModal } = useSettingsStore();
+  const { showTips, hasSeenWelcomeTips, openWelcomeModal, accentColor } = useSettingsStore();
   const [currentPage, setCurrentPage] = React.useState<PageType>(() => {
     const hash = window.location.hash.slice(1).split('?')[0];
     return (hash || 'dashboard') as PageType;
@@ -51,6 +51,16 @@ const App: React.FC = () => {
       root.classList.remove('dark');
     }
   }, [darkMode]);
+
+  // Apply accent color theme
+  useEffect(() => {
+    const root = document.documentElement;
+    if (accentColor && accentColor !== 'purple') {
+      root.setAttribute('data-accent', accentColor);
+    } else {
+      root.removeAttribute('data-accent');
+    }
+  }, [accentColor]);
 
   useEffect(() => {
     const handleNavigation = () => {

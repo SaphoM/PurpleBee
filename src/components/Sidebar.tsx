@@ -114,7 +114,7 @@ export const Sidebar: React.FC = () => {
         {/* Logo */}
         <div className={clsx('flex items-center h-20 border-b border-gray-200 dark:border-slate-800', sidebarCollapsed ? 'justify-center px-2' : 'justify-center px-6')}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+            <div className="w-10 h-10 bg-gradient-to-br from-accent-600 to-accent-400 rounded-lg flex items-center justify-center flex-shrink-0">
               <Zap size={24} className="text-white" />
             </div>
             {!sidebarCollapsed && (
@@ -151,19 +151,19 @@ export const Sidebar: React.FC = () => {
                     'relative group',
                     sidebarCollapsed ? 'justify-center px-2 py-3' : 'gap-3 px-4 py-3',
                     isActive
-                      ? 'bg-purple-50 text-purple-700 font-semibold dark:bg-purple-600/20 dark:text-purple-300'
+                      ? 'bg-accent-50 text-accent-700 font-semibold dark:bg-accent-600/20 dark:text-accent-300'
                       : 'hover:bg-gray-100 text-gray-600 hover:text-gray-900 dark:hover:bg-slate-800 dark:text-slate-300 dark:hover:text-slate-100'
                   )}
                 >
-                  <span className={clsx('flex-shrink-0', isActive ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400 dark:text-slate-400')}>{item.icon}</span>
+                  <span className={clsx('flex-shrink-0', isActive ? 'text-accent-600 dark:text-accent-400' : 'text-gray-400 dark:text-slate-400')}>{item.icon}</span>
                   {!sidebarCollapsed && <span className="flex-1">{item.label}</span>}
                   {badge ? (
                     sidebarCollapsed ? (
-                      <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-purple-600 text-white text-[9px] font-bold flex items-center justify-center">
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-accent-600 text-white text-[9px] font-bold flex items-center justify-center">
                         {badge}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-semibold rounded-full bg-purple-600 text-white">
+                      <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-semibold rounded-full bg-accent-600 text-white">
                         {badge}
                       </span>
                     )

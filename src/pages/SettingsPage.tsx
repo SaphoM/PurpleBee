@@ -109,7 +109,7 @@ export const SettingsPage: React.FC = () => {
   const { preferences, updatePreferences, resetPreferences } = useNotificationStore();
   const { user } = useUserStore();
   const { darkMode, toggleDarkMode } = useUIStore();
-  const { keepMockData, showTips, setKeepMockData, setShowTips, openWelcomeModal } = useSettingsStore();
+  const { keepMockData, showTips, setKeepMockData, setShowTips, openWelcomeModal, accentColor, setAccentColor } = useSettingsStore();
   const [saved, setSaved] = useState(false);
 
   // Listen for hash changes (e.g. clicking Demo Mode while already on Settings)
@@ -433,15 +433,26 @@ export const SettingsPage: React.FC = () => {
                     noBorder
                   >
                     <div className="flex items-center gap-2">
-                      {['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'].map((color) => (
+                      {([
+                        { key: 'purple', hex: '#8b5cf6', label: 'Purple' },
+                        { key: 'blue',   hex: '#3b82f6', label: 'Blue' },
+                        { key: 'green',  hex: '#10b981', label: 'Green' },
+                        { key: 'amber',  hex: '#f59e0b', label: 'Amber' },
+                        { key: 'red',    hex: '#ef4444', label: 'Red' },
+                        { key: 'pink',   hex: '#ec4899', label: 'Pink' },
+                      ] as const).map((c) => (
                         <button
-                          key={color}
+                          key={c.key}
+                          onClick={() => setAccentColor(c.key)}
                           className={clsx(
-                            'w-7 h-7 rounded-full transition-transform hover:scale-110',
-                            color === '#8b5cf6' && 'ring-2 ring-offset-2 ring-purple-500 dark:ring-offset-slate-800'
+                            'w-7 h-7 rounded-full transition-all hover:scale-110',
+                            accentColor === c.key && 'ring-2 ring-offset-2 dark:ring-offset-slate-800',
                           )}
-                          style={{ backgroundColor: color }}
-                          title={color}
+                          style={{
+                            backgroundColor: c.hex,
+                            ...(accentColor === c.key ? { ['--tw-ring-color' as string]: c.hex } : {}),
+                          }}
+                          title={c.label}
                         />
                       ))}
                     </div>
