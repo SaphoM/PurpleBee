@@ -1,12 +1,16 @@
 import React from 'react';
+import clsx from 'clsx';
 import { StatCard } from '@components/StatCard';
 import { Card, CardHeader, CardContent } from '@components/Card';
+import { ModernDashboard } from '@components/ModernDashboard';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import {
   CheckCircle,
   Clock,
   Zap,
   AlertCircle,
+  LayoutGrid,
+  LayoutDashboard,
 } from 'lucide-react';
 import { useTaskStore } from '@stores/taskStore';
 import { useUIStore } from '@stores/uiStore';
@@ -57,6 +61,8 @@ export const Dashboard: React.FC = () => {
   const { darkMode } = useUIStore();
   const { user, canViewAllTasks, getEffectiveUserId, isViewingOther, getViewingProfile } = useUserStore();
   const keepMockData = useSettingsStore((s) => s.keepMockData);
+  const dashboardLayout = useSettingsStore((s) => s.dashboardLayout);
+  const setDashboardLayout = useSettingsStore((s) => s.setDashboardLayout);
 
   // Scope tasks — when "viewing as" another user, show their tasks
   const tasks = canViewAllTasks() ? allTasks : getTasksForUser(getEffectiveUserId());
@@ -94,22 +100,69 @@ export const Dashboard: React.FC = () => {
   const gridStroke = darkMode ? '#334155' : '#e5e7eb';
   const axisStroke = darkMode ? '#94a3b8' : '#9ca3af';
 
+  // ── Layout Toggle Button ──────────────────────────────────────────
+  const LayoutToggle = () => (
+    <div className="flex items-center gap-1 bg-gray-100 dark:bg-slate-800 rounded-lg p-1">
+      <button
+        onClick={() => setDashboardLayout('default')}
+        title="Classic layout"
+        className={clsx(
+          'p-1.5 rounded-md transition-colors',
+          dashboardLayout === 'default'
+            ? 'bg-white shadow-sm text-purple-600 dark:bg-slate-700 dark:text-purple-400'
+            : 'text-gray-400 hover:text-gray-600 dark:hover:text-slate-300'
+        )}
+      >
+        <LayoutDashboard size={16} />
+      </button>
+      <button
+        onClick={() => setDashboardLayout('modern')}
+        title="Modern layout"
+        className={clsx(
+          'p-1.5 rounded-md transition-colors',
+          dashboardLayout === 'modern'
+            ? 'bg-white shadow-sm text-purple-600 dark:bg-slate-700 dark:text-purple-400'
+            : 'text-gray-400 hover:text-gray-600 dark:hover:text-slate-300'
+        )}
+      >
+        <LayoutGrid size={16} />
+      </button>
+    </div>
+  );
+
+  // ── Modern Layout ────────────────────────────────────────────────
+  if (dashboardLayout === 'modern') {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <div />
+          <LayoutToggle />
+        </div>
+        <ModernDashboard />
+      </div>
+    );
+  }
+
+  // ── Default Layout ───────────────────────────────────────────────
   return (
     <div className="space-y-8">
       {/* Welcome Section */}
-      <div>
-        <h1 className="text-4xl font-bold text-gray-900 dark:text-slate-100 mb-2">
-          {isViewingOther()
-            ? `${getViewingProfile()?.name?.split(' ')[0]}'s Dashboard`
-            : `Welcome back, ${user?.name?.split(' ')[0] || 'User'}! 👋`
-          }
-        </h1>
-        <p className="text-gray-500 dark:text-slate-400">
-          {isViewingOther()
-            ? `Viewing ${getViewingProfile()?.name}'s productivity overview`
-            : "Here's your productivity overview for today"
-          }
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-slate-100 mb-2">
+            {isViewingOther()
+              ? `${getViewingProfile()?.name?.split(' ')[0]}'s Dashboard`
+              : `Welcome back, ${user?.name?.split(' ')[0] || 'User'}! 👋`
+            }
+          </h1>
+          <p className="text-gray-500 dark:text-slate-400">
+            {isViewingOther()
+              ? `Viewing ${getViewingProfile()?.name}'s productivity overview`
+              : "Here's your productivity overview for today"
+            }
+          </p>
+        </div>
+        <LayoutToggle />
       </div>
 
       {/* KPI Cards */}

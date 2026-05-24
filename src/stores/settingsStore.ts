@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 export type AccentColor = 'purple' | 'blue' | 'green' | 'amber' | 'red' | 'pink';
+export type DashboardLayout = 'default' | 'modern';
 
 export const accentColorMap: Record<AccentColor, { hex: string; label: string; tw: string }> = {
   purple: { hex: '#8b5cf6', label: 'Purple', tw: 'purple' },
@@ -18,6 +19,7 @@ export interface AppSettings {
   showWelcomeModal: boolean;
   hideQuickLogin: boolean;
   accentColor: AccentColor;
+  dashboardLayout: DashboardLayout;
 }
 
 interface SettingsStore extends AppSettings {
@@ -25,6 +27,7 @@ interface SettingsStore extends AppSettings {
   setShowTips: (v: boolean) => void;
   setHideQuickLogin: (v: boolean) => void;
   setAccentColor: (c: AccentColor) => void;
+  setDashboardLayout: (l: DashboardLayout) => void;
   markWelcomeTipsSeen: () => void;
   openWelcomeModal: () => void;
   closeWelcomeModal: () => void;
@@ -40,6 +43,7 @@ const defaults: AppSettings = {
   showWelcomeModal: false,
   hideQuickLogin: false,
   accentColor: 'purple',
+  dashboardLayout: 'default',
 };
 
 // Load persisted settings from localStorage
@@ -62,6 +66,7 @@ function persistSettings(state: AppSettings) {
       hasSeenWelcomeTips: state.hasSeenWelcomeTips,
       hideQuickLogin: state.hideQuickLogin,
       accentColor: state.accentColor,
+      dashboardLayout: state.dashboardLayout,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
   } catch {
@@ -91,6 +96,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   setAccentColor: (c) => {
     set({ accentColor: c });
     persistSettings({ ...get(), accentColor: c });
+  },
+
+  setDashboardLayout: (l) => {
+    set({ dashboardLayout: l });
+    persistSettings({ ...get(), dashboardLayout: l });
   },
 
   markWelcomeTipsSeen: () => {

@@ -109,7 +109,7 @@ export const SettingsPage: React.FC = () => {
   const { preferences, updatePreferences, resetPreferences } = useNotificationStore();
   const { user } = useUserStore();
   const { darkMode, toggleDarkMode } = useUIStore();
-  const { keepMockData, showTips, setKeepMockData, setShowTips, openWelcomeModal, accentColor, setAccentColor } = useSettingsStore();
+  const { keepMockData, showTips, setKeepMockData, setShowTips, openWelcomeModal, accentColor, setAccentColor, dashboardLayout, setDashboardLayout } = useSettingsStore();
   const [saved, setSaved] = useState(false);
 
   // Listen for hash changes (e.g. clicking Demo Mode while already on Settings)
@@ -466,6 +466,31 @@ export const SettingsPage: React.FC = () => {
                   subtitle="Configure your workspace layout"
                 />
                 <CardContent>
+                  <SettingRow
+                    icon={<Monitor size={16} />}
+                    label="Dashboard Layout"
+                    description="Choose between classic and modern dashboard views"
+                  >
+                    <div className="flex items-center gap-2">
+                      {([
+                        { key: 'default', label: 'Classic' },
+                        { key: 'modern', label: 'Modern' },
+                      ] as const).map((l) => (
+                        <button
+                          key={l.key}
+                          onClick={() => setDashboardLayout(l.key)}
+                          className={clsx(
+                            'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                            dashboardLayout === l.key
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+                          )}
+                        >
+                          {l.label}
+                        </button>
+                      ))}
+                    </div>
+                  </SettingRow>
                   <SettingRow
                     icon={<Eye size={16} />}
                     label="Compact Mode"
