@@ -99,12 +99,18 @@ export const ModernDashboard: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-slate-100">
+        <h1 className="text-4xl font-bold text-gray-900 dark:text-slate-100 mb-2">
           {isViewingOther()
             ? `${getViewingProfile()?.name?.split(' ')[0]}'s Dashboard`
-            : 'Dashboard'
+            : `Welcome back, ${user?.name?.split(' ')[0] || 'User'}! 👋`
           }
         </h1>
+        <p className="text-gray-500 dark:text-slate-400">
+          {isViewingOther()
+            ? `Viewing ${getViewingProfile()?.name}'s productivity overview`
+            : "Here's your productivity overview for today"
+          }
+        </p>
       </div>
 
       {/* Top Row: Hero Card + Right Column */}
