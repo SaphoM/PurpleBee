@@ -133,9 +133,23 @@ export const Dashboard: React.FC = () => {
   // ── Modern Layout ────────────────────────────────────────────────
   if (dashboardLayout === 'modern') {
     return (
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          <div />
+      <div className="space-y-8">
+        {/* Welcome Section — same as classic */}
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-gray-900 dark:text-slate-100 mb-2">
+              {isViewingOther()
+                ? `${getViewingProfile()?.name?.split(' ')[0]}'s Dashboard`
+                : `Welcome back, ${user?.name?.split(' ')[0] || 'User'}! 👋`
+              }
+            </h1>
+            <p className="text-gray-500 dark:text-slate-400">
+              {isViewingOther()
+                ? `Viewing ${getViewingProfile()?.name}'s productivity overview`
+                : "Here's your productivity overview for today"
+              }
+            </p>
+          </div>
           <LayoutToggle />
         </div>
         <ModernDashboard />
