@@ -24,7 +24,7 @@ import { useSettingsStore } from '@stores/settingsStore';
 type PageType = 'dashboard' | 'projects' | 'tasks' | 'calendar' | 'analytics' | 'team' | 'chat' | 'ai-insights' | 'settings';
 
 const App: React.FC = () => {
-  const { darkMode } = useUIStore();
+  const { darkMode, sidebarCollapsed } = useUIStore();
   const hasDockedChats = useChatStore((s) => s.dockedChatIds.length > 0);
   const isAuthenticated = useUserStore((s) => s.isAuthenticated);
   const authChecked = useUserStore((s) => s.authChecked);
@@ -132,7 +132,7 @@ const App: React.FC = () => {
       <Sidebar />
       <TopBar />
 
-      <main className="lg:ml-64 mt-[7.5rem] lg:mt-20 p-3 sm:p-6 lg:p-8 transition-[padding] duration-300" style={{ paddingBottom: hasDockedChats ? 480 : undefined }}>
+      <main className={clsx(sidebarCollapsed ? 'lg:ml-[4.5rem]' : 'lg:ml-64', 'mt-[7.5rem] lg:mt-20 p-3 sm:p-6 lg:p-8 transition-all duration-300')} style={{ paddingBottom: hasDockedChats ? 480 : undefined }}>
         <div className="max-w-7xl mx-auto">
           {/* Quick View banner */}
           {viewingAsId && (() => {

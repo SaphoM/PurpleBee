@@ -4,6 +4,9 @@ import { UIState } from '@/types/index';
 interface UIStore extends UIState {
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
+  sidebarCollapsed: boolean; // icon-only mode on desktop
+  toggleSidebarCollapse: () => void;
+  setSidebarCollapsed: (v: boolean) => void;
   toggleDarkMode: () => void;
   setDarkMode: (dark: boolean) => void;
   openModal: (type: UIState['modalType']) => void;
@@ -12,8 +15,16 @@ interface UIStore extends UIState {
   setSelectedTask: (taskId: string | undefined) => void;
 }
 
+// Load collapsed preference
+function loadCollapsed(): boolean {
+  try {
+    return localStorage.getItem('purplebee-sidebar-collapsed') === 'true';
+  } catch { return false; }
+}
+
 export const useUIStore = create<UIStore>((set) => ({
   sidebarOpen: typeof window !== 'undefined' && window.innerWidth >= 1024,
+  sidebarCollapsed: loadCollapsed(),
   darkMode: false,
   isModalOpen: false,
   viewMode: 'kanban',
@@ -23,6 +34,18 @@ export const useUIStore = create<UIStore>((set) => ({
     set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
+
+  toggleSidebarCollapse: () =>
+    set((state) => {
+      const next = !state.sidebarCollapsed;
+      try { localStorage.setItem('purplebee-sidebar-collapsed', String(next)); } catch {}
+      return { sidebarCollapsed: next };
+    }),
+
+  setSidebarCollapsed: (v) => {
+    try { localStorage.setItem('purplebee-sidebar-collapsed', String(v)); } catch {}
+    set({ sidebarCollapsed: v });
+  },
 
   toggleDarkMode: () =>
     set((state) => ({ darkMode: !state.darkMode })),

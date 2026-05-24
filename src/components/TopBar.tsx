@@ -5,6 +5,7 @@ import { useNotificationStore, notificationCategoryConfig } from '@stores/notifi
 import { useUserStore, teamProfiles } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
+import { useUIStore } from '@stores/uiStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { Notification, NotificationType } from '@/types/index';
@@ -49,6 +50,7 @@ export const TopBar: React.FC = () => {
     preferences: notifPrefs,
   } = useNotificationStore();
   const { user, viewAs, clearViewAs, isViewingOther, getViewingProfile, canManageTeam } = useUserStore();
+  const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const keepMockData = useSettingsStore((s) => s.keepMockData);
   const showTips = useSettingsStore((s) => s.showTips);
   const dockChat = useChatStore((s) => s.dockChat);
@@ -182,7 +184,8 @@ export const TopBar: React.FC = () => {
 
   return (
     <header className={clsx(
-      'fixed top-0 right-0 left-0 lg:left-64 z-20',
+      'fixed top-0 right-0 left-0 z-20 transition-[left] duration-300',
+      sidebarCollapsed ? 'lg:left-[4.5rem]' : 'lg:left-64',
       'bg-white border-b border-gray-200',
       'dark:bg-slate-900 dark:border-slate-800'
     )}>
