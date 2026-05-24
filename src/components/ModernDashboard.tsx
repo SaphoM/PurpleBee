@@ -292,7 +292,7 @@ export const ModernDashboard: React.FC = () => {
                         <ExternalLink size={12} className="text-gray-300 dark:text-slate-600 flex-shrink-0" />
                       </div>
                       <p className="text-xs text-gray-400 dark:text-slate-500">
-                        {task.project || 'No project'} &middot; #{task.id.slice(-4)}
+                        {task.projectId || 'No project'} &middot; #{task.id.slice(-4)}
                       </p>
                     </div>
                     {/* Priority */}
@@ -338,7 +338,7 @@ export const ModernDashboard: React.FC = () => {
                       <p className="text-xs text-gray-400 dark:text-slate-500">{project.status}</p>
                     </div>
                     <span className="text-xs font-medium text-gray-500 dark:text-slate-400">
-                      {project.taskIds?.length || 0} tasks
+                      {project.tasks?.length || 0} tasks
                     </span>
                     <button className="p-1 text-gray-300 hover:text-gray-500 dark:text-slate-600 dark:hover:text-slate-400">
                       <MoreHorizontal size={16} />
