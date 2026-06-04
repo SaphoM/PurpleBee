@@ -531,14 +531,23 @@ export const authDb = {
   /** Get the team a user belongs to */
   async getTeamForUser(userId: string) {
     if (!isDbConnected()) return null;
-    const { data, error } = await supabase!
+    // Step 1: get team_id from team_members
+    const { data: membership, error: memErr } = await supabase!
       .from('team_members')
-      .select('team_id, role, teams(id, name)')
+      .select('team_id, role')
       .eq('user_id', userId)
       .limit(1)
+      .maybeSingle();
+    if (memErr) { console.error('[dataService] getTeamForUser membership', memErr); return null; }
+    if (!membership) return null;
+    // Step 2: get team name
+    const { data: team, error: teamErr } = await supabase!
+      .from('teams')
+      .select('id, name')
+      .eq('id', membership.team_id)
       .single();
-    if (error) { console.error('[dataService] getTeamForUser', error); return null; }
-    return data;
+    if (teamErr) { console.error('[dataService] getTeamForUser team', teamErr); return null; }
+    return { team_id: membership.team_id, role: membership.role, team };
   },
 };
 
