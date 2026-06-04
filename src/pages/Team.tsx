@@ -37,6 +37,7 @@ import { useUserStore } from '@stores/userStore';
 import { ChatParticipant, Task, TaskStatus } from '@/types/index';
 import { format, formatDistanceToNow, isPast, isToday } from 'date-fns';
 import { authDb, inviteDb } from '@/lib/dataService';
+import { isDbConnected } from '@/lib/supabase';
 
 // Extended member data for the team page
 interface TeamMemberData {
@@ -108,8 +109,9 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
 
   // Shared helper — ensures a team exists (auto-creates if needed)
   const ensureTeam = async () => {
+    if (!isDbConnected()) throw new Error('Invites require a database connection. Please sign in with your email account.');
     const team = await authDb.getOrCreateTeam(user!.id, user!.name);
-    if (!team) throw new Error('Could not create team.');
+    if (!team) throw new Error('Could not find or create team.');
     return team;
   };
 
@@ -139,8 +141,10 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
       setSent(true);
       setEmail('');
       setTimeout(() => setSent(false), 4000);
-    } catch {
-      setError('Something went wrong.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong.';
+      console.error('[InviteModal] handleSendInvite', err);
+      setError(msg);
     }
     setSending(false);
   };
@@ -159,8 +163,10 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
         return;
       }
       setLinkToken(invite.token);
-    } catch {
-      setError('Something went wrong.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong.';
+      console.error('[InviteModal] handleGenerateLink', err);
+      setError(msg);
     }
     setGeneratingLink(false);
   };

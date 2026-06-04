@@ -552,7 +552,7 @@ export const authDb = {
 
   /** Get the user's team, auto-creating one if none exists */
   async getOrCreateTeam(userId: string, userName: string) {
-    if (!isDbConnected()) return null;
+    if (!isDbConnected()) throw new Error('Database not connected');
     // Try existing team first
     const existing = await this.getTeamForUser(userId);
     if (existing) return existing;
@@ -564,15 +564,19 @@ export const authDb = {
       .insert({ name: teamName, created_by: userId })
       .select('id, name')
       .single();
-    if (createErr || !newTeam) {
-      console.error('[dataService] getOrCreateTeam create', createErr);
-      return null;
+    if (createErr) {
+      console.error('[dataService] getOrCreateTeam create team', createErr);
+      throw new Error(`Failed to create team: ${createErr.message}`);
     }
 
     // Add user as admin member
-    await supabase!
+    const { error: memberErr } = await supabase!
       .from('team_members')
       .insert({ team_id: newTeam.id, user_id: userId, role: 'admin' });
+    if (memberErr) {
+      console.error('[dataService] getOrCreateTeam add member', memberErr);
+      // Team was created, still usable — log but don't throw
+    }
 
     return { team_id: newTeam.id, role: 'admin' as const, team: newTeam };
   },
@@ -602,7 +606,7 @@ export const authDb = {
 export const inviteDb = {
   /** Create an invite */
   async create(teamId: string, invitedBy: string, role: string, email?: string) {
-    if (!isDbConnected()) return null;
+    if (!isDbConnected()) throw new Error('Database not connected');
     const row: Record<string, unknown> = {
       team_id: teamId,
       invited_by: invitedBy,
@@ -614,7 +618,10 @@ export const inviteDb = {
       .insert(row)
       .select()
       .single();
-    if (error) { console.error('[dataService] inviteDb.create', error); return null; }
+    if (error) {
+      console.error('[dataService] inviteDb.create', error);
+      throw new Error(`Failed to create invite: ${error.message}`);
+    }
     return data;
   },
 
