@@ -36,6 +36,7 @@ import { useTaskStore } from '@stores/taskStore';
 import { useUserStore } from '@stores/userStore';
 import { ChatParticipant, Task, TaskStatus } from '@/types/index';
 import { format, formatDistanceToNow, isPast, isToday } from 'date-fns';
+import { authDb, inviteDb } from '@/lib/dataService';
 
 // Extended member data for the team page
 interface TeamMemberData {
@@ -82,16 +83,81 @@ const StatPill: React.FC<{ icon: React.ReactNode; value: number | string; label:
 // Invite modal
 const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'member' | 'admin'>('member');
+  const [role, setRole] = useState<'user' | 'admin'>('user');
   const [copied, setCopied] = useState(false);
-  const inviteLink = 'https://purplebee.app/invite/xspark-team-abc123';
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [generatingLink, setGeneratingLink] = useState(false);
+  const { user } = useUserStore();
+
+  // Dynamic invite link
+  const inviteLink = linkToken
+    ? `${window.location.origin}#invite?token=${linkToken}`
+    : null;
 
   if (!isOpen) return null;
 
   const handleCopy = () => {
+    if (!inviteLink) return;
     navigator.clipboard.writeText(inviteLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSendInvite = async () => {
+    if (!email.trim() || !user) return;
+    setSending(true);
+    setError(null);
+
+    try {
+      const team = await authDb.getTeamForUser(user.id);
+      if (!team) {
+        setError('No team found. Please create a team first.');
+        setSending(false);
+        return;
+      }
+      const teamId = (team.teams as any)?.id || team.team_id;
+      const invite = await inviteDb.create(teamId, user.id, role, email);
+      if (!invite) {
+        setError('Failed to create invite. Please try again.');
+        setSending(false);
+        return;
+      }
+      setSent(true);
+      setEmail('');
+      setTimeout(() => setSent(false), 3000);
+    } catch {
+      setError('Something went wrong.');
+    }
+    setSending(false);
+  };
+
+  const handleGenerateLink = async () => {
+    if (!user) return;
+    setGeneratingLink(true);
+    setError(null);
+
+    try {
+      const team = await authDb.getTeamForUser(user.id);
+      if (!team) {
+        setError('No team found. Please create a team first.');
+        setGeneratingLink(false);
+        return;
+      }
+      const teamId = (team.teams as any)?.id || team.team_id;
+      const invite = await inviteDb.create(teamId, user.id, role);
+      if (!invite) {
+        setError('Failed to generate link.');
+        setGeneratingLink(false);
+        return;
+      }
+      setLinkToken(invite.token);
+    } catch {
+      setError('Something went wrong.');
+    }
+    setGeneratingLink(false);
   };
 
   return (
@@ -112,6 +178,12 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
               <X size={18} />
             </button>
           </div>
+
+          {error && (
+            <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/30 text-sm text-red-600 dark:text-red-400">
+              {error}
+            </div>
+          )}
 
           {/* Email invite */}
           <div className="mb-5">
@@ -134,7 +206,7 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
               />
               <select
                 value={role}
-                onChange={(e) => setRole(e.target.value as 'member' | 'admin')}
+                onChange={(e) => setRole(e.target.value as 'user' | 'admin')}
                 className={clsx(
                   'rounded-lg px-3 py-2.5 text-sm font-medium',
                   'bg-gray-50 border border-gray-200 text-gray-700',
@@ -142,22 +214,23 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
                   'focus:outline-none focus:border-purple-500 cursor-pointer'
                 )}
               >
-                <option value="member">Member</option>
+                <option value="user">Member</option>
                 <option value="admin">Admin</option>
               </select>
             </div>
           </div>
 
           <button
-            disabled={!email.trim()}
+            disabled={!email.trim() || sending}
+            onClick={handleSendInvite}
             className={clsx(
               'w-full py-2.5 rounded-xl text-sm font-semibold transition-all mb-6',
-              email.trim()
+              email.trim() && !sending
                 ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 shadow-md shadow-purple-500/20'
                 : 'bg-gray-100 text-gray-300 dark:bg-slate-700/30 dark:text-slate-600 cursor-not-allowed'
             )}
           >
-            Send Invite
+            {sending ? 'Creating invite…' : sent ? '✓ Invite Created!' : 'Send Invite'}
           </button>
 
           {/* Divider */}
@@ -168,20 +241,35 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
           </div>
 
           {/* Invite link */}
-          <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-slate-700/30 rounded-lg border border-gray-200 dark:border-slate-700/50">
-            <span className="flex-1 text-xs text-gray-500 dark:text-slate-400 truncate font-mono">{inviteLink}</span>
+          {inviteLink ? (
+            <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-slate-700/30 rounded-lg border border-gray-200 dark:border-slate-700/50">
+              <span className="flex-1 text-xs text-gray-500 dark:text-slate-400 truncate font-mono">{inviteLink}</span>
+              <button
+                onClick={handleCopy}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                  copied
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500'
+                )}
+              >
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={handleCopy}
+              onClick={handleGenerateLink}
+              disabled={generatingLink}
               className={clsx(
-                'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all',
-                copied
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500'
+                'w-full py-2.5 rounded-xl text-sm font-medium transition-all',
+                'border border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300',
+                'hover:bg-gray-50 dark:hover:bg-slate-700/50',
+                generatingLink && 'opacity-50 cursor-not-allowed'
               )}
             >
-              {copied ? <Check size={14} /> : <Copy size={14} />}
+              {generatingLink ? 'Generating…' : 'Generate Invite Link'}
             </button>
-          </div>
+          )}
         </div>
       </div>
     </div>

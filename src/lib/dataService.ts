@@ -487,13 +487,15 @@ export const authDb = {
   },
 
   /** Sign up a new user */
-  async signUp(email: string, password: string, name: string) {
+  async signUp(email: string, password: string, name: string, companyName?: string) {
     if (!isDbConnected()) return null;
+    const metadata: Record<string, string> = { name };
+    if (companyName) metadata.company_name = companyName;
     const { data, error } = await supabase!.auth.signUp({
       email,
       password,
       options: {
-        data: { name },
+        data: metadata,
         emailRedirectTo: window.location.origin,
       },
     });
@@ -524,5 +526,106 @@ export const authDb = {
       .single();
     if (error) { console.error('[dataService] auth.getProfile', error); return null; }
     return data;
+  },
+
+  /** Get the team a user belongs to */
+  async getTeamForUser(userId: string) {
+    if (!isDbConnected()) return null;
+    const { data, error } = await supabase!
+      .from('team_members')
+      .select('team_id, role, teams(id, name)')
+      .eq('user_id', userId)
+      .limit(1)
+      .single();
+    if (error) { console.error('[dataService] getTeamForUser', error); return null; }
+    return data;
+  },
+};
+
+// ── Invite DB helpers ──────────────────────────────────────────────────
+export const inviteDb = {
+  /** Create an invite */
+  async create(teamId: string, invitedBy: string, role: string, email?: string) {
+    if (!isDbConnected()) return null;
+    const row: Record<string, unknown> = {
+      team_id: teamId,
+      invited_by: invitedBy,
+      role,
+    };
+    if (email) row.email = email.toLowerCase();
+    const { data, error } = await supabase!
+      .from('invites')
+      .insert(row)
+      .select()
+      .single();
+    if (error) { console.error('[dataService] inviteDb.create', error); return null; }
+    return data;
+  },
+
+  /** Fetch invite by token */
+  async getByToken(token: string) {
+    if (!isDbConnected()) return null;
+    const { data, error } = await supabase!
+      .from('invites')
+      .select('*, teams(name), profiles!invites_invited_by_fkey(name, email)')
+      .eq('token', token)
+      .single();
+    if (error) { console.error('[dataService] inviteDb.getByToken', error); return null; }
+    return data;
+  },
+
+  /** List pending invites for a team */
+  async listForTeam(teamId: string) {
+    if (!isDbConnected()) return [];
+    const { data, error } = await supabase!
+      .from('invites')
+      .select('*')
+      .eq('team_id', teamId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    if (error) { console.error('[dataService] inviteDb.listForTeam', error); return []; }
+    return data || [];
+  },
+
+  /** Revoke an invite */
+  async revoke(inviteId: string) {
+    if (!isDbConnected()) return false;
+    const { error } = await supabase!
+      .from('invites')
+      .update({ status: 'revoked', updated_at: new Date().toISOString() })
+      .eq('id', inviteId);
+    if (error) { console.error('[dataService] inviteDb.revoke', error); return false; }
+    return true;
+  },
+
+  /** Accept an invite (used after sign-up via invite link) */
+  async accept(token: string, userId: string) {
+    if (!isDbConnected()) return null;
+    // Fetch the invite
+    const invite = await this.getByToken(token);
+    if (!invite || invite.status !== 'pending') return null;
+    if (new Date(invite.expires_at) < new Date()) return null;
+
+    // Mark accepted
+    await supabase!
+      .from('invites')
+      .update({ status: 'accepted', accepted_by: userId, updated_at: new Date().toISOString() })
+      .eq('id', invite.id);
+
+    // Add to team if not already a member
+    const { data: existing } = await supabase!
+      .from('team_members')
+      .select('id')
+      .eq('team_id', invite.team_id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!existing) {
+      await supabase!
+        .from('team_members')
+        .insert({ team_id: invite.team_id, user_id: userId, role: invite.role });
+    }
+
+    return invite;
   },
 };

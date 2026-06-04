@@ -156,7 +156,7 @@ export const LoginPage: React.FC = () => {
     setKeepMockData(mockDataEnabled);
     setShowTips(tipsEnabled);
 
-    const result = await signUpWithEmail(email, createPassword, fullName);
+    const result = await signUpWithEmail(email, createPassword, fullName, companyName || undefined);
     setIsLoading(false);
 
     if (result.success && result.needsConfirmation) {

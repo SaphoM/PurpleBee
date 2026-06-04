@@ -12,6 +12,7 @@ import { Chat } from '@pages/Chat';
 import { SettingsPage } from '@pages/SettingsPage';
 import { Projects } from '@pages/Projects';
 import { LoginPage } from '@pages/LoginPage';
+import { InviteAcceptPage } from '@pages/InviteAcceptPage';
 import { ChatBot } from '@components/ChatBot';
 import { DockedChats } from '@components/DockedChats';
 import { ToastContainer } from '@components/Toast';
@@ -106,6 +107,12 @@ const App: React.FC = () => {
     }
   };
 
+  // Parse invite token from hash: #invite?token=xxx
+  const hashParts = window.location.hash.slice(1).split('?');
+  const inviteToken = hashParts[0] === 'invite'
+    ? new URLSearchParams(hashParts.slice(1).join('?')).get('token')
+    : null;
+
   // Show loading spinner while checking session
   if (!authChecked) {
     return (
@@ -116,6 +123,11 @@ const App: React.FC = () => {
         <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
       </div>
     );
+  }
+
+  // Invite accept page — accessible before or after login
+  if (inviteToken) {
+    return <InviteAcceptPage token={inviteToken} />;
   }
 
   // Show login page if not authenticated

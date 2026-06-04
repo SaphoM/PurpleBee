@@ -84,7 +84,7 @@ interface UserStore {
 
   // Actions — Supabase Auth (real email/password)
   loginWithEmail: (email: string, password: string) => Promise<boolean>;
-  signUpWithEmail: (email: string, password: string, name: string) => Promise<{ success: boolean; needsConfirmation: boolean }>;
+  signUpWithEmail: (email: string, password: string, name: string, companyName?: string) => Promise<{ success: boolean; needsConfirmation: boolean }>;
   initSession: () => Promise<void>; // Restore session on app load
 
   setUser: (user: User) => void;
@@ -225,10 +225,10 @@ export const useUserStore = create<UserStore>((set, get) => ({
   },
 
   // ── Supabase Auth: email + password sign-up ────────────────────────
-  signUpWithEmail: async (email, password, name) => {
+  signUpWithEmail: async (email, password, name, companyName?) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await authDb.signUp(email, password, name);
+      const result = await authDb.signUp(email, password, name, companyName);
       if (!result || !result.user) {
         set({ error: 'Sign-up failed. Please try again.', isLoading: false });
         return { success: false, needsConfirmation: false };
@@ -278,6 +278,18 @@ export const useUserStore = create<UserStore>((set, get) => ({
           error: null,
         });
         hydrateStores(supaUser.id, name);
+
+        // Auto-accept pending invite if user just signed up via invite link
+        const pendingToken = sessionStorage.getItem('purplebee-invite-token');
+        if (pendingToken) {
+          sessionStorage.removeItem('purplebee-invite-token');
+          try {
+            const { inviteDb } = await import('@/lib/dataService');
+            await inviteDb.accept(pendingToken, supaUser.id);
+          } catch {
+            // Non-critical — invite may already be accepted by the trigger
+          }
+        }
       }
     } catch {
       // No session — that's fine, show login
