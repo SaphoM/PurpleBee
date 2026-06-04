@@ -13,6 +13,7 @@ import { SettingsPage } from '@pages/SettingsPage';
 import { Projects } from '@pages/Projects';
 import { LoginPage } from '@pages/LoginPage';
 import { InviteAcceptPage } from '@pages/InviteAcceptPage';
+import { InviteOnboardPage } from '@pages/InviteOnboardPage';
 import { ChatBot } from '@components/ChatBot';
 import { DockedChats } from '@components/DockedChats';
 import { ToastContainer } from '@components/Toast';
@@ -22,7 +23,7 @@ import { useUserStore, teamProfiles } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
 
-type PageType = 'dashboard' | 'projects' | 'tasks' | 'calendar' | 'analytics' | 'team' | 'chat' | 'ai-insights' | 'settings';
+type PageType = 'dashboard' | 'projects' | 'tasks' | 'calendar' | 'analytics' | 'team' | 'chat' | 'ai-insights' | 'settings' | 'onboard';
 
 const App: React.FC = () => {
   const { darkMode, sidebarCollapsed } = useUIStore();
@@ -133,6 +134,15 @@ const App: React.FC = () => {
   // Invite accept page — accessible before or after login
   if (inviteToken) {
     return <InviteAcceptPage token={inviteToken} />;
+  }
+
+  // Onboarding page — fullscreen, no sidebar (for invited users setting up password)
+  if (isAuthenticated && currentPage === 'onboard') {
+    // When navigated from the Settings demo→real modal, the user already set a
+    // password during sign-up. Pass skipPassword so we start on step 2 (preferences).
+    const onboardParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const skipPassword = onboardParams.get('from') === 'settings';
+    return <InviteOnboardPage skipPassword={skipPassword} />;
   }
 
   // Show login page if not authenticated

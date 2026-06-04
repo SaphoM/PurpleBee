@@ -33,7 +33,7 @@ export const InviteAcceptPage: React.FC<{ token: string }> = ({ token }) => {
         // Already accepted — just redirect to app
         setAccepted(true);
         setTimeout(() => {
-          window.location.href = window.location.origin + '#team';
+          window.location.href = window.location.origin + '#dashboard';
         }, 1500);
       } else if (data.status !== 'pending') {
         setError(`This invite has already been ${data.status}.`);
@@ -49,9 +49,9 @@ export const InviteAcceptPage: React.FC<{ token: string }> = ({ token }) => {
           if (result) {
             setAccepted(true);
             setTimeout(() => {
-              // Clean the URL and go to team page
+              // Clean the URL and go to onboarding for new invitees
               window.history.replaceState({}, '', window.location.origin);
-              window.location.hash = '#team';
+              window.location.hash = '#onboard';
               window.location.reload();
             }, 2000);
           } else {
@@ -60,7 +60,7 @@ export const InviteAcceptPage: React.FC<{ token: string }> = ({ token }) => {
             setAccepted(true);
             setTimeout(() => {
               window.history.replaceState({}, '', window.location.origin);
-              window.location.hash = '#team';
+              window.location.hash = '#onboard';
               window.location.reload();
             }, 2000);
           }
@@ -79,7 +79,7 @@ export const InviteAcceptPage: React.FC<{ token: string }> = ({ token }) => {
       setAccepted(true);
       setTimeout(() => {
         window.history.replaceState({}, '', window.location.origin);
-        window.location.hash = '#team';
+        window.location.hash = '#onboard';
         window.location.reload();
       }, 2000);
     } else {

@@ -9,8 +9,9 @@
 
 A **productivity dashboard SaaS** for teams — task management, project tracking, team chat, notifications, analytics, and AI insights. Built as a single-page React app with Supabase backend.
 
-**Live staging:** https://purplebee-staging.onrender.com
-**Repo:** https://github.com/SaphoM/PurpleBee
+**Live staging:** https://purplebee-staging.onrender.com  
+**Repo:** https://github.com/SaphoM/PurpleBee  
+**Supabase Project:** `sudkymxnzuiubnszpxbc`
 
 ---
 
@@ -24,7 +25,7 @@ A **productivity dashboard SaaS** for teams — task management, project trackin
 | State | Zustand 4 (7 stores, no Redux) |
 | Charts | Recharts 2 |
 | Icons | Lucide React |
-| Auth & DB | Supabase (Auth + Postgres + Edge Functions) |
+| Auth & DB | Supabase (Auth + Postgres + RLS) |
 | Hosting | Render (static site, staging branch auto-deploys) |
 | Utilities | clsx, uuid, date-fns |
 
@@ -48,34 +49,36 @@ src/
 │   └── (Card, Badge, Button, Input, Modal, Select, StatCard, Toast, TaskCard)
 │
 ├── pages/
-│   ├── LoginPage.tsx     # Auth: quick-login (demo) + Supabase email/password
-│   ├── Dashboard.tsx     # KPI cards, charts, AI insights — has layout toggle
-│   ├── Tasks.tsx         # Task list/kanban with filters
-│   ├── Projects.tsx      # Project cards + detail view
-│   ├── CalendarPage.tsx  # Calendar with task events
-│   ├── Chat.tsx          # Full-page team messaging
-│   ├── Team.tsx          # Team member management
-│   ├── Analytics.tsx     # Charts and reports
-│   ├── AIInsights.tsx    # AI recommendations page
-│   └── SettingsPage.tsx  # General, Appearance, Notifications, Data
+│   ├── LoginPage.tsx         # Auth: quick-login (demo) + Supabase email/password
+│   ├── InviteAcceptPage.tsx  # Invite acceptance — handles ?invite_token= and #invite?token=
+│   ├── InviteOnboardPage.tsx # Post-invite onboarding — set password + preferences
+│   ├── Dashboard.tsx         # KPI cards, charts, AI insights — has layout toggle
+│   ├── Tasks.tsx             # Task list/kanban with filters
+│   ├── Projects.tsx          # Project cards + detail view
+│   ├── CalendarPage.tsx      # Calendar with task events
+│   ├── Chat.tsx              # Full-page team messaging
+│   ├── Team.tsx              # Team member management + invite modal
+│   ├── Analytics.tsx         # Charts and reports
+│   ├── AIInsights.tsx        # AI recommendations page
+│   └── SettingsPage.tsx      # General, Appearance, Notifications, Data
 │
 ├── stores/              # Zustand state management
-│   ├── taskStore.ts         # Tasks CRUD, mock data, DB hydration
-│   ├── projectStore.ts      # Projects CRUD, seed data
+│   ├── taskStore.ts         # Tasks CRUD, mock data, DB hydration, team_id stamping
+│   ├── projectStore.ts      # Projects + project_tasks CRUD, seed data, DB persistence
 │   ├── chatStore.ts         # Conversations, messages, team members
-│   ├── notificationStore.ts # Notifications, preferences, grouping
-│   ├── userStore.ts         # Auth, session, roles, hydrateStores()
+│   ├── notificationStore.ts # Notifications, preferences, grouping, DB persistence
+│   ├── userStore.ts         # Auth, session, roles, currentTeamId, hydrateStores()
 │   ├── settingsStore.ts     # App prefs (accent, layout, mock toggle)
 │   └── uiStore.ts           # Dark mode, sidebar collapse
 │
 ├── lib/
 │   ├── supabase.ts      # Supabase client init, isDbConnected()
-│   └── dataService.ts   # DB abstraction: authDb, taskDb, chatDb
+│   └── dataService.ts   # DB abstraction layer (see §6 for full API)
 │
 ├── types/
-│   └── index.ts         # Shared TypeScript types (Task, Project, etc.)
+│   └── index.ts         # Shared TypeScript types (Task, Project, Notification etc.)
 │
-├── App.tsx              # Root layout: sidebar + topbar + routes
+├── App.tsx              # Root layout: sidebar + topbar + page routes + invite routing
 ├── index.css            # Tailwind base + accent color CSS variables
 └── main.tsx             # Entry point
 ```
@@ -91,79 +94,195 @@ src/
 
 ### Mock Data System
 - `keepMockData` (default: `true`) controls whether stores show sample data.
-- On toggle OFF: all stores call `clearMockData()`, then hydrate from Supabase.
-- On toggle ON: all stores call `restoreMockData()` with current user ID.
-- **Important:** `taskStore` and `projectStore` read `keepMockData` from localStorage at *module init* to decide initial state (avoids flash of mock data on refresh).
-- `restoreMockData(userId)` in taskStore reassigns half the mock tasks to the current user's ID so non-admin users see data.
+- On toggle **OFF**: all stores call `clearMockData()`, then hydrate from Supabase.
+- On toggle **ON**: all stores call `restoreMockData()` with current user ID.
+- `taskStore` and `projectStore` read `keepMockData` from localStorage at *module init* to avoid flash of mock data on refresh.
+- `restoreMockData(userId)` in taskStore reassigns half the mock tasks to the current user's ID so non-admin (Supabase) users see data.
 
 ### Hydration Flow (`hydrateStores()` in userStore.ts)
 Called after every login (demo, email, or session restore):
-1. **Mock ON** → populate all stores with mock/seed data
-2. **Mock OFF** → clear all stores first, then hydrate from Supabase if connected
+1. **Mock ON** → populate all stores with mock/seed data (in-memory only, DB never touched)
+2. **Mock OFF** → clear all stores first, then hydrate from Supabase if connected:
+   - `taskStore.hydrateFromDb(userId)` — team-scoped task fetch
+   - `chatStore.hydrateFromDb(userId)`
+   - `projectStore.hydrateFromDb(userId)` — project + project_tasks
+   - `notificationStore.hydrateFromDb(userId)` — user's notification inbox
+
+### Team Context & Data Scoping
+Every DB write that should belong to a company attaches a `team_id`.  
+`userStore` resolves and caches this as `currentTeamId` on login:
+
+```
+loginWithEmail / initSession
+  → authDb.getOrCreateTeam(userId, name)
+  → set({ currentTeamId, currentTeamName })
+```
+
+Each store reads `currentTeamId` via a lazy `require('@stores/userStore')` at call-time (avoids circular deps at module init).
+
+| Store | team_id stamped on write? |
+|-------|--------------------------|
+| `taskStore.addTask` | ✅ `teamId || taskData.teamId` |
+| `projectStore.createProject` | ✅ via `getTeamContext()` |
+| `chatStore.createConversation` | ✅ passed by caller |
+| Invite / `inviteDb.create` | ✅ `team_id` from `ensureTeam()` |
 
 ### Auth
-- **Quick Login** — demo profiles (`user-1` through `user-5`) for development
-- **Supabase Auth** — email/password sign-up with email confirmation
-- `emailRedirectTo: window.location.origin` ensures confirmation links go to the right environment
-- DB trigger `handle_new_user()` auto-creates profile on sign-up; first user gets `admin` role
+- **Quick Login** — demo profiles (`user-1` through `user-5`) for development.
+- **Supabase Auth** — email/password sign-up with email confirmation.
+- `emailRedirectTo: window.location.origin` ensures confirmation links go to the right environment.
+- DB trigger `handle_new_user()` (`SECURITY DEFINER`):
+  - Auto-creates `profiles` row on sign-up
+  - First user gets `admin` role
+  - Auto-accepts pending invite by matching email in `invites` table
+  - Auto-joins team from invite's `team_id`
+
+### Invite Flow (End-to-End)
+1. **Admin sends invite** (Team.tsx `InviteModal`):
+   - `ensureTeam()` → `userStore.ensureTeam()` → `authDb.getOrCreateTeam()` (auto-creates team if none exists, caches `currentTeamId`)
+   - `inviteDb.create(teamId, invitedBy, role, email)` → inserts into `invites` table with a UUID token
+   - `authDb.sendMagicLinkInvite(email, token)` → Supabase OTP with `redirectTo: ?invite_token=<token>`
+   - Optionally: "Generate Link" button creates invite and shows copyable `#invite?token=<token>` URL
+
+2. **Invitee clicks link** (InviteAcceptPage.tsx):
+   - `inviteDb.getByToken(token)` validates status, expiry
+   - If authenticated (magic link flow) → `inviteDb.accept(token, userId)` → marks invite accepted, inserts `team_members` row → redirects to `#onboard`
+   - If not authenticated → stores token in `sessionStorage('purplebee-invite-token')` → shows sign-up UI
+
+3. **After sign-up** (`userStore.initSession`):
+   - Detects `purplebee-invite-token` in `sessionStorage`
+   - Calls `inviteDb.accept(token, userId)` → DB trigger also fires simultaneously (safe, idempotent)
+   - Re-resolves team: `authDb.getTeamForUser()` to get the inviter's team_id (not a new auto-created one)
+   - Redirects to `#onboard`
+
+4. **Onboarding** (InviteOnboardPage.tsx):
+   - Step 1: Set password (`authDb.updatePassword()` → `supabase.auth.updateUser({ password })`)
+   - Step 2: Choose mock data (default OFF for invitees) + tooltips (default ON)
+   - On submit: `setKeepMockData()`, `setShowTips()` persisted to `localStorage`
+   - Redirects to `#dashboard`
+
+### Task Assignment to Invited Team Members (DB)
+When tasks are assigned to real Supabase users (UUIDs, not `user-1` demo IDs):
+- `taskStore.addTask` stamps `team_id` from `currentTeamId` and `created_by` from `user.id`
+- Tasks are fetched team-scoped: all members under the same `team_id` see the shared backlog
+- `assigned_to` references `profiles.id` (UUID) so assignments survive re-login
+- `taskDb.fetchAll(userId, mockMode, teamId)` prefers team scope — every invite-accepted member sees the full project backlog, not just their own tasks
 
 ### Accent Color Theming
-- CSS custom properties `--accent-50` through `--accent-900` defined in `index.css`
+- CSS custom properties `--accent-50` through `--accent-900` in `index.css`
 - `data-accent` attribute on `<html>` activates color overrides
 - 6 palettes: purple (default), blue, green, amber, red, pink
 - `accentColorMap` in settingsStore maps each to hex/label/tw values
 
-### Dashboard Layouts
-- `dashboardLayout: 'default' | 'modern'` in settingsStore
-- Toggle in `Dashboard.tsx` and `SettingsPage.tsx`
-- Both layouts share the same greeting header wrapper
-
 ### Roles & Permissions
 - Roles: `admin`, `manager`, `user`
-- `canViewAllTasks()` — admin/manager see all; users see only their assigned tasks
+- `canViewAllTasks()` — admin/manager see all; users see only their tasks
 - `canInviteMembers()` — admin only
-- `canManageTeam()` — admin only
-- `viewAs` system lets admins view dashboards as other users
+- `canManageTeam()` — admin + manager
+- `viewAs` system lets admins preview dashboards as other team members
 
 ---
 
-## 5. Environment Variables
+## 5. Routing
+
+`App.tsx` handles routes via `window.location.hash`:
+
+| Hash | Component | Notes |
+|------|-----------|-------|
+| `#dashboard` | Dashboard | Default |
+| `#onboard?from=settings` | InviteOnboardPage | `skipPassword=true` — preferences only, no password step |
+| `#projects` | Projects | |
+| `#tasks` | Tasks | |
+| `#calendar` | CalendarPage | |
+| `#analytics` | Analytics | |
+| `#team` | Team | |
+| `#chat` | Chat | |
+| `#ai-insights` | AIInsights | |
+| `#settings` | SettingsPage | |
+| `#onboard` | InviteOnboardPage | Fullscreen, no sidebar — shown when authenticated |
+| `?invite_token=xxx` | InviteAcceptPage | Query param (from Supabase magic link redirect) |
+| `#invite?token=xxx` | InviteAcceptPage | Hash param (from manually shared link) |
+
+> **Why query param for magic link?** Supabase strips hash fragments on redirect. The invite token must be a query param.
+
+---
+
+## 6. DataService API (`src/lib/dataService.ts`)
+
+| Export | Key Methods |
+|--------|-------------|
+| `taskDb` | `fetchAll(userId, mockMode, teamId?)`, `insert`, `update`, `delete`, `bulkInsert`, `deleteAllForUser` |
+| `projectDb` | `fetchAll(userId, mockMode, teamId?)`, `insert`, `insertWithTasks`, `update`, `delete`, `insertTask`, `updateTask`, `deleteTask`, `deleteAllForUser` |
+| `notificationDb` | `fetchAll`, `insert`, `markRead`, `deleteAllForUser` |
+| `chatDb` | `fetchConversations`, `fetchMessages`, `sendMessage`, `createConversation`, `toggleReaction`, `markRead` |
+| `settingsDb` | `fetch(userId)`, `upsert(userId, settings)` |
+| `authDb` | `signIn`, `signUp`, `updatePassword`, `signOut`, `getSession`, `getProfile`, `getTeamForUser`, `getOrCreateTeam`, `sendMagicLinkInvite` |
+| `inviteDb` | `create(teamId, invitedBy, role, email?)`, `getByToken`, `listForTeam`, `revoke`, `accept` |
+
+**Gate function:**
+```ts
+const shouldPersist = (mockMode?: boolean): boolean => {
+  if (mockMode === true) return false;  // mock ON → in-memory only
+  return isDbConnected();               // mock OFF + DB connected → write to Supabase
+};
+```
+
+---
+
+## 7. Supabase Schema (Key Tables)
+
+| Table | Purpose | Key columns |
+|-------|---------|-------------|
+| `profiles` | User accounts | `id`, `name`, `email`, `role`, `avatar_url` |
+| `teams` | Companies/workspaces | `id`, `name`, `created_by` |
+| `team_members` | User↔Team relationship | `team_id`, `user_id`, `role` |
+| `tasks` | Task backlog | `id`, `title`, `status`, `assigned_to`, `team_id`, `project_id`, `created_by` |
+| `projects` | Project portfolio | `id`, `name`, `status`, `team_id`, `created_by` |
+| `project_tasks` | Tasks within a project | `id`, `project_id`, `title`, `assigned_to`, `linked_task_id` |
+| `invites` | Pending invites | `id`, `token` (UUID PK), `team_id`, `invited_by`, `role`, `email`, `status`, `expires_at` |
+| `conversations` | Chat rooms | `id`, `type`, `team_id` |
+| `messages` | Chat messages | `id`, `conversation_id`, `sender_id`, `text` |
+| `notifications` | In-app inbox | `id`, `user_id`, `type`, `title`, `message`, `read` |
+
+**RLS notes:**
+- `team_members` policy uses `is_admin_or_manager()` (`SECURITY DEFINER`) — avoid subqueries on the same table (infinite recursion).
+- `handle_new_user()` trigger runs `SECURITY DEFINER` to bypass RLS for profile + team creation on signup.
+- `invites` accept logic: trigger fires on insert to `auth.users` and checks `invites.email` — safe to call `inviteDb.accept` simultaneously (idempotent).
+
+---
+
+## 8. Environment Variables
 
 ```env
 VITE_SUPABASE_URL=https://sudkymxnzuiubnszpxbc.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon-key>
 ```
 
-When these are missing, `isDbConnected()` returns `false` and the app runs in offline/demo mode.
+When missing, `isDbConnected()` returns `false` → app runs in offline/demo mode (mock data only).
 
 ---
 
-## 6. Supabase Details
-
-- **Project ID:** `sudkymxnzuiubnszpxbc`
-- **Key tables:** `profiles`, `tasks`, `conversations`, `messages`, `conversation_participants`
-- **Trigger:** `on_auth_user_created` → `handle_new_user()` (auto-creates profile, first user = admin)
-- **Important:** Site URL in Supabase Auth > URL Configuration must match the deploy URL (not localhost)
-
----
-
-## 7. Git & Deployment
+## 9. Git & Deployment
 
 | Branch | Purpose |
 |--------|---------|
 | `main` | Production (not yet live) |
 | `staging` | Active development, auto-deploys to Render |
 | `feature/*` | Feature branches |
-| `setup/*` | Infrastructure branches |
 
 - **Current working branch:** `staging`
 - **PR:** #6 (staging → main)
-- **Deploy:** Render static site, auto-deploys on push to staging
-- **Git identity:** `Sapho Maqhwazima <sapho@xspark.co.za>` (must pass via `-c` flags — global config not set)
+- **Deploy:** Render static site, auto-deploys on push to `staging`
+- **Git identity:** No global config — always pass via flags:
+
+```bash
+git -c user.name="Sapho Maqhwazima" -c user.email="sapho@xspark.co.za" commit -m "..."
+GITHUB_TOKEN=<token> git push origin staging
+```
 
 ---
 
-## 8. Path Aliases
+## 10. Path Aliases
 
 ```
 @/*           → src/*
@@ -175,7 +294,7 @@ When these are missing, `isDbConnected()` returns `false` and the app runs in of
 
 ---
 
-## 9. Common Commands
+## 11. Common Commands
 
 ```bash
 # Dev server
@@ -187,47 +306,54 @@ npx tsc --noEmit
 # Build for production
 npx vite build
 
-# Push to staging (triggers deploy)
+# Push to staging (triggers Render deploy)
 GITHUB_TOKEN=<token> git push origin staging
-
-# Commit (no global git config)
-git -c user.name="Sapho Maqhwazima" -c user.email="sapho@xspark.co.za" commit -m "message"
 ```
 
 ---
 
-## 10. Known Quirks & Gotchas
+## 12. Known Quirks & Gotchas
 
-1. **Tailwind + CSS vars:** After adding new accent-* classes, Vite may need a restart to pick them up.
-2. **Mock task assignment:** Mock tasks use IDs `user-1` to `user-5`. Real Supabase users have UUIDs. `restoreMockData(userId)` handles the mapping.
-3. **localStorage keys:** `purplebee-settings`, `purplebee-sidebar-collapsed`, `purplebee-notif-prefs`.
-4. **No global git config** on this machine — always use `-c user.name=... -c user.email=...` flags.
-5. **Supabase MCP** is available for direct DB queries during development.
-
----
-
-## 11. Recent Changes (Latest First)
-
-| Commit | Description |
-|--------|-------------|
-| `0a8ea3e` | Clear all stores when mock data is off, regardless of DB connection |
-| `bd842cb` | Fix notifications/chats reloading mock data when toggle is off |
-| `7f54f0b` | Fix mock data reappearing on refresh when toggle is off |
-| `36e257b` | Fix mock data not showing for Supabase users on first login |
-| `9adb734` | Fix email confirmation redirect to use production URL |
-| `3e150f6` | Align greeting padding between classic and modern dashboard layouts |
-| `51768b4` | Add modern dashboard layout toggle with hero gradient cards |
-| `7ee8851` | Add accent color theme system with 6 color options |
-| `e528521` | Add sidebar collapse/expand toggle with icon-only mode |
-| `24002e0` | Wire up Supabase Auth for real email/password login and sign-up |
+1. **Circular dep prevention:** Stores that need `userStore` data at call-time (not module init) use a lazy `require('@stores/userStore')` inside the action body.
+2. **team_id on tasks:** Tasks written before `currentTeamId` resolves (< 1s) may lack `team_id`. This is non-critical — fetching falls back to `assigned_to`/`created_by`.
+3. **Mock task assignment:** Mock tasks use IDs `user-1` to `user-5`. Real Supabase users have UUIDs. `restoreMockData(userId)` handles the mapping.
+4. **Supabase magic link redirects:** Hash fragments are stripped by Supabase. Invite tokens must travel as `?invite_token=xxx` query params (not `#invite?token=`).
+5. **`localStorage` keys:** `purplebee-settings`, `purplebee-sidebar-collapsed`, `purplebee-notif-prefs`.
+6. **No global git config** on this machine — always use `-c` flags.
+7. **RLS infinite recursion:** Never write a policy on table X that subqueries table X. Use a `SECURITY DEFINER` helper function instead.
+8. **Supabase MCP** available for direct DB queries during development.
 
 ---
 
-## 12. Open Items / TODO
+## 13. Recent Changes (Latest First)
 
-- [ ] Supabase dashboard: set Site URL to `https://purplebee-staging.onrender.com` in Auth > URL Configuration
-- [ ] `projectStore.hydrateFromDb()` — not yet implemented (projects are mock-only)
-- [ ] `notificationStore.hydrateFromDb()` — not yet implemented (notifications are mock-only)
+| Description |
+|-------------|
+| Demo-to-real auth modal in Settings — intercepts mock toggle OFF for Quick Login users, prompts sign-in or register, routes new users to onboarding (`skipPassword=true`) |
+| `isQuickLoginUser()` helper on userStore — detects demo session (IDs `user-1` to `user-5`) |
+| `InviteOnboardPage` now accepts `skipPassword` prop — skips password step when user already set one during sign-up |
+| Persist notifications to DB (`notificationStore.addNotification`, `markAsRead`, `hydrateFromDb`) |
+| Persist projects + project_tasks to DB (`projectStore` fully wired to `projectDb`) |
+| Team-scope task fetching — all team members see the shared backlog when mock OFF |
+| Add `currentTeamId` / `ensureTeam()` to `userStore` — every DB write attaches company `team_id` |
+| Add `projectDb.insertWithTasks`, `insertTask`, `updateTask`, `deleteTask` to `dataService` |
+| Invite onboarding flow (InviteOnboardPage) — set password, mock data choice, tooltips choice |
+| InviteAcceptPage — handles magic link + manual link, auto-accept when authenticated |
+| Team invite flow — dynamic link, Supabase OTP email, DB-backed `invites` table |
+| Auto-team creation (`getOrCreateTeam`) — no "No team found" error on first invite |
+| Fix RLS infinite recursion on `team_members` and `teams` policies |
+| Fix mock data reappearing on refresh / after toggle OFF |
+| Fix mock data not showing for real Supabase users on first login |
+
+---
+
+## 14. Open Items / TODO
+
+- [ ] Supabase dashboard: set Site URL to `https://purplebee-staging.onrender.com` in Auth > URL Configuration (and add to Redirect URLs allowlist)
 - [ ] Real-time subscriptions for tasks/chat (Supabase Realtime)
-- [ ] File uploads / attachments
+- [ ] File uploads / attachment storage (Supabase Storage bucket)
+- [ ] `taskStore` team-member list — load real DB members (not hardcoded `teamProfiles`) when mock OFF
+- [ ] `Projects.tsx` — assignee dropdown should show real team members from DB when mock OFF
+- [ ] Notification fan-out: when a task is assigned to a teammate, write notification for *their* `user_id` (currently only writes to the creator's inbox)
 - [ ] Production deploy to `main` branch
+- [ ] Supabase Row Level Security audit — ensure all tables are properly locked down

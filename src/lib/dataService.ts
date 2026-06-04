@@ -101,13 +101,17 @@ export const taskDb = {
    * Only called when mockMode is OFF and DB is connected.
    * Returns null when DB should not be used → caller keeps in-memory state.
    */
-  async fetchAll(userId: string, mockMode?: boolean): Promise<Task[] | null> {
+  async fetchAll(userId: string, mockMode?: boolean, teamId?: string | null): Promise<Task[] | null> {
     if (!shouldPersist(mockMode)) return null;
-    const { data, error } = await supabase!
-      .from('tasks')
-      .select('*')
-      .or(`assigned_to.eq.${userId},created_by.eq.${userId}`)
-      .order('created_at', { ascending: false });
+    // Prefer team-scoped fetch so every member of the company sees the shared
+    // backlog. Fall back to user-scoped when no team is resolved (single-user mode).
+    let q = supabase!.from('tasks').select('*').order('created_at', { ascending: false });
+    if (teamId) {
+      q = q.eq('team_id', teamId);
+    } else {
+      q = q.or(`assigned_to.eq.${userId},created_by.eq.${userId}`);
+    }
+    const { data, error } = await q;
     if (error) { console.error('[dataService] tasks.fetchAll', error); return null; }
     return (data as DbTask[]).map(toTask);
   },
@@ -232,22 +236,60 @@ export const notificationDb = {
 // PROJECTS
 // ═══════════════════════════════════════════════════════════════════════
 
+export interface DbProjectTaskInsert {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  priority: TaskPriority;
+  estimated_hours: number;
+  tags: string[];
+  assigned_to: string | null;
+  order: number;
+  linked_task_id: string | null;
+}
+
 export const projectDb = {
-  async fetchAll(userId: string, mockMode?: boolean) {
+  /**
+   * Fetch all projects for the user's team, with their project_tasks nested.
+   * Team-scoped so every member sees the shared portfolio.
+   */
+  async fetchAll(userId: string, mockMode?: boolean, teamId?: string | null) {
     if (!shouldPersist(mockMode)) return null;
-    const { data, error } = await supabase!
+    let q = supabase!
       .from('projects')
       .select('*, project_tasks(*)')
-      .or(`created_by.eq.${userId}`)
       .order('created_at', { ascending: false });
+    if (teamId) {
+      q = q.eq('team_id', teamId);
+    } else {
+      q = q.eq('created_by', userId);
+    }
+    const { data, error } = await q;
     if (error) { console.error('[dataService] projects.fetchAll', error); return null; }
     return data;
   },
 
+  /** Insert a project row */
   async insert(project: Record<string, unknown>, mockMode?: boolean) {
     if (!shouldPersist(mockMode)) return true;
     const { error } = await supabase!.from('projects').insert(project);
     if (error) { console.error('[dataService] projects.insert', error); return false; }
+    return true;
+  },
+
+  /** Insert a project AND its project_tasks in one go */
+  async insertWithTasks(
+    project: Record<string, unknown>,
+    tasks: DbProjectTaskInsert[],
+    mockMode?: boolean
+  ) {
+    if (!shouldPersist(mockMode)) return true;
+    const { error: projErr } = await supabase!.from('projects').insert(project);
+    if (projErr) { console.error('[dataService] projects.insertWithTasks project', projErr); return false; }
+    if (tasks.length === 0) return true;
+    const { error: tasksErr } = await supabase!.from('project_tasks').insert(tasks);
+    if (tasksErr) { console.error('[dataService] projects.insertWithTasks tasks', tasksErr); return false; }
     return true;
   },
 
@@ -260,8 +302,31 @@ export const projectDb = {
 
   async delete(id: string, mockMode?: boolean) {
     if (!shouldPersist(mockMode)) return true;
+    // project_tasks cascade via ON DELETE CASCADE
     const { error } = await supabase!.from('projects').delete().eq('id', id);
     if (error) { console.error('[dataService] projects.delete', error); return false; }
+    return true;
+  },
+
+  /** Project-task subtable CRUD */
+  async insertTask(task: DbProjectTaskInsert, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('project_tasks').insert(task);
+    if (error) { console.error('[dataService] project_tasks.insert', error); return false; }
+    return true;
+  },
+
+  async updateTask(id: string, updates: Record<string, unknown>, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('project_tasks').update(updates).eq('id', id);
+    if (error) { console.error('[dataService] project_tasks.update', error); return false; }
+    return true;
+  },
+
+  async deleteTask(id: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('project_tasks').delete().eq('id', id);
+    if (error) { console.error('[dataService] project_tasks.delete', error); return false; }
     return true;
   },
 
@@ -501,6 +566,14 @@ export const authDb = {
     });
     if (error) { console.error('[dataService] auth.signUp', error); return null; }
     return data;
+  },
+
+  /** Update the authenticated user's password */
+  async updatePassword(newPassword: string) {
+    if (!isDbConnected()) return false;
+    const { error } = await supabase!.auth.updateUser({ password: newPassword });
+    if (error) { console.error('[dataService] auth.updatePassword', error); return false; }
+    return true;
   },
 
   /** Sign out */

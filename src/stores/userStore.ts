@@ -79,6 +79,16 @@ interface UserStore {
   // "View As" — admin/manager peek at a member's dashboard
   viewingAsId: string | null; // null = viewing own data
 
+  // The team/company the logged-in user belongs to.
+  // Every DB write that should be scoped to the company (tasks, projects,
+  // conversations, notifications) reads this so the data rolls up correctly.
+  currentTeamId: string | null;
+  currentTeamName: string | null;
+
+  // Ensure the user has a team and stash its id. Auto-creates one if missing.
+  ensureTeam: () => Promise<string | null>;
+  getCurrentTeamId: () => string | null;
+
   // Actions — demo login (Quick Login)
   login: (profileId: string, password: string) => boolean;
 
@@ -100,6 +110,11 @@ interface UserStore {
 
   // The effective user ID for data scoping (respects viewAs)
   getEffectiveUserId: () => string;
+
+  // Returns true when the logged-in session is a demo/quick-login profile
+  // (IDs 'user-1' through 'user-5'). Used to gate actions that require a
+  // real Supabase account (e.g. disabling mock data).
+  isQuickLoginUser: () => boolean;
 
   // RBAC helpers (always based on the REAL logged-in user, not viewAs)
   isAdmin: () => boolean;
@@ -133,7 +148,8 @@ function hydrateStores(userId: string, userName: string) {
     if (isDbConnected()) {
       useTaskStore.getState().hydrateFromDb(userId);
       useChatStore.getState().hydrateFromDb(userId);
-      // Future: projectStore.hydrateFromDb, notificationStore.hydrateFromDb, etc.
+      useProjectStore.getState().hydrateFromDb(userId);
+      useNotificationStore.getState().hydrateFromDb(userId);
     }
   }
 
@@ -156,6 +172,25 @@ export const useUserStore = create<UserStore>((set, get) => ({
   authChecked: false,
   error: null,
   viewingAsId: null,
+  currentTeamId: null,
+  currentTeamName: null,
+
+  ensureTeam: async () => {
+    const { user } = get();
+    if (!user) return null;
+    if (get().currentTeamId) return get().currentTeamId;
+    if (!isDbConnected()) return null;
+    try {
+      const team = await authDb.getOrCreateTeam(user.id, user.name);
+      set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
+      return team.team_id;
+    } catch (err) {
+      console.error('[userStore] ensureTeam failed', err);
+      return null;
+    }
+  },
+
+  getCurrentTeamId: () => get().currentTeamId,
 
   // ── Demo / Quick Login (existing) ──────────────────────────────────
   login: (profileId, _password) => {
@@ -216,6 +251,16 @@ export const useUserStore = create<UserStore>((set, get) => ({
       });
 
       hydrateStores(supaUser.id, name);
+
+      // Resolve (or auto-create) the team this user belongs to so every
+      // DB write can be scoped to the company. Fire-and-forget — UI works
+      // without it, but subsequent creates will attach team_id once ready.
+      try {
+        const team = await authDb.getOrCreateTeam(supaUser.id, name);
+        set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
+      } catch (err) {
+        console.warn('[userStore] could not resolve team on login', err);
+      }
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Login failed';
@@ -279,6 +324,16 @@ export const useUserStore = create<UserStore>((set, get) => ({
         });
         hydrateStores(supaUser.id, name);
 
+        // Resolve the team this user belongs to so every DB write can be
+        // scoped to the company. After accepting a pending invite below
+        // we'll re-resolve so the invitee gets attached to the inviter's team.
+        try {
+          const team = await authDb.getOrCreateTeam(supaUser.id, name);
+          set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
+        } catch (err) {
+          console.warn('[userStore] could not resolve team on session restore', err);
+        }
+
         // Auto-accept pending invite if user just signed up via invite link
         const pendingToken = sessionStorage.getItem('purplebee-invite-token');
         if (pendingToken) {
@@ -286,6 +341,14 @@ export const useUserStore = create<UserStore>((set, get) => ({
           try {
             const { inviteDb } = await import('@/lib/dataService');
             await inviteDb.accept(pendingToken, supaUser.id);
+            // Re-resolve team after invite acceptance so the invitee is
+            // scoped to the inviter's company (not a freshly auto-created one).
+            try {
+              const team = await authDb.getTeamForUser(supaUser.id);
+              if (team) set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
+            } catch {}
+            // Send new invitees to onboarding (set password, preferences)
+            window.location.hash = '#onboard';
           } catch {
             // Non-critical — invite may already be accepted by the trigger
           }
@@ -305,7 +368,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
     if (isDbConnected()) {
       authDb.signOut().catch(() => {});
     }
-    set({ user: null, isAuthenticated: false, viewingAsId: null, error: null });
+    set({ user: null, isAuthenticated: false, viewingAsId: null, error: null, currentTeamId: null, currentTeamName: null });
   },
 
   setLoading: (loading) => set({ isLoading: loading }),
@@ -338,6 +401,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
     const viewingId = get().viewingAsId;
     if (viewingId) return viewingId;
     return get().user?.id || '';
+  },
+
+  isQuickLoginUser: () => {
+    const id = get().user?.id;
+    if (!id) return false;
+    return ['user-1', 'user-2', 'user-3', 'user-4', 'user-5'].includes(id);
   },
 
   // RBAC — always based on the REAL logged-in user

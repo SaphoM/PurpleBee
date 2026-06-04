@@ -11,6 +11,15 @@ import { taskDb } from '@/lib/dataService';
 import { useSettingsStore } from '@stores/settingsStore';
 const isMockMode = () => useSettingsStore.getState().keepMockData;
 
+/** Read the current team_id and creator from userStore at call-time. */
+const getTeamContext = () => {
+  // Lazy import to avoid circular dep at module init.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useUserStore } = require('@stores/userStore') as typeof import('@stores/userStore');
+  const s = useUserStore.getState();
+  return { teamId: s.currentTeamId, userId: s.user?.id || null };
+};
+
 interface TaskStore {
   tasks: Task[];
   selectedTaskId: string | null;
@@ -224,15 +233,20 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   sortBy: 'dueDate',
 
   addTask: (taskData) => {
+    const { teamId, userId } = getTeamContext();
     const newTask: Task = {
       ...taskData,
       id: uuidv4(),
+      // Stamp team_id so the task rolls up to the right company.
+      // Falls back to whatever the caller provided.
+      teamId: taskData.teamId || teamId || undefined,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
     set((state) => ({ tasks: [newTask, ...state.tasks] }));
-    // Persist to DB only when mock mode is OFF (fire-and-forget)
-    taskDb.insert(newTask, taskData.assignedTo, isMockMode());
+    // Persist to DB only when mock mode is OFF (fire-and-forget).
+    // Use the real user's id as the creator so RLS sees a valid author.
+    taskDb.insert(newTask, userId || taskData.assignedTo, isMockMode());
   },
 
   updateTask: (id, updates) => {
@@ -389,7 +403,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   hydrateFromDb: async (userId: string) => {
     const mock = isMockMode();
     if (mock) return; // Mock mode ON → don't touch DB
-    const dbTasks = await taskDb.fetchAll(userId, false);
+    const { teamId } = getTeamContext();
+    const dbTasks = await taskDb.fetchAll(userId, false, teamId);
     if (dbTasks !== null) {
       set({ tasks: dbTasks });
     }

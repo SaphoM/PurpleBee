@@ -30,6 +30,13 @@ import {
   Send,
   Link2,
   Unlink2,
+  LogIn,
+  UserPlus,
+  Building2,
+  ArrowRight,
+  Loader2,
+  X,
+  Sparkles,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@components/Card';
 import { useNotificationStore, NotificationPreferences, notificationCategoryConfig } from '@stores/notificationStore';
@@ -41,6 +48,255 @@ import { useProjectStore } from '@stores/projectStore';
 import { useChatStore } from '@stores/chatStore';
 import { NotificationType } from '@/types/index';
 import { isDbConnected } from '@/lib/supabase';
+
+// ─── Demo-to-Real Auth Modal ──────────────────────────────────────────────────
+// Shown when a Quick Login (demo) user tries to turn off mock data.
+// They must sign in or create a real account before real mode activates.
+
+type AuthTab = 'signin' | 'register';
+
+const DemoToRealModal: React.FC<{
+  onClose: () => void;
+  onSuccessNew: () => void;  // new account → go to onboard
+  onSuccessExisting: () => void; // existing account → just apply real mode
+}> = ({ onClose, onSuccessNew, onSuccessExisting }) => {
+  const { loginWithEmail, signUpWithEmail } = useUserStore();
+  const [tab, setTab] = useState<AuthTab>('signin');
+
+  // Sign-in state
+  const [siEmail, setSiEmail] = useState('');
+  const [siPassword, setSiPassword] = useState('');
+  const [siShowPw, setSiShowPw] = useState(false);
+  const [siError, setSiError] = useState<string | null>(null);
+  const [siLoading, setSiLoading] = useState(false);
+
+  // Register state
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regCompany, setRegCompany] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regShowPw, setRegShowPw] = useState(false);
+  const [regError, setRegError] = useState<string | null>(null);
+  const [regLoading, setRegLoading] = useState(false);
+  const [regEmailSent, setRegEmailSent] = useState(false);
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!siEmail.trim() || !siPassword.trim()) { setSiError('Email and password are required.'); return; }
+    setSiLoading(true); setSiError(null);
+    const ok = await loginWithEmail(siEmail.trim(), siPassword);
+    setSiLoading(false);
+    if (!ok) { setSiError('Invalid email or password.'); return; }
+    onSuccessExisting();
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regName.trim() || !regEmail.trim() || !regPassword.trim()) {
+      setRegError('Name, email, and password are required.'); return;
+    }
+    if (regPassword.length < 6) { setRegError('Password must be at least 6 characters.'); return; }
+    setRegLoading(true); setRegError(null);
+    const result = await signUpWithEmail(regEmail.trim(), regPassword, regName.trim(), regCompany.trim() || undefined);
+    setRegLoading(false);
+    if (!result.success) { setRegError('Sign-up failed. Please try again.'); return; }
+    if (result.needsConfirmation) {
+      setRegEmailSent(true);
+    } else {
+      // Auto-confirmed — logged in, go to onboard
+      onSuccessNew();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+
+      <div className="relative w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-slate-700 overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-purple-600 to-blue-600 px-6 pt-6 pb-5">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors"
+          >
+            <X size={18} />
+          </button>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+              <Database size={18} className="text-white" />
+            </div>
+            <h2 className="text-lg font-bold text-white">Switch to real mode</h2>
+          </div>
+          <p className="text-sm text-white/75">
+            Quick Login is demo-only. Sign in or create an account to save your real data.
+          </p>
+        </div>
+
+        {/* Tab switcher */}
+        <div className="flex border-b border-gray-200 dark:border-slate-700">
+          {[
+            { id: 'signin' as AuthTab, icon: <LogIn size={14} />, label: 'Sign In' },
+            { id: 'register' as AuthTab, icon: <UserPlus size={14} />, label: 'Create Account' },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={clsx(
+                'flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-semibold transition-colors',
+                tab === t.id
+                  ? 'text-purple-600 dark:text-purple-400 border-b-2 border-purple-500'
+                  : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
+              )}
+            >
+              {t.icon}{t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-6">
+          {/* ── Sign In ── */}
+          {tab === 'signin' && (
+            <form onSubmit={handleSignIn} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-slate-400 mb-1.5 uppercase tracking-wide">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={siEmail}
+                  onChange={(e) => setSiEmail(e.target.value)}
+                  placeholder="you@company.com"
+                  autoFocus
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-slate-400 mb-1.5 uppercase tracking-wide">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={siShowPw ? 'text' : 'password'}
+                    value={siPassword}
+                    onChange={(e) => setSiPassword(e.target.value)}
+                    placeholder="Your password"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500 pr-10"
+                  />
+                  <button type="button" onClick={() => setSiShowPw(!siShowPw)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">
+                    {siShowPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+              {siError && <p className="text-xs text-red-500 font-medium">{siError}</p>}
+              <button
+                type="submit"
+                disabled={siLoading}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 shadow-md shadow-purple-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {siLoading ? <Loader2 size={15} className="animate-spin" /> : <LogIn size={15} />}
+                Sign In & Switch to Real Mode
+              </button>
+            </form>
+          )}
+
+          {/* ── Register ── */}
+          {tab === 'register' && !regEmailSent && (
+            <form onSubmit={handleRegister} className="space-y-3.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-slate-400 mb-1.5 uppercase tracking-wide">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    placeholder="Jane Smith"
+                    autoFocus
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-slate-400 mb-1.5 uppercase tracking-wide">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-slate-400 mb-1.5 uppercase tracking-wide">
+                    Company <span className="text-gray-400 normal-case font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={regCompany}
+                    onChange={(e) => setRegCompany(e.target.value)}
+                    placeholder="Acme Corp"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-slate-400 mb-1.5 uppercase tracking-wide">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={regShowPw ? 'text' : 'password'}
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      placeholder="At least 6 characters"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 text-sm text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500 pr-10"
+                    />
+                    <button type="button" onClick={() => setRegShowPw(!regShowPw)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">
+                      {regShowPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {regError && <p className="text-xs text-red-500 font-medium">{regError}</p>}
+              <button
+                type="submit"
+                disabled={regLoading || !regName.trim() || !regEmail.trim() || !regPassword.trim()}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 shadow-md shadow-purple-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {regLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+                Create Account
+                {!regLoading && <ArrowRight size={14} />}
+              </button>
+            </form>
+          )}
+
+          {/* ── Email confirmation sent ── */}
+          {tab === 'register' && regEmailSent && (
+            <div className="text-center py-4">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white mx-auto mb-4">
+                <Mail size={24} />
+              </div>
+              <h3 className="font-bold text-gray-900 dark:text-slate-100 mb-2">Check your inbox</h3>
+              <p className="text-sm text-gray-500 dark:text-slate-400 mb-5">
+                We sent a confirmation link to <strong>{regEmail}</strong>. Click it to activate your account, then come back and sign in.
+              </p>
+              <button
+                onClick={() => { setTab('signin'); setSiEmail(regEmail); }}
+                className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-200 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+              >
+                Back to Sign In
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 type SettingsTab = 'notifications' | 'appearance' | 'account' | 'general';
 
@@ -107,10 +363,11 @@ export const SettingsPage: React.FC = () => {
     return 'notifications';
   });
   const { preferences, updatePreferences, resetPreferences } = useNotificationStore();
-  const { user } = useUserStore();
+  const { user, isQuickLoginUser } = useUserStore();
   const { darkMode, toggleDarkMode } = useUIStore();
   const { keepMockData, showTips, setKeepMockData, setShowTips, openWelcomeModal, accentColor, setAccentColor, dashboardLayout, setDashboardLayout } = useSettingsStore();
   const [saved, setSaved] = useState(false);
+  const [showDemoModal, setShowDemoModal] = useState(false);
 
   // Listen for hash changes (e.g. clicking Demo Mode while already on Settings)
   useEffect(() => {
@@ -159,14 +416,31 @@ export const SettingsPage: React.FC = () => {
     }, 1200);
   };
 
-  // When mock data toggle changes, immediately clear or restore all stores
+  // When mock data toggle changes, immediately clear or restore all stores.
   //
   // ON  → populate Zustand with mock arrays (in-memory only, DB untouched)
-  // OFF → clear Zustand, then hydrate from DB if connected (real data mode)
+  // OFF → if Quick Login user, show auth modal first.
+  //        Otherwise clear Zustand and hydrate from DB.
+  const applyRealMode = () => {
+    setKeepMockData(false);
+    useTaskStore.getState().clearMockData();
+    useProjectStore.getState().clearMockData();
+    useChatStore.getState().clearMockData();
+    useNotificationStore.getState().clearMockData();
+    useUserStore.getState().clearViewAs();
+    const currentUser = useUserStore.getState().user;
+    if (isDbConnected() && currentUser) {
+      useTaskStore.getState().hydrateFromDb(currentUser.id);
+      useChatStore.getState().hydrateFromDb(currentUser.id);
+      useProjectStore.getState().hydrateFromDb(currentUser.id);
+      useNotificationStore.getState().hydrateFromDb(currentUser.id);
+    }
+  };
+
   const handleMockDataToggle = (enabled: boolean) => {
-    setKeepMockData(enabled);
     if (enabled) {
       // ── Switching to mock mode: populate in-memory only, never write to DB ──
+      setKeepMockData(true);
       useTaskStore.getState().restoreMockData(user?.id);
       useProjectStore.getState().restoreMockData();
       if (user) {
@@ -174,20 +448,30 @@ export const SettingsPage: React.FC = () => {
         useChatStore.getState().restoreMockData(user.id);
       }
     } else {
-      // ── Switching to real mode: clear mock data from Zustand ──
-      useTaskStore.getState().clearMockData();
-      useProjectStore.getState().clearMockData();
-      useChatStore.getState().clearMockData();
-      useNotificationStore.getState().clearMockData();
-      useUserStore.getState().clearViewAs();
-
-      // If DB is connected, hydrate stores from Supabase (real persisted data)
-      if (isDbConnected() && user) {
-        useTaskStore.getState().hydrateFromDb(user.id);
-        useChatStore.getState().hydrateFromDb(user.id);
-        // Future: projectStore.hydrateFromDb, notificationStore.hydrateFromDb, etc.
+      // ── Switching to real mode ──
+      // If the user is on a Quick Login demo session they have no real
+      // Supabase account — prompt them to sign in or register first.
+      if (isQuickLoginUser()) {
+        setShowDemoModal(true);
+        return; // Don't apply real mode yet — wait for auth success
       }
+      applyRealMode();
     }
+  };
+
+  // Called by modal after a successful sign-in (existing user)
+  const handleDemoModalSuccessExisting = () => {
+    setShowDemoModal(false);
+    applyRealMode();
+  };
+
+  // Called by modal after a successful sign-up (new user) → onboarding
+  const handleDemoModalSuccessNew = () => {
+    setShowDemoModal(false);
+    applyRealMode();
+    // Send new users to preferences-only onboarding (password was already set
+    // in the sign-up form). Pass ?from=settings so the page skips the password step.
+    window.location.hash = '#onboard?from=settings';
   };
 
   const handleSave = () => {
@@ -212,6 +496,15 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Demo-to-real auth modal */}
+      {showDemoModal && (
+        <DemoToRealModal
+          onClose={() => setShowDemoModal(false)}
+          onSuccessExisting={handleDemoModalSuccessExisting}
+          onSuccessNew={handleDemoModalSuccessNew}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -638,8 +931,8 @@ export const SettingsPage: React.FC = () => {
                 <CardContent>
                   <SettingRow
                     icon={<Database size={16} />}
-                    label="Keep Mock Data"
-                    description="Preserve sample tasks, projects, and chats for exploring the app. Turn off to start with a clean workspace."
+                    label="Sample Data"
+                    description="Show example tasks, projects, and chats while exploring. Turn off to work with your own real data — requires a free account."
                   >
                     <Toggle
                       enabled={keepMockData}

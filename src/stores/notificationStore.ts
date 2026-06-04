@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { Notification, NotificationType } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
+import { notificationDb } from '@/lib/dataService';
+import { useSettingsStore } from '@stores/settingsStore';
+
+const isMockMode = () => useSettingsStore.getState().keepMockData;
 
 // ─── Notification preferences ───────────────────────────────────────────
 export interface NotificationPreferences {
@@ -121,6 +125,7 @@ interface NotificationStore {
   // Mock data control
   clearMockData: () => void;
   restoreMockData: (userId: string, userName: string) => void;
+  hydrateFromDb: (userId: string) => Promise<void>;
 
   // Computed helpers
   getGroupedNotifications: () => Record<string, Notification[]>;
@@ -315,6 +320,21 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       notifications: [newNotification, ...state.notifications],
       unreadCount: state.unreadCount + 1,
     }));
+
+    // Persist to DB only when mock mode is OFF. Notifications are user-scoped
+    // (each member has their own inbox) — so we write to the recipient's row.
+    notificationDb.insert(
+      {
+        id: newNotification.id,
+        userId: newNotification.userId,
+        type: newNotification.type,
+        title: newNotification.title,
+        message: newNotification.message,
+        read: newNotification.read,
+        actionUrl: newNotification.actionUrl,
+      },
+      isMockMode(),
+    );
   },
 
   removeNotification: (id) => {
@@ -337,6 +357,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         unreadCount: wasUnread ? Math.max(0, state.unreadCount - 1) : state.unreadCount,
       };
     });
+    notificationDb.markRead(id, isMockMode());
   },
 
   markAllAsRead: () => {
@@ -396,6 +417,32 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     set({
       notifications,
       unreadCount: notifications.filter((n) => !n.read).length,
+    });
+  },
+
+  /**
+   * Pull the user's notification inbox from Supabase (mock mode OFF only).
+   * Each user has their own row scope (user_id = auth.uid()).
+   */
+  hydrateFromDb: async (userId: string) => {
+    if (isMockMode()) return;
+    const rows = await notificationDb.fetchAll(userId, false);
+    if (!rows) return;
+    const mapped: Notification[] = (rows as Array<Record<string, any>>).map((r) => ({
+      id: r.id,
+      userId: r.user_id,
+      type: r.type as NotificationType,
+      title: r.title,
+      message: r.message,
+      read: !!r.read,
+      createdAt: new Date(r.created_at),
+      taskId: r.task_id || undefined,
+      conversationId: r.conversation_id || undefined,
+      actionUrl: r.action_url || undefined,
+    }));
+    set({
+      notifications: mapped,
+      unreadCount: mapped.filter((n) => !n.read).length,
     });
   },
 

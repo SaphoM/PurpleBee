@@ -107,12 +107,14 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Shared helper — ensures a team exists (auto-creates if needed)
+  // Shared helper — ensures a team exists (auto-creates if needed).
+  // Delegates to userStore so the resolved team_id is cached app-wide and
+  // every subsequent create (task/project/notification) attaches to it.
   const ensureTeam = async () => {
     if (!isDbConnected()) throw new Error('Invites require a database connection. Please sign in with your email account.');
-    const team = await authDb.getOrCreateTeam(user!.id, user!.name);
-    if (!team) throw new Error('Could not find or create team.');
-    return team;
+    const teamId = await useUserStore.getState().ensureTeam();
+    if (!teamId) throw new Error('Could not find or create your team.');
+    return { team_id: teamId };
   };
 
   const handleSendInvite = async () => {
