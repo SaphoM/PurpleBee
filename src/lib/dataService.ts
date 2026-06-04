@@ -259,7 +259,8 @@ export const projectDb = {
     let q = supabase!
       .from('projects')
       .select('*, project_tasks(*)')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .order('order', { referencedTable: 'project_tasks', ascending: true });
     if (teamId) {
       q = q.eq('team_id', teamId);
     } else {

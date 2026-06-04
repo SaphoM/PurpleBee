@@ -967,7 +967,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
               <p className="text-sm text-gray-400 dark:text-slate-500">No tasks yet. Add tasks to get started.</p>
             </div>
           ) : (
-            project.tasks.map((task) => {
+            [...project.tasks].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((task) => {
               const assignee = task.assignedTo ? teamProfiles.find((p) => p.id === task.assignedTo) : null;
               const pc = priorityConfig[task.priority];
               return (
