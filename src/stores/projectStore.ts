@@ -286,8 +286,18 @@ const seedProjects: Project[] = [
   },
 ];
 
+// Read keepMockData from localStorage at module init to decide initial state.
+const shouldStartWithMock = (() => {
+  try {
+    const raw = localStorage.getItem('purplebee-settings');
+    if (!raw) return true; // default is true
+    const parsed = JSON.parse(raw);
+    return parsed.keepMockData !== false;
+  } catch { return true; }
+})();
+
 export const useProjectStore = create<ProjectStore>((set, get) => ({
-  projects: seedProjects,
+  projects: shouldStartWithMock ? seedProjects : [],
   selectedProjectId: null,
 
   createProject: (data) => {

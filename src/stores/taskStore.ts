@@ -206,8 +206,19 @@ const mockTasks: Task[] = [
   },
 ];
 
+// Read keepMockData from localStorage at module init to decide initial state.
+// This avoids showing mock data on refresh when the user turned it off.
+const shouldStartWithMock = (() => {
+  try {
+    const raw = localStorage.getItem('purplebee-settings');
+    if (!raw) return true; // default is true
+    const parsed = JSON.parse(raw);
+    return parsed.keepMockData !== false;
+  } catch { return true; }
+})();
+
 export const useTaskStore = create<TaskStore>((set, get) => ({
-  tasks: mockTasks,
+  tasks: shouldStartWithMock ? mockTasks : [],
   selectedTaskId: null,
   filter: {},
   sortBy: 'dueDate',
