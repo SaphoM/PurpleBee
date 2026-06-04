@@ -106,38 +106,39 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Shared helper — ensures a team exists (auto-creates if needed)
+  const ensureTeam = async () => {
+    const team = await authDb.getOrCreateTeam(user!.id, user!.name);
+    if (!team) throw new Error('Could not create team.');
+    return team;
+  };
+
   const handleSendInvite = async () => {
     if (!email.trim() || !user) return;
     setSending(true);
     setError(null);
 
     try {
-      const team = await authDb.getTeamForUser(user.id);
-      if (!team) {
-        setError('No team found. Please create a team first.');
-        setSending(false);
-        return;
-      }
-      const teamId = team.team_id;
-      const teamName = (team.team as any)?.name || 'our team';
-      const invite = await inviteDb.create(teamId, user.id, role, email);
+      const team = await ensureTeam();
+      const invite = await inviteDb.create(team.team_id, user.id, role, email);
       if (!invite) {
         setError('Failed to create invite. Please try again.');
         setSending(false);
         return;
       }
 
-      // Build invite URL and open mailto to send the email
-      const inviteUrl = `${window.location.origin}#invite?token=${invite.token}`;
-      const subject = encodeURIComponent(`You're invited to join ${teamName} on PurpleBee`);
-      const body = encodeURIComponent(
-        `Hi,\n\n${user.name} has invited you to join ${teamName} on PurpleBee as a ${role === 'admin' ? 'Admin' : 'Member'}.\n\nClick the link below to accept:\n${inviteUrl}\n\nThis invite expires in 7 days.\n\nSee you there!\nThe PurpleBee Team`
-      );
-      window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_blank');
+      // Send magic link email via Supabase — user receives a login link
+      // that redirects to the app with the invite token
+      const result = await authDb.sendMagicLinkInvite(email, invite.token);
+      if (!result.success) {
+        setError(result.error || 'Failed to send invite email.');
+        setSending(false);
+        return;
+      }
 
       setSent(true);
       setEmail('');
-      setTimeout(() => setSent(false), 3000);
+      setTimeout(() => setSent(false), 4000);
     } catch {
       setError('Something went wrong.');
     }
@@ -150,14 +151,8 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
     setError(null);
 
     try {
-      const team = await authDb.getTeamForUser(user.id);
-      if (!team) {
-        setError('No team found. Please create a team first.');
-        setGeneratingLink(false);
-        return;
-      }
-      const teamId = team.team_id;
-      const invite = await inviteDb.create(teamId, user.id, role);
+      const team = await ensureTeam();
+      const invite = await inviteDb.create(team.team_id, user.id, role);
       if (!invite) {
         setError('Failed to generate link.');
         setGeneratingLink(false);
@@ -240,7 +235,7 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
                 : 'bg-gray-100 text-gray-300 dark:bg-slate-700/30 dark:text-slate-600 cursor-not-allowed'
             )}
           >
-            {sending ? 'Creating invite…' : sent ? '✓ Invite Created!' : 'Send Invite'}
+            {sending ? 'Sending invite…' : sent ? '✓ Invite Sent!' : 'Send Invite'}
           </button>
 
           {/* Divider */}

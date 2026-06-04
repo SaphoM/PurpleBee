@@ -549,6 +549,53 @@ export const authDb = {
     if (teamErr) { console.error('[dataService] getTeamForUser team', teamErr); return null; }
     return { team_id: membership.team_id, role: membership.role, team };
   },
+
+  /** Get the user's team, auto-creating one if none exists */
+  async getOrCreateTeam(userId: string, userName: string) {
+    if (!isDbConnected()) return null;
+    // Try existing team first
+    const existing = await this.getTeamForUser(userId);
+    if (existing) return existing;
+
+    // No team — auto-create one using the user's name
+    const teamName = `${userName.split(' ')[0]}'s Team`;
+    const { data: newTeam, error: createErr } = await supabase!
+      .from('teams')
+      .insert({ name: teamName, created_by: userId })
+      .select('id, name')
+      .single();
+    if (createErr || !newTeam) {
+      console.error('[dataService] getOrCreateTeam create', createErr);
+      return null;
+    }
+
+    // Add user as admin member
+    await supabase!
+      .from('team_members')
+      .insert({ team_id: newTeam.id, user_id: userId, role: 'admin' });
+
+    return { team_id: newTeam.id, role: 'admin' as const, team: newTeam };
+  },
+
+  /** Send a magic-link invite email via Supabase OTP */
+  async sendMagicLinkInvite(email: string, inviteToken: string) {
+    if (!isDbConnected()) return { success: false, error: 'No DB connection' };
+    // Supabase redirect strips hash fragments, so pass the invite token as
+    // a query param on the origin. App.tsx reads it and shows the accept page.
+    const redirectUrl = `${window.location.origin}?invite_token=${inviteToken}`;
+    const { error } = await supabase!.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: redirectUrl,
+      },
+    });
+    if (error) {
+      console.error('[dataService] sendMagicLinkInvite', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, error: null };
+  },
 };
 
 // ── Invite DB helpers ──────────────────────────────────────────────────

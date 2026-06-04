@@ -107,11 +107,16 @@ const App: React.FC = () => {
     }
   };
 
-  // Parse invite token from hash: #invite?token=xxx
+  // Parse invite token from:
+  // 1. Query param ?invite_token=xxx (from Supabase magic link redirect)
+  // 2. Hash route #invite?token=xxx (from shared link)
+  const queryParams = new URLSearchParams(window.location.search);
   const hashParts = window.location.hash.slice(1).split('?');
-  const inviteToken = hashParts[0] === 'invite'
-    ? new URLSearchParams(hashParts.slice(1).join('?')).get('token')
-    : null;
+  const inviteToken =
+    queryParams.get('invite_token') ||
+    (hashParts[0] === 'invite'
+      ? new URLSearchParams(hashParts.slice(1).join('?')).get('token')
+      : null);
 
   // Show loading spinner while checking session
   if (!authChecked) {
