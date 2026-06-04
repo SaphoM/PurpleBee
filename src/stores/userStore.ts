@@ -168,11 +168,6 @@ function hydrateStores(userId: string, userName: string) {
     }
   }
 
-  // Load assignable members (scoped to team)
-  // Use setTimeout to avoid calling get() during store initialization
-  setTimeout(() => {
-    useUserStore.getState().loadAssignableMembers();
-  }, 0);
 }
 
 export const useUserStore = create<UserStore>((set, get) => ({
@@ -188,11 +183,10 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
   // ── Load team members who can be assigned tasks ───────────────────
   loadAssignableMembers: async () => {
-    const { keepMockData } = useSettingsStore.getState();
     const state = get();
 
-    if (keepMockData || !isDbConnected() || !state.currentTeamId) {
-      // Mock mode or no DB: use hardcoded demo profiles
+    if (!isDbConnected() || !state.currentTeamId) {
+      // No DB or no team resolved yet: use hardcoded demo profiles
       set({ assignableMembers: teamProfiles });
       return;
     }
@@ -320,13 +314,16 @@ export const useUserStore = create<UserStore>((set, get) => ({
       hydrateStores(supaUser.id, name);
 
       // Resolve (or auto-create) the team this user belongs to so every
-      // DB write can be scoped to the company. Fire-and-forget — UI works
-      // without it, but subsequent creates will attach team_id once ready.
+      // DB write can be scoped to the company.
       try {
         const team = await authDb.getOrCreateTeam(supaUser.id, name);
         set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
+        // Now that team is resolved, load real assignable members
+        await get().loadAssignableMembers();
       } catch (err) {
         console.warn('[userStore] could not resolve team on login', err);
+        // Fallback to demo profiles
+        get().loadAssignableMembers();
       }
       return true;
     } catch (err: unknown) {
@@ -397,8 +394,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
         try {
           const team = await authDb.getOrCreateTeam(supaUser.id, name);
           set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
+          // Now that team is resolved, load real assignable members
+          await get().loadAssignableMembers();
         } catch (err) {
           console.warn('[userStore] could not resolve team on session restore', err);
+          // Fallback to demo profiles
+          get().loadAssignableMembers();
         }
 
         // Auto-accept pending invite if user just signed up via invite link
