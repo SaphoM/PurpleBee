@@ -492,7 +492,10 @@ export const authDb = {
     const { data, error } = await supabase!.auth.signUp({
       email,
       password,
-      options: { data: { name } },
+      options: {
+        data: { name },
+        emailRedirectTo: window.location.origin,
+      },
     });
     if (error) { console.error('[dataService] auth.signUp', error); return null; }
     return data;
