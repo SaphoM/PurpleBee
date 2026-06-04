@@ -135,14 +135,15 @@ function hydrateStores(userId: string, userName: string) {
     useNotificationStore.getState().clearMockData();
   }
 
-  // Always ensure team members are loaded (they're core data, not mock)
-  if (useChatStore.getState().teamMembers.length === 0) {
-    useChatStore.getState().loadForUser(userId);
-  }
-
-  // Always ensure notifications are loaded (essential UX, not just mock)
-  if (useNotificationStore.getState().notifications.length === 0) {
-    useNotificationStore.getState().loadForUser(userId, userName);
+  // Ensure team members & notifications are loaded when mock mode is ON.
+  // When mock mode is OFF these contain generated/seed data, so skip them.
+  if (keepMockData) {
+    if (useChatStore.getState().teamMembers.length === 0) {
+      useChatStore.getState().loadForUser(userId);
+    }
+    if (useNotificationStore.getState().notifications.length === 0) {
+      useNotificationStore.getState().loadForUser(userId, userName);
+    }
   }
 }
 
