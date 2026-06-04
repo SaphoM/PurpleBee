@@ -122,17 +122,19 @@ function hydrateStores(userId: string, userName: string) {
     useChatStore.getState().restoreMockData(userId);
     useTaskStore.getState().restoreMockData(userId);
     useProjectStore.getState().restoreMockData();
-  } else if (isDbConnected()) {
-    // ── Mock data OFF + DB connected: hydrate from Supabase ──
-    useTaskStore.getState().hydrateFromDb(userId);
-    useChatStore.getState().hydrateFromDb(userId);
-    // Future: projectStore.hydrateFromDb, notificationStore.hydrateFromDb, etc.
   } else {
-    // ── Mock data OFF + no DB: start with clean empty state ──
+    // ── Mock data OFF: always clear all stores first ──
     useTaskStore.getState().clearMockData();
     useProjectStore.getState().clearMockData();
     useChatStore.getState().clearMockData();
     useNotificationStore.getState().clearMockData();
+
+    // Then hydrate from Supabase if DB is available
+    if (isDbConnected()) {
+      useTaskStore.getState().hydrateFromDb(userId);
+      useChatStore.getState().hydrateFromDb(userId);
+      // Future: projectStore.hydrateFromDb, notificationStore.hydrateFromDb, etc.
+    }
   }
 
   // Ensure team members & notifications are loaded when mock mode is ON.
