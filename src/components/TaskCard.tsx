@@ -6,7 +6,7 @@ import { Clock, Users, FileText, GripVertical, ChevronDown, FolderKanban } from 
 import { formatDistanceToNow } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
-import { teamProfiles } from '@stores/userStore';
+import { useUserStore } from '@stores/userStore';
 import { MemberTooltip, MemberInfo } from './MemberTooltip';
 
 interface TaskCardProps {
@@ -31,11 +31,12 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const { updateTaskStatus, addCollaborator, removeCollaborator } = useTaskStore();
   const { getProjectById } = useProjectStore();
+  const assignableMembers = useUserStore((s) => s.assignableMembers);
   const project = task.projectId ? getProjectById(task.projectId) : null;
 
-  // Resolve the assigned user name from teamProfiles
+  // Resolve the assigned user name from assignableMembers
   const assignee = task.assignedTo
-    ? teamProfiles.find((p) => p.id === task.assignedTo)
+    ? assignableMembers.find((p) => p.id === task.assignedTo)
     : null;
 
   const collaborators = task.collaborators || [];
@@ -62,7 +63,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleInvite = (profile: typeof teamProfiles[0], role: 'helper' | 'reviewer', minutes: number) => {
+  const handleInvite = (profile: typeof assignableMembers[0], role: 'helper' | 'reviewer', minutes: number) => {
     addCollaborator(task.id, {
       userId: profile.id,
       name: profile.name,

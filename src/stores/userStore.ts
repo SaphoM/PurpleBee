@@ -85,6 +85,10 @@ interface UserStore {
   currentTeamId: string | null;
   currentTeamName: string | null;
 
+  // Team members who can be assigned tasks (scoped to currentTeamId)
+  assignableMembers: TeamProfile[];
+  loadAssignableMembers: () => Promise<void>;
+
   // Ensure the user has a team and stash its id. Auto-creates one if missing.
   ensureTeam: () => Promise<string | null>;
   getCurrentTeamId: () => string | null;
@@ -163,6 +167,12 @@ function hydrateStores(userId: string, userName: string) {
       useNotificationStore.getState().loadForUser(userId, userName);
     }
   }
+
+  // Load assignable members (scoped to team)
+  // Use setTimeout to avoid calling get() during store initialization
+  setTimeout(() => {
+    useUserStore.getState().loadAssignableMembers();
+  }, 0);
 }
 
 export const useUserStore = create<UserStore>((set, get) => ({
@@ -174,6 +184,63 @@ export const useUserStore = create<UserStore>((set, get) => ({
   viewingAsId: null,
   currentTeamId: null,
   currentTeamName: null,
+  assignableMembers: [],
+
+  // ── Load team members who can be assigned tasks ───────────────────
+  loadAssignableMembers: async () => {
+    const { keepMockData } = useSettingsStore.getState();
+    const state = get();
+
+    if (keepMockData || !isDbConnected() || !state.currentTeamId) {
+      // Mock mode or no DB: use hardcoded demo profiles
+      set({ assignableMembers: teamProfiles });
+      return;
+    }
+
+    // Real mode: fetch from team_members + profiles, scoped to currentTeamId
+    try {
+      const { data, error } = await supabase!
+        .from('team_members')
+        .select('user_id, role, profiles!inner(id, name, email, avatar_url, role)')
+        .eq('team_id', state.currentTeamId);
+
+      if (error || !data) {
+        console.error('[userStore] loadAssignableMembers', error);
+        // Fallback: at least include the current user
+        if (state.user) {
+          set({
+            assignableMembers: [{
+              id: state.user.id,
+              name: state.user.name,
+              email: state.user.email,
+              avatar: state.user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${state.user.name}`,
+              role: (state.user.role as AppRole) || 'user',
+              title: '',
+              department: '',
+            }],
+          });
+        }
+        return;
+      }
+
+      const members: TeamProfile[] = data.map((row: any) => {
+        const p = row.profiles;
+        return {
+          id: p.id,
+          name: p.name || p.email?.split('@')[0] || 'User',
+          email: p.email || '',
+          avatar: p.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.name || p.id}`,
+          role: (row.role || p.role || 'user') as AppRole,
+          title: '',
+          department: '',
+        };
+      });
+
+      set({ assignableMembers: members });
+    } catch (err) {
+      console.error('[userStore] loadAssignableMembers error', err);
+    }
+  },
 
   ensureTeam: async () => {
     const { user } = get();

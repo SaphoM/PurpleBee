@@ -25,7 +25,7 @@ import {
   Briefcase,
 } from 'lucide-react';
 import { useProjectStore, projectTemplates, ProjectTask } from '@stores/projectStore';
-import { useUserStore, teamProfiles } from '@stores/userStore';
+import { useUserStore } from '@stores/userStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useNotificationStore } from '@stores/notificationStore';
 import { useChatStore } from '@stores/chatStore';
@@ -76,6 +76,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const { createProject } = useProjectStore();
   const { addNotification } = useNotificationStore();
   const user = useUserStore((s) => s.user);
+  const assignableMembers = useUserStore((s) => s.assignableMembers);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -186,7 +187,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     });
 
     assignedMembers.forEach((taskCount, memberId) => {
-      const member = teamProfiles.find((p) => p.id === memberId);
+      const member = assignableMembers.find((p) => p.id === memberId);
       addNotification({
         userId: memberId,
         type: 'project-invite',
@@ -509,7 +510,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                         )}
                       >
                         <option value="">Unassigned</option>
-                        {teamProfiles.map((p) => (
+                        {assignableMembers.map((p) => (
                           <option key={p.id} value={p.id}>{p.name}</option>
                         ))}
                       </select>
@@ -535,7 +536,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                       )}
                     >
                       <option value="">Unassigned</option>
-                      {teamProfiles.map((p) => (
+                      {assignableMembers.map((p) => (
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>
@@ -631,6 +632,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   const { isAdmin, isManager } = useUserStore();
   const currentUserId = useUserStore((s) => s.user?.id);
   const currentUserName = useUserStore((s) => s.user?.name || '');
+  const assignableMembers = useUserStore((s) => s.assignableMembers);
   const { addNotification } = useNotificationStore();
   const { addToast } = useToastStore();
   const { conversations, dockChat } = useChatStore();
@@ -724,7 +726,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
 
     // If an admin/manager added a task for someone else, notify the assignee too
     if (pt.assignedTo && pt.assignedTo !== currentUserId) {
-      const assigneeName = teamProfiles.find((p) => p.id === pt.assignedTo)?.name || '';
+      const assigneeName = assignableMembers.find((p) => p.id === pt.assignedTo)?.name || '';
       addNotification({
         userId: pt.assignedTo,
         type: 'task-assigned',
@@ -968,7 +970,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
             </div>
           ) : (
             [...project.tasks].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((task) => {
-              const assignee = task.assignedTo ? teamProfiles.find((p) => p.id === task.assignedTo) : null;
+              const assignee = task.assignedTo ? assignableMembers.find((p) => p.id === task.assignedTo) : null;
               const pc = priorityConfig[task.priority];
               return (
                 <div key={task.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700 hover:shadow-sm transition-shadow">
@@ -1026,7 +1028,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                             title="Reassign task"
                             style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 3h5v5'/%3E%3Cpath d='M8 21H3v-5'/%3E%3Cpath d='M21 3l-7 7'/%3E%3Cpath d='M3 21l7-7'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundSize: '12px', width: '28px', height: '28px', color: 'transparent' }}
                           >
-                            {teamProfiles.map((p) => (
+                            {assignableMembers.map((p) => (
                               <option key={p.id} value={p.id} style={{ color: 'inherit' }}>{p.name}</option>
                             ))}
                           </select>
@@ -1046,7 +1048,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                         )}
                       >
                         <option value="">Assign...</option>
-                        {teamProfiles.map((p) => (
+                        {assignableMembers.map((p) => (
                           <option key={p.id} value={p.id}>{p.name}</option>
                         ))}
                       </select>
@@ -1087,6 +1089,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
 export const Projects: React.FC = () => {
   const { projects } = useProjectStore();
   const { isAdmin, isManager } = useUserStore();
+  const assignableMembers = useUserStore((s) => s.assignableMembers);
   const canManage = isAdmin() || isManager();
   const [showCreate, setShowCreate] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -1208,7 +1211,7 @@ export const Projects: React.FC = () => {
                   {/* Member avatars with tooltip */}
                   {members.length > 0 && (() => {
                     const memberInfos: MemberInfo[] = members.map((uid) => {
-                      const p = teamProfiles.find((t) => t.id === uid);
+                      const p = assignableMembers.find((t) => t.id === uid);
                       if (!p) return null;
                       // Only the project creator is "Owner"; everyone else is a "Member"
                       const isCreator = uid === project.createdBy;

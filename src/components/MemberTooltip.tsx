@@ -5,7 +5,7 @@ import { TaskCollaborator } from '@/types/index';
 import {
   UserPlus, X, Timer, UserMinus,
 } from 'lucide-react';
-import { teamProfiles } from '@stores/userStore';
+import { useUserStore, type TeamProfile } from '@stores/userStore';
 import { useSettingsStore } from '@stores/settingsStore';
 
 // ── Time allocation presets ───────────────────────────────────────────
@@ -26,7 +26,7 @@ interface MemberTooltipProps {
   /** Collaborator data for showing time allocations */
   collaborators?: TaskCollaborator[];
   /** Called when a team member is invited */
-  onInvite?: (profile: typeof teamProfiles[0], role: 'helper' | 'reviewer', minutes: number) => void;
+  onInvite?: (profile: TeamProfile, role: 'helper' | 'reviewer', minutes: number) => void;
   /** Called when a collaborator is removed */
   onRemove?: (userId: string) => void;
   /** IDs to exclude from the invitable list (e.g. assignedTo) */
@@ -52,9 +52,10 @@ export const MemberTooltip: React.FC<MemberTooltipProps> = ({
   const panelRef = useRef<HTMLDivElement>(null);
   const tooltipTimeout = useRef<ReturnType<typeof setTimeout>>();
   const keepMockData = useSettingsStore((s) => s.keepMockData);
+  const assignableMembers = useUserStore((s) => s.assignableMembers);
 
-  const invitableMembers = keepMockData && canInvite
-    ? teamProfiles.filter(
+  const invitableMembers = canInvite
+    ? assignableMembers.filter(
         (p) =>
           !excludeIds.includes(p.id) &&
           !collaborators.some((c) => c.userId === p.id) &&
@@ -111,7 +112,7 @@ export const MemberTooltip: React.FC<MemberTooltipProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showInvitePanel]);
 
-  const handleInvite = (profile: typeof teamProfiles[0]) => {
+  const handleInvite = (profile: TeamProfile) => {
     const minutes = selectedTime[profile.id] || 30;
     onInvite?.(profile, inviteRole, minutes);
     setSelectedTime((prev) => {

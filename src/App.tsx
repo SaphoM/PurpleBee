@@ -19,7 +19,7 @@ import { DockedChats } from '@components/DockedChats';
 import { ToastContainer } from '@components/Toast';
 import { WelcomeTipsModal, MobileToastProvider } from '@components/Tip';
 import { useUIStore } from '@stores/uiStore';
-import { useUserStore, teamProfiles } from '@stores/userStore';
+import { useUserStore } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
 

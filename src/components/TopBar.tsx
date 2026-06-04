@@ -2,7 +2,7 @@ import React from 'react';
 import clsx from 'clsx';
 import { Search, Bell, Settings, Zap, ChevronDown, Shield, Crown, User, ArrowRightLeft, Eye, X, Check, CheckCheck, Trash2, BellOff, MessageCircle, FileText, FolderKanban, Users } from 'lucide-react';
 import { useNotificationStore, notificationCategoryConfig } from '@stores/notificationStore';
-import { useUserStore, teamProfiles } from '@stores/userStore';
+import { useUserStore } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { useUIStore } from '@stores/uiStore';
@@ -57,6 +57,7 @@ export const TopBar: React.FC = () => {
   const tasks = useTaskStore((s) => s.tasks);
   const projects = useProjectStore((s) => s.projects);
   const teamMembersChat = useChatStore((s) => s.teamMembers);
+  const assignableMembers = useUserStore((s) => s.assignableMembers);
   const [showNotifications, setShowNotifications] = React.useState(false);
   const [showRoleSwitcher, setShowRoleSwitcher] = React.useState(false);
   const [notifFilter, setNotifFilter] = React.useState<'all' | 'unread'>('all');
@@ -112,9 +113,9 @@ export const TopBar: React.FC = () => {
       }
     });
 
-    // Also search teamProfiles (always available)
+    // Also search assignableMembers (always available)
     if (results.filter((r) => r.category === 'person').length === 0) {
-      teamProfiles.forEach((profile) => {
+      assignableMembers.forEach((profile) => {
         if (profile.name.toLowerCase().includes(q) || profile.email.toLowerCase().includes(q)) {
           results.push({
             id: profile.id,
@@ -622,7 +623,7 @@ export const TopBar: React.FC = () => {
                   <p className="text-[10px] text-gray-400 dark:text-slate-500">See the app from a different role's perspective</p>
                 </div>
                 <div className="py-1 max-h-64 overflow-y-auto">
-                  {teamProfiles.map((profile) => {
+                  {assignableMembers.map((profile) => {
                     const isLoggedIn = user?.id === profile.id;
                     const isViewing = isViewingOther() ? getViewingProfile()?.id === profile.id : isLoggedIn;
                     const cfg = roleBadgeConfig[profile.role];
