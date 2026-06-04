@@ -120,7 +120,7 @@ function hydrateStores(userId: string, userName: string) {
     // ── Mock data ON: populate in-memory stores only, never touch DB ──
     useNotificationStore.getState().restoreMockData(userId, userName);
     useChatStore.getState().restoreMockData(userId);
-    useTaskStore.getState().restoreMockData();
+    useTaskStore.getState().restoreMockData(userId);
     useProjectStore.getState().restoreMockData();
   } else if (isDbConnected()) {
     // ── Mock data OFF + DB connected: hydrate from Supabase ──

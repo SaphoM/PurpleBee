@@ -41,7 +41,7 @@ interface TaskStore {
   updateCollaboratorTime: (taskId: string, userId: string, minutes: number) => void;
   hydrateFromDb: (userId: string) => Promise<void>;
   clearMockData: () => void;
-  restoreMockData: () => void;
+  restoreMockData: (currentUserId?: string) => void;
 }
 
 const day = 24 * 60 * 60 * 1000;
@@ -390,8 +390,19 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     set({ tasks: [], selectedTaskId: null });
   },
 
-  restoreMockData: () => {
+  restoreMockData: (currentUserId?: string) => {
     // Mock mode is being turned ON → populate in-memory only, never write to DB.
-    set({ tasks: mockTasks });
+    // When a real (Supabase) user is logged in, reassign a spread of mock tasks
+    // to their ID so the dashboard shows data regardless of role permissions.
+    if (currentUserId && !['user-1','user-2','user-3','user-4','user-5'].includes(currentUserId)) {
+      const reassigned = mockTasks.map((t, i) => {
+        // Assign roughly half the tasks to the current user so the dashboard isn't empty
+        if (i % 2 === 0) return { ...t, assignedTo: currentUserId };
+        return t;
+      });
+      set({ tasks: reassigned });
+    } else {
+      set({ tasks: mockTasks });
+    }
   },
 }));

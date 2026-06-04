@@ -167,7 +167,7 @@ export const SettingsPage: React.FC = () => {
     setKeepMockData(enabled);
     if (enabled) {
       // ── Switching to mock mode: populate in-memory only, never write to DB ──
-      useTaskStore.getState().restoreMockData();
+      useTaskStore.getState().restoreMockData(user?.id);
       useProjectStore.getState().restoreMockData();
       if (user) {
         useNotificationStore.getState().restoreMockData(user.id, user.name);
