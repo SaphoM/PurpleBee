@@ -1,427 +1,122 @@
-# 📁 TaskFlow - Complete File Tree & Navigation
+# PurpleBee - File Tree
 
-## Full Directory Structure
+## Directory Structure
 
 ```
-📦 productivity-dashboard/
+PurpleBee/
+├── src/
+│   ├── main.tsx                        # Entry point
+│   ├── App.tsx                         # Root layout + hash routing
+│   ├── index.css                       # Tailwind base + accent color CSS variables
+│   │
+│   ├── components/                     # Reusable UI (20+ files)
+│   │   ├── Sidebar.tsx                 # Collapsible nav, accent-themed
+│   │   ├── TopBar.tsx                  # Header, search, notifications
+│   │   ├── ModernDashboard.tsx         # Alternative dashboard layout
+│   │   ├── KanbanBoard.tsx             # Drag-and-drop task board
+│   │   ├── ChatBot.tsx                 # AI assistant panel
+│   │   ├── DockedChats.tsx             # Floating chat windows
+│   │   ├── MemberTooltip.tsx           # Team member hover cards
+│   │   └── ...                         # Card, Badge, Toast, Modal, etc.
+│   │
+│   ├── pages/                          # Page components (11 files)
+│   │   ├── Dashboard.tsx               # KPI cards, charts, layout toggle
+│   │   ├── Tasks.tsx                   # Task list/kanban with filters
+│   │   ├── Projects.tsx                # Project cards, create/delete
+│   │   ├── Chat.tsx                    # Team messaging
+│   │   ├── Team.tsx                    # Member management + invites
+│   │   ├── Analytics.tsx               # Charts and reports
+│   │   ├── AIInsights.tsx              # AI recommendations
+│   │   ├── CalendarPage.tsx            # Calendar view
+│   │   ├── SettingsPage.tsx            # Settings (4 tabs)
+│   │   ├── LoginPage.tsx               # Quick Login + email/password
+│   │   ├── InviteAcceptPage.tsx        # Invite acceptance flow
+│   │   └── InviteOnboardPage.tsx       # Post-invite onboarding
+│   │
+│   ├── stores/                         # Zustand state (7 files)
+│   │   ├── taskStore.ts                # Tasks CRUD, DB hydration
+│   │   ├── projectStore.ts             # Projects + project_tasks, localStorage + DB
+│   │   ├── chatStore.ts                # Conversations, messages
+│   │   ├── notificationStore.ts        # Notifications, preferences
+│   │   ├── userStore.ts                # Auth, session, roles, team context
+│   │   ├── settingsStore.ts            # Accent color, layout, mock toggle
+│   │   └── uiStore.ts                  # Dark mode, sidebar collapse
+│   │
+│   ├── lib/                            # Data layer
+│   │   ├── supabase.ts                 # Supabase client init
+│   │   └── dataService.ts              # DB abstraction (taskDb, projectDb, etc.)
+│   │
+│   └── types/
+│       └── index.ts                    # Shared TypeScript interfaces
 │
-├── 📄 START_HERE.md                    ⭐ READ THIS FIRST!
-├── 📄 QUICK_START.md                   ⚡ 5-minute setup
-├── 📄 SETUP_GUIDE.md                   📖 Detailed setup
-├── 📄 INDEX.md                         🗂️ File navigation
-├── 📄 PROJECT_SUMMARY.md               📋 What you received
-├── 📄 README.md                        📚 Features overview
-├── 📄 ARCHITECTURE.md                  🏗️ System design
-├── 📄 DEPLOYMENT.md                    🚀 Deploy to prod
-├── 📄 FILES_MANIFEST.txt               📋 File manifest
-├── 📄 FILE_TREE.md                     ← YOU ARE HERE
+├── public/                             # Static assets
 │
-├── 🛠️ SETUP SCRIPTS
-├── 📄 setup.sh                         🐧 Mac/Linux setup
-├── 📄 setup.bat                        🪟 Windows setup
+├── package.json                        # Dependencies and scripts
+├── tsconfig.json                       # TypeScript configuration
+├── tailwind.config.js                  # Tailwind CSS config
+├── vite.config.ts                      # Vite build config
+├── .env.example                        # Environment variables template
 │
-├── 📄 package.json                     📦 Frontend dependencies
-├── 📄 tsconfig.json                    🔧 TypeScript config
-├── 📄 tailwind.config.js               🎨 Tailwind config
-├── 📄 .env.example                     🔑 Env vars template
-│
-├── 📁 src/                             💻 FRONTEND CODE
-│   ├── 📄 main.tsx                     Entry point
-│   ├── 📄 App.tsx                      Main component
-│   ├── 📄 index.css                    Global styles
-│   │
-│   ├── 📁 components/                  🧩 REUSABLE COMPONENTS (12 files)
-│   │   ├── Button.tsx                  - Styled button
-│   │   ├── Card.tsx                    - Container card
-│   │   ├── Input.tsx                   - Text input
-│   │   ├── TextArea.tsx                - Multi-line input
-│   │   ├── Select.tsx                  - Dropdown
-│   │   ├── Modal.tsx                   - Dialog system
-│   │   ├── Badge.tsx                   - Status badges
-│   │   ├── TaskCard.tsx                - Task display
-│   │   ├── KanbanBoard.tsx             - Kanban view
-│   │   ├── StatCard.tsx                - KPI card
-│   │   ├── Sidebar.tsx                 - Navigation
-│   │   └── TopBar.tsx                  - Header bar
-│   │
-│   ├── 📁 pages/                       📄 PAGE COMPONENTS (5 files)
-│   │   ├── Dashboard.tsx               - Main dashboard ✅ COMPLETE
-│   │   ├── Tasks.tsx                   - Tasks page ✅ COMPLETE
-│   │   ├── Calendar.tsx                - Calendar view (ready)
-│   │   ├── Analytics.tsx               - Analytics (ready)
-│   │   └── Settings.tsx                - Settings (ready)
-│   │
-│   ├── 📁 stores/                      🏪 STATE MANAGEMENT (4 files)
-│   │   ├── taskStore.ts                - Task state
-│   │   ├── uiStore.ts                  - UI state
-│   │   ├── userStore.ts                - User auth
-│   │   └── notificationStore.ts        - Notifications
-│   │
-│   ├── 📁 services/                    🔌 API & SERVICES (2 files)
-│   │   ├── api.ts                      - Axios API client
-│   │   └── mockService.ts              - Mock data
-│   │
-│   ├── 📁 integrations/                🔗 INTEGRATIONS (2 files)
-│   │   ├── whatsapp.config.ts          - WhatsApp setup
-│   │   └── telegram.config.ts          - Telegram setup
-│   │
-│   └── 📁 types/                       🏷️ TYPE DEFINITIONS
-│       └── index.ts                    - All TypeScript types
-│
-├── 📁 backend/                         🖥️ BACKEND CODE
-│   ├── 📄 package.json                 📦 Backend dependencies
-│   ├── 📄 .env.example                 🔑 Backend env vars
-│   │
-│   └── 📁 src/
-│       └── index.ts                    🚀 Express server (400+ lines)
-│           ├── Auth routes (5 endpoints)
-│           ├── Task routes (5 endpoints)
-│           ├── User routes (4 endpoints)
-│           ├── Team routes (3 endpoints)
-│           ├── Analytics routes (3 endpoints)
-│           ├── Integration routes (5+ endpoints)
-│           ├── WebSocket handlers
-│           └── Error middleware
-│
-├── 📁 prisma/                          🗄️ DATABASE
-│   ├── schema.prisma                   - Database schema (13 models)
-│   │   ├── User
-│   │   ├── Team
-│   │   ├── TeamMember
-│   │   ├── Project
-│   │   ├── Task
-│   │   ├── Subtask
-│   │   ├── Attachment
-│   │   ├── Notification
-│   │   ├── Integration
-│   │   ├── FocusSession
-│   │   ├── AIInsight
-│   │   ├── Report
-│   │   ├── AuditLog
-│   │   └── AnalyticsCache
-│   │
-│   └── 📁 migrations/                  (auto-generated by Prisma)
-
-└── 🔍 OTHER FILES
-    └── (Various .gitignore, etc.)
+├── README.md                           # Project overview
+├── PROJECT_SUMMARY.md                  # Comprehensive summary
+├── ARCHITECTURE.md                     # System design
+├── DEPLOYMENT.md                       # Deploy guide
+├── SETUP_GUIDE.md                      # Detailed setup
+├── QUICK_START.md                      # Minimal setup
+├── START_HERE.md                       # Entry point
+├── FILE_TREE.md                        # This file
+├── INDEX.md                            # File navigation
+└── CONTEXT.md                          # Dev context and recent changes
 ```
 
 ---
 
-## 📊 File Statistics
+## File Statistics
 
 | Category | Count | Location |
 |----------|-------|----------|
-| **React Components** | 12 | `src/components/` |
-| **Pages** | 5 | `src/pages/` |
-| **Zustand Stores** | 4 | `src/stores/` |
-| **Services** | 2 | `src/services/` |
-| **Integrations** | 2 | `src/integrations/` |
-| **Type Files** | 1 | `src/types/` |
-| **Backend Routes** | 1 | `backend/src/` |
-| **Database Models** | 13 | `prisma/schema.prisma` |
-| **Config Files** | 5 | Root |
-| **Documentation** | 8 | Root |
-| **Setup Scripts** | 2 | Root |
-
-**Total: 51+ files**
+| React Components | 20+ | `src/components/` |
+| Pages | 11 | `src/pages/` |
+| Zustand Stores | 7 | `src/stores/` |
+| Data Layer | 2 | `src/lib/` |
+| Type Definitions | 1 | `src/types/` |
+| Config Files | 4 | Root |
+| Documentation | 10 | Root |
 
 ---
 
-## 🧭 Navigation by Purpose
+## Navigation by Feature
 
-### 🚀 **Getting Started**
-```
-START_HERE.md
-  ↓
-QUICK_START.md  OR  setup.sh / setup.bat
-  ↓
-Follow the instructions
-```
+### Task Management
+- `src/stores/taskStore.ts` - Task state and CRUD
+- `src/components/KanbanBoard.tsx` - Kanban view
+- `src/pages/Tasks.tsx` - Tasks page
 
-### 📖 **Learning the System**
-```
-README.md (overview)
-  ↓
-ARCHITECTURE.md (how it works)
-  ↓
-SETUP_GUIDE.md (detailed setup)
-  ↓
-Read source code (src/)
-```
+### Project Management
+- `src/stores/projectStore.ts` - Project state, localStorage + DB persistence
+- `src/pages/Projects.tsx` - Project cards, create/delete with modals
 
-### 🛠️ **For Developers**
+### Team & Chat
+- `src/stores/chatStore.ts` - Chat state
+- `src/pages/Chat.tsx` - Team messaging
+- `src/pages/Team.tsx` - Member management
+- `src/components/DockedChats.tsx` - Floating chat windows
 
-**Frontend work:**
-- `src/components/` - Reusable UI components
-- `src/pages/` - Page-level components
-- `src/stores/` - State management
-- `src/services/` - API calls
-- `src/types/index.ts` - All TypeScript types
+### Authentication
+- `src/stores/userStore.ts` - Auth, session, hydration
+- `src/pages/LoginPage.tsx` - Login UI
+- `src/lib/supabase.ts` - Supabase client
 
-**Backend work:**
-- `backend/src/index.ts` - All API routes
-- `backend/package.json` - Dependencies
-- `prisma/schema.prisma` - Database schema
+### Theming & UI
+- `src/index.css` - Accent color CSS variables (6 palettes)
+- `src/stores/settingsStore.ts` - Accent, layout, mock toggle
+- `src/stores/uiStore.ts` - Dark mode, sidebar
 
-**Styling:**
-- `src/index.css` - Global styles
-- `tailwind.config.js` - Tailwind config
-
-### 🚢 **For Deployment**
-```
-DEPLOYMENT.md
-  ↓
-Choose platform
-  ↓
-Follow deployment steps
-```
-
-### 🔗 **For Integrations**
-```
-src/integrations/whatsapp.config.ts
-src/integrations/telegram.config.ts
-  ↓
-backend/src/index.ts (integration routes)
-  ↓
-Follow examples in code
-```
+### Data Persistence
+- `src/lib/dataService.ts` - DB abstraction layer
+- `src/stores/projectStore.ts` - localStorage + Supabase persistence
+- `src/stores/userStore.ts` - `hydrateStores()` orchestration
 
 ---
 
-## 🎯 Common Tasks & Where to Find Files
-
-### Add a New Component
-**Location:** `src/components/NewComponent.tsx`
-**Example:** `src/components/Button.tsx`
-
-### Create a New Page
-**Location:** `src/pages/NewPage.tsx`
-**Example:** `src/pages/Dashboard.tsx`
-
-### Add State Management
-**Location:** `src/stores/featureStore.ts`
-**Example:** `src/stores/taskStore.ts`
-
-### Add API Endpoint
-**Location:** `backend/src/index.ts`
-**Example:** See Task routes (lines ~80-100)
-
-### Add Database Model
-**Location:** `prisma/schema.prisma`
-**Example:** See Task model
-
-### Style a Component
-**Files:** 
-- Use Tailwind classes (component file)
-- Global styles: `src/index.css`
-- Config: `tailwind.config.js`
-
-### Add Validation
-**Location:** Typically in component or API route
-**Example:** See `src/components/Input.tsx`
-
-### Handle Errors
-**Files:**
-- Frontend: Component error states
-- Backend: `backend/src/index.ts` error handler
-- Types: `src/types/index.ts` error types
-
----
-
-## 📂 Folder Structure Explanation
-
-### `src/` - Frontend React Application
-- **components/** - Reusable UI building blocks
-- **pages/** - Full page components (Dashboard, Tasks, etc.)
-- **stores/** - Zustand state management stores
-- **services/** - API clients and business logic
-- **integrations/** - Third-party service configurations
-- **types/** - TypeScript type definitions
-- **main.tsx** - React entry point
-- **App.tsx** - Root component
-- **index.css** - Global CSS
-
-### `backend/` - Node.js Express API Server
-- **src/index.ts** - Complete Express server
-  - Authentication routes
-  - Task management routes
-  - User endpoints
-  - Team endpoints
-  - Analytics endpoints
-  - Integration endpoints
-  - WebSocket setup
-  - Error handling
-
-### `prisma/` - Database Layer
-- **schema.prisma** - Database schema definition
-- **migrations/** - Auto-generated migration files
-
-### Root Files
-- **Config files** - `package.json`, `tsconfig.json`, `tailwind.config.js`
-- **Documentation** - All `.md` files
-- **Setup scripts** - `setup.sh`, `setup.bat`
-- **Environment** - `.env.example` files
-
----
-
-## 🔑 Key Files to Understand the System
-
-### TypeScript Types (Start Here!)
-📄 **`src/types/index.ts`** - All type definitions
-- Contains: User, Task, Team, Project, etc.
-- ~400 lines
-- Fully documented
-
-### State Management
-📄 **`src/stores/taskStore.ts`** - Main state example
-- Shows Zustand pattern
-- Task operations
-- Filtering and sorting
-
-📄 **`src/stores/uiStore.ts`** - UI state
-- Sidebar, dark mode, modals
-- Global UI state
-
-### Database Schema
-📄 **`prisma/schema.prisma`** - Complete data model
-- 13 tables
-- All relationships
-- Well commented
-
-### API Routes
-📄 **`backend/src/index.ts`** - All endpoints
-- 30+ routes
-- Auth, tasks, users, teams, analytics
-- WebSocket handlers
-
-### UI Components
-📄 **`src/components/Button.tsx`** - Example component
-- Shows pattern
-- Reusable props
-- TypeScript typing
-
-### Pages
-📄 **`src/pages/Dashboard.tsx`** - Complete example
-- Uses components
-- Uses stores
-- Uses API services
-
----
-
-## 🗺️ Navigation Paths
-
-### From Root Directory:
-
-```
-productivity-dashboard/
-├── Read Documentation
-│   ├── START_HERE.md ..................... Main guide
-│   ├── QUICK_START.md ................... 5-min setup
-│   ├── SETUP_GUIDE.md ................... Detailed setup
-│   ├── README.md ........................ Features
-│   ├── ARCHITECTURE.md .................. System design
-│   └── DEPLOYMENT.md .................... Deploy guide
-│
-├── Frontend Code
-│   └── src/
-│       ├── main.tsx ..................... Entry point
-│       ├── App.tsx ...................... Root component
-│       ├── index.css .................... Global styles
-│       ├── components/ .................. UI components (12 files)
-│       ├── pages/ ....................... Pages (5 files)
-│       ├── stores/ ...................... State (4 files)
-│       ├── services/ .................... API (2 files)
-│       ├── integrations/ ................ Integrations (2 files)
-│       └── types/index.ts ............... Types
-│
-├── Backend Code
-│   └── backend/
-│       ├── src/index.ts ................. Express server
-│       └── package.json ................. Dependencies
-│
-├── Database
-│   └── prisma/
-│       └── schema.prisma ................ Data models
-│
-└── Setup Files
-    ├── setup.sh .......................... Mac/Linux
-    ├── setup.bat ......................... Windows
-    ├── package.json ..................... Frontend deps
-    └── .env.example ..................... Env vars
-```
-
----
-
-## ⚡ Quick Access Guide
-
-**Want to...**
-
-| Goal | File |
-|------|------|
-| Learn what you got | `START_HERE.md` or `PROJECT_SUMMARY.md` |
-| Set up quickly | `setup.sh` or `setup.bat` |
-| Detailed setup | `SETUP_GUIDE.md` |
-| Understand system | `ARCHITECTURE.md` |
-| Learn components | `src/components/` |
-| Learn pages | `src/pages/` |
-| Learn state | `src/stores/` |
-| Learn types | `src/types/index.ts` |
-| Learn API | `backend/src/index.ts` |
-| Learn database | `prisma/schema.prisma` |
-| Deploy | `DEPLOYMENT.md` |
-| Create new feature | See "Common Tasks" section above |
-
----
-
-## 🎯 File Size Overview
-
-| File | Size | Purpose |
-|------|------|---------|
-| `src/types/index.ts` | ~4KB | Type definitions |
-| `backend/src/index.ts` | ~12KB | Express server |
-| `prisma/schema.prisma` | ~4KB | Database schema |
-| `src/pages/Dashboard.tsx` | ~8KB | Dashboard page |
-| `src/stores/taskStore.ts` | ~4KB | Task state |
-| Components (avg) | ~2-3KB | UI components |
-| Documentation (total) | ~30KB | 8 guide files |
-
-**Total Source Code: ~5,000+ lines**
-
----
-
-## 📍 You Are Here
-
-```
-📦 Output Folder
-├── All 51+ files created ✅
-├── All documentation ready ✅
-├── Setup scripts ready ✅
-├── Database schema ready ✅
-└── Ready to install and run ✅
-```
-
----
-
-## 🚀 Next Steps from Here
-
-1. **Read** → `START_HERE.md`
-2. **Run** → `setup.sh` or `setup.bat`
-3. **Execute** → `npm run dev` + `npm run dev` (backend)
-4. **Access** → `http://localhost:5173`
-5. **Explore** → Dashboard and all features
-
----
-
-## 📞 Using This Navigation
-
-- **Lost?** Check the "Quick Access Guide"
-- **Want details?** Check the full tree above
-- **Want instructions?** Check relevant `.md` file
-- **Want to code?** Go to specific folder in `src/`
-
----
-
-**Everything is organized and ready to go!** 🎉
-
-Navigate using this guide and you'll find exactly what you need.
+**PurpleBee** | Built by Sapho Maqhwazima

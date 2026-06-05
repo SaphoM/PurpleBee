@@ -94,10 +94,13 @@ src/
 
 ### Mock Data System
 - `keepMockData` (default: `true`) controls whether stores show sample data.
-- On toggle **OFF**: all stores call `clearMockData()`, then hydrate from Supabase.
+- On toggle **OFF**: stores hydrate from Supabase (no clearMockData race).
 - On toggle **ON**: all stores call `restoreMockData()` with current user ID.
 - `taskStore` and `projectStore` read `keepMockData` from localStorage at *module init* to avoid flash of mock data on refresh.
 - `restoreMockData(userId)` in taskStore reassigns half the mock tasks to the current user's ID so non-admin (Supabase) users see data.
+- `projectStore.restoreMockData()` prefers localStorage-persisted projects over seed data.
+- **Real Supabase users always persist to DB** — `isMockMode()` in projectStore returns `false` for non-Quick-Login users regardless of `keepMockData`.
+- `toDbProjectTask` sanitises `assigned_to` — mock IDs like `user-1` are replaced with `null` to avoid FK violations.
 
 ### Hydration Flow (`hydrateStores()` in userStore.ts)
 Called after every login (demo, email, or session restore):
@@ -318,7 +321,7 @@ GITHUB_TOKEN=<token> git push origin staging
 2. **team_id on tasks:** Tasks written before `currentTeamId` resolves (< 1s) may lack `team_id`. This is non-critical — fetching falls back to `assigned_to`/`created_by`.
 3. **Mock task assignment:** Mock tasks use IDs `user-1` to `user-5`. Real Supabase users have UUIDs. `restoreMockData(userId)` handles the mapping.
 4. **Supabase magic link redirects:** Hash fragments are stripped by Supabase. Invite tokens must travel as `?invite_token=xxx` query params (not `#invite?token=`).
-5. **`localStorage` keys:** `purplebee-settings`, `purplebee-sidebar-collapsed`, `purplebee-notif-prefs`.
+5. **`localStorage` keys:** `purplebee-settings`, `purplebee-sidebar-collapsed`, `purplebee-notif-prefs`, `purplebee-projects`.
 6. **No global git config** on this machine — always use `-c` flags.
 7. **RLS infinite recursion:** Never write a policy on table X that subqueries table X. Use a `SECURITY DEFINER` helper function instead.
 8. **Supabase MCP** available for direct DB queries during development.
@@ -329,6 +332,19 @@ GITHUB_TOKEN=<token> git push origin staging
 
 | Description |
 |-------------|
+| Fix modals not closing — wrap handleCreate/deleteProject in try/finally so onClose always runs |
+| Fix delete modal showing blank project name — capture name at click time, not render time |
+| Always persist projects to Supabase for real authenticated users — `isMockMode()` now returns false for non-Quick-Login users |
+| Sanitise `assigned_to` in `toDbProjectTask` — mock IDs like `user-1` replaced with null to avoid FK violations |
+| Fix projects disappearing on refresh — race condition in `hydrateStores` (clearMockData wiped state before async hydrateFromDb resolved) |
+| Fix seed project IDs not being valid UUIDs — generate proper UUIDs via uuidv4() when seeding to Supabase |
+| Seed demo projects to DB for new real-mode users when hydrateFromDb returns 0 rows |
+| Add delete button on project cards (hover trash icon) with confirmation modal |
+| Persist projects to localStorage — survives page refresh in both mock and real modes |
+| Fix email confirmation redirect pointing to localhost — added `emailRedirectTo: window.location.origin` |
+| Sidebar collapse/expand on desktop (icon-only mode) — persisted to localStorage |
+| Accent color theming (6 palettes) — CSS custom properties + `data-accent` attribute |
+| Modern dashboard layout option — gradient hero cards, donut chart, weekly activity bars |
 | Demo-to-real auth modal in Settings — intercepts mock toggle OFF for Quick Login users, prompts sign-in or register, routes new users to onboarding (`skipPassword=true`) |
 | `isQuickLoginUser()` helper on userStore — detects demo session (IDs `user-1` to `user-5`) |
 | `InviteOnboardPage` now accepts `skipPassword` prop — skips password step when user already set one during sign-up |

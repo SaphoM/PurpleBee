@@ -344,7 +344,13 @@ export const LoginPage: React.FC = () => {
                         <input type="checkbox" defaultChecked className="w-3.5 h-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500/30" />
                         <span className="text-xs text-gray-500 dark:text-slate-400">Remember me</span>
                       </label>
-                      <button type="button" className="text-xs text-purple-600 dark:text-purple-400 font-medium hover:text-purple-700">Forgot password?</button>
+                      <button
+                        type="button"
+                        onClick={() => { window.location.hash = '#reset-password'; }}
+                        className="text-xs text-purple-600 dark:text-purple-400 font-medium hover:text-purple-700"
+                      >
+                        Forgot password?
+                      </button>
                     </div>
                     <button
                       type="submit"

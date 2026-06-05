@@ -577,6 +577,19 @@ export const authDb = {
     return true;
   },
 
+  /** Send a password reset email via Supabase Auth */
+  async resetPasswordForEmail(email: string) {
+    if (!isDbConnected()) return { success: false, error: 'Database not connected' };
+    const { error } = await supabase!.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}`,
+    });
+    if (error) {
+      console.error('[dataService] auth.resetPasswordForEmail', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, error: null };
+  },
+
   /** Sign out */
   async signOut() {
     if (!isDbConnected()) return;

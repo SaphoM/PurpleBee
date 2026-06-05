@@ -1,329 +1,144 @@
-# TaskFlow - AI-Powered Productivity Dashboard
+# PurpleBee - AI-Powered Productivity Dashboard
 
-A modern, enterprise-grade productivity management platform with advanced task management, real-time collaboration, AI insights, and multi-channel notifications.
+A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
-![TaskFlow Dashboard](./docs/dashboard-preview.png)
+**Live staging:** https://purplebee-staging.onrender.com
+**Repo:** https://github.com/SaphoM/PurpleBee
 
-## ✨ Features
+## Features
 
-### Core Functionality
-- **Smart Task Management**
-  - Multi-level priority system (Low, Medium, High, Urgent)
-  - Status tracking (To Do, In Progress, Review, Completed)
-  - Progress visualization (0-100%)
-  - Time estimation and tracking
-  - Recurring tasks with customizable patterns
-  - Subtasks and file attachments
+### Task Management
+- Multi-level priorities (Low, Medium, High, Urgent)
+- Status tracking (To Do, In Progress, Review, Completed)
+- Progress visualization (0-100%)
+- Recurring tasks with customizable patterns
+- Subtasks and file attachments
+- Time estimation and tracking
+- Task assignment to team members
 
-- **Flexible Views**
-  - Kanban board with drag-and-drop
-  - List view with advanced filtering
-  - Calendar view for deadline planning
-  - Timeline view for project visualization
+### Multiple View Modes
+- **Kanban Board** - Drag-and-drop task management
+- **List View** - Traditional task list with filtering
+- **Calendar View** - Deadline visualization
+- **Timeline View** - Project timeline
 
-- **Productivity Analytics**
-  - Completion trends and metrics
-  - Productivity score calculation
-  - Focus session tracking
-  - Team performance analytics
-  - Custom report generation
+### Project Management
+- Project templates (Web App, Mobile, Marketing, API, Design System, Training, Services, Custom)
+- Project task breakdown with suggested tasks per template
+- Team member assignment per project task
+- Project status tracking (Planning, Active, On Hold, Completed)
+- Delete projects with confirmation modal
+- Projects persist to Supabase for real users
 
-- **AI-Powered Features**
-  - Smart task prioritization
-  - Automated deadline suggestions
-  - Productivity insights and recommendations
-  - Task forecasting
-  - Anomaly detection for overdue items
+### Team Collaboration
+- Team invite system (magic link email + shareable URL)
+- Role-based access control (Admin, Manager, User)
+- In-app team chat with docked chat windows
+- Admin "View As" to preview other members' dashboards
+- Smart notifications (assignments, due dates, mentions, AI insights)
 
-- **Real-Time Collaboration**
-  - Instant updates via WebSocket
-  - Presence indicators
-  - Team collaboration
-  - Activity feeds
-  - Notification system
+### Analytics & AI Insights
+- Completion trends and productivity score
+- Priority distribution analysis
+- Focus session tracking
+- AI-generated recommendations
+- Team performance metrics
 
-- **Smart Integrations**
-  - **WhatsApp** - Task reminders, notifications, approval workflows
-  - **Telegram** - Push notifications, commands, status updates
-  - Calendar sync
-  - Email notifications
-  - Custom webhook support
+### Customization
+- 6 accent color themes (Purple, Blue, Green, Amber, Red, Pink)
+- Dark/Light mode
+- Classic and Modern dashboard layouts
+- Collapsible sidebar (icon-only mode)
+- Configurable tooltip system
 
-## 🚀 Quick Start
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Framework | React 18 + TypeScript 5 |
+| Build | Vite 4 |
+| Styling | Tailwind CSS + CSS custom properties (accent theming) |
+| State | Zustand 4 (7 stores) |
+| Charts | Recharts 2 |
+| Icons | Lucide React |
+| Auth & DB | Supabase (Auth + Postgres + RLS) |
+| Hosting | Render (static site, staging branch auto-deploys) |
+| Utilities | clsx, uuid, date-fns |
+
+## Quick Start
 
 ### Prerequisites
-- Node.js 16+
-- PostgreSQL 12+
-- npm or yarn
+- Node.js 18+
+- npm
 
 ### Installation
 
-1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/productivity-dashboard.git
-cd productivity-dashboard
-```
+# Clone the repository
+git clone https://github.com/SaphoM/PurpleBee.git
+cd PurpleBee
 
-2. **Install frontend dependencies**
-```bash
+# Install dependencies
 npm install
-```
 
-3. **Install backend dependencies**
-```bash
-cd backend
-npm install
-cd ..
-```
+# Setup environment (optional - app runs in demo mode without Supabase)
+cp .env.example .env
+# Edit .env with your Supabase URL and anon key
 
-4. **Setup environment variables**
-
-Create `.env` file in root:
-```env
-REACT_APP_API_URL=http://localhost:3000/api
-REACT_APP_WHATSAPP_PHONE_ID=your_phone_id
-REACT_APP_TELEGRAM_BOT_TOKEN=your_bot_token
-```
-
-Create `backend/.env`:
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/taskflow
-JWT_SECRET=your_secret_key_here
-WHATSAPP_TOKEN=your_whatsapp_token
-TELEGRAM_BOT_TOKEN=your_telegram_token
-NODE_ENV=development
-PORT=3000
-```
-
-5. **Setup database**
-```bash
-cd backend
-npx prisma migrate dev --name init
-npx prisma db push
-cd ..
-```
-
-6. **Start development servers**
-
-Frontend:
-```bash
+# Start development server
 npm run dev
+# Opens at http://localhost:5173
 ```
 
-Backend (in another terminal):
-```bash
-cd backend
-npm run dev
-```
+### Demo Mode
+Without Supabase credentials, the app runs fully in demo mode with mock data. Use the Quick Login screen to pick a role (Admin, Manager, Team Member) and explore all features.
 
-Visit `http://localhost:5173` (or your Vite port)
-
-## 📁 Project Structure
-
-```
-productivity-dashboard/
-├── src/
-│   ├── components/          # Reusable UI components
-│   ├── pages/              # Page components
-│   ├── stores/             # Zustand state management
-│   ├── services/           # API clients
-│   ├── integrations/       # Third-party integrations
-│   ├── types/              # TypeScript types
-│   ├── hooks/              # Custom hooks
-│   └── utils/              # Utility functions
-│
-├── backend/
-│   ├── src/
-│   │   ├── routes/         # API routes
-│   │   ├── controllers/    # Route handlers
-│   │   ├── services/       # Business logic
-│   │   └── index.ts        # Server entry point
-│   └── package.json
-│
-├── prisma/
-│   └── schema.prisma       # Database schema
-│
-└── docs/
-    └── ARCHITECTURE.md     # Architecture documentation
-```
-
-## 🛠 Technology Stack
-
-### Frontend
-- **React 18** - Modern UI framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Utility-first styling
-- **Zustand** - Lightweight state management
-- **Recharts** - Data visualization
-- **Framer Motion** - Smooth animations
-- **Lucide React** - Icon library
-- **Vite** - Lightning-fast build tool
-
-### Backend
-- **Node.js** - JavaScript runtime
-- **Express.js** - Web framework
-- **PostgreSQL** - Relational database
-- **Prisma ORM** - Type-safe database client
-- **Socket.IO** - Real-time communication
-- **JWT** - Authentication
-- **Redis** - Caching and sessions
-
-## 📚 Documentation
-
-- [Architecture Guide](./ARCHITECTURE.md) - System design and data flow
-- [API Reference](./docs/API.md) - Complete API documentation
-- [Integration Guides](./docs/INTEGRATIONS.md) - WhatsApp & Telegram setup
-- [Database Schema](./prisma/schema.prisma) - Data models
-
-## 🔧 Configuration
-
-### WhatsApp Integration
-
-1. Create Meta Business Account
-2. Configure WhatsApp Business API
-3. Get Phone Number ID and Access Token
-4. Add to environment variables:
-   ```env
-   REACT_APP_WHATSAPP_PHONE_ID=your_phone_id
-   WHATSAPP_TOKEN=your_access_token
-   ```
-
-### Telegram Integration
-
-1. Create bot via @BotFather on Telegram
-2. Get bot token
-3. Configure webhook URL
-4. Add to environment variables:
-   ```env
-   REACT_APP_TELEGRAM_BOT_TOKEN=your_bot_token
-   REACT_APP_TELEGRAM_BOT_USERNAME=your_bot_username
-   ```
-
-## 🎨 Features Demo
-
-### Dashboard Overview
-- Real-time metrics cards
-- Completion trends chart
-- Priority distribution pie chart
-- Focus sessions bar chart
-- AI insights panel
-- Upcoming deadlines widget
-
-### Task Management
-- Create, read, update, delete tasks
-- Assign tasks to team members
-- Set priorities and deadlines
-- Add subtasks and attachments
-- Track progress with percentage
-- Add tags for organization
-
-### Kanban Board
-- Drag-and-drop tasks between columns
-- 4 status columns (To Do, In Progress, Review, Completed)
-- Quick task creation
-- Inline task preview
-- Filter by priority, assignee, tags
-- Responsive on mobile
-
-### Analytics
-- Weekly/Monthly productivity trends
-- Task completion rate
-- Average completion time
-- Team velocity metrics
-- Custom date range selection
-- Export reports to PDF/CSV
-
-## 🔐 Security
-
-- JWT-based authentication
-- CORS protection
-- Rate limiting
-- Input validation
-- SQL injection prevention (Prisma ORM)
-- XSS protection
-- Secure password hashing
-- Audit logging
-- Environment-based secrets
-
-## 🚢 Deployment
-
-### Frontend
+### Production Build
 ```bash
 npm run build
-# Deploy dist/ folder to:
-# - Vercel (recommended)
-# - Netlify
-# - AWS S3 + CloudFront
-# - GitHub Pages
+# Output in dist/ — deploy to any static host
 ```
 
-### Backend
-```bash
-cd backend
-npm run build
-# Deploy to:
-# - Heroku
-# - Railway
-# - AWS EC2
-# - DigitalOcean
-# - Fly.io
+## Project Structure
+
+```
+src/
+├── components/       # Reusable UI (Sidebar, TopBar, KanbanBoard, ChatBot, etc.)
+├── pages/            # Page components (Dashboard, Tasks, Projects, Chat, etc.)
+├── stores/           # Zustand state management (7 stores)
+├── lib/              # Supabase client + data service layer
+├── types/            # Shared TypeScript types
+├── App.tsx           # Root layout + hash routing
+├── index.css         # Tailwind base + accent color variables
+└── main.tsx          # Entry point
 ```
 
-### Database
-- AWS RDS PostgreSQL
-- Supabase
-- Railway Database
-- DigitalOcean Managed Database
+## Environment Variables
 
-## 📊 Performance
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
 
-- **Frontend Bundle**: ~150KB (gzipped)
-- **API Response Time**: <200ms
-- **Database Queries**: Optimized with indexes
-- **Real-time Updates**: WebSocket connection
-- **Caching**: Redis for analytics and expensive queries
+When missing, the app runs in offline demo mode with mock data.
 
-## 🤝 Contributing
+## Deployment
 
-Contributions are welcome! Please follow these steps:
+- **Staging:** Auto-deploys from `staging` branch to Render
+- **Production:** Deploy `main` branch to any static hosting (Render, Vercel, Netlify)
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+## Security
 
-## 📝 License
+- Supabase Auth (email/password + magic links)
+- Row Level Security (RLS) on all tables
+- Role-based access control (Admin, Manager, User)
+- Team-scoped data isolation
+- Input validation and XSS protection
 
-This project is licensed under the MIT License - see [LICENSE](./LICENSE) file for details.
+## Team
 
-## 💬 Support
-
-For support, email support@taskflow.app or open an issue on GitHub.
-
-## 🗺️ Roadmap
-
-- [ ] Mobile app (React Native)
-- [ ] Advanced AI features (GPT-4 integration)
-- [ ] Video conferencing
-- [ ] Advanced reporting
-- [ ] Workflow automation
-- [ ] Custom integrations API
-- [ ] Multi-language support
-- [ ] Dark/Light theme switcher
-- [ ] More payment integrations
-- [ ] Enterprise SSO
-
-## 👥 Team
-
-- **Lead Developer** - Sapho Maqhwazima (@sapho)
-
-## 🙏 Acknowledgments
-
-- Inspired by Linear, Notion, Monday.com, and ClickUp
-- Built with modern web technologies
-- Community feedback and contributions
+- **Lead Developer** - Sapho Maqhwazima (@SaphoM)
 
 ---
 
-**Made with ❤️ for productive teams**
+**Made with care for productive teams**

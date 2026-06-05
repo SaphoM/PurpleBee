@@ -1,463 +1,196 @@
-# TaskFlow - Complete Project Summary
+# PurpleBee - Project Summary
 
-## 📦 What You Have Received
+## What Is PurpleBee?
 
-A production-ready, enterprise-grade AI-powered productivity dashboard application with complete source code, documentation, and deployment guides.
+A production-ready, enterprise-grade AI-powered productivity dashboard for teams. Features task management, project tracking, team chat, analytics, AI insights, and multi-channel notifications.
+
+**Live staging:** https://purplebee-staging.onrender.com
+**Repo:** https://github.com/SaphoM/PurpleBee
+**Supabase project:** `sudkymxnzuiubnszpxbc`
 
 ---
 
-## 🎯 Key Features Implemented
+## Key Features
 
-### ✅ Task Management System
-- Create, read, update, delete tasks
+### Task Management
+- Create, read, update, delete tasks with drag-and-drop Kanban board
 - Multi-level priorities (Low, Medium, High, Urgent)
 - Status tracking (To Do, In Progress, Review, Completed)
-- Progress tracking (0-100%)
+- Progress tracking (0-100%), subtasks, file attachments
 - Recurring tasks with customizable patterns
-- Subtasks and file attachments
 - Time estimation and tracking
 - Task assignment to team members
+- Multiple views: Kanban, List, Calendar, Timeline
 
-### ✅ Multiple View Modes
-- **Kanban Board** - Drag-and-drop task management
-- **List View** - Traditional task list with filtering
-- **Calendar View** - Deadline visualization (ready to extend)
-- **Timeline View** - Project timeline (ready to extend)
+### Project Management
+- 8 project templates (Web App, Mobile, Marketing, API, Design System, Training, Services, Custom)
+- Suggested tasks per template with priority and time estimates
+- Team member assignment per project task
+- Project status tracking (Planning, Active, On Hold, Completed)
+- Delete projects with confirmation modal (hover trash icon on cards)
+- Projects persist to Supabase DB for real users, localStorage for demo
 
-### ✅ Analytics & Insights
-- Completion trends chart
-- Priority distribution analysis
-- Focus session tracking
+### Team Collaboration
+- Team invite system (Supabase magic link email + shareable URL)
+- Role-based access control (Admin, Manager, User)
+- In-app team chat with docked floating chat windows
+- Admin "View As" to preview dashboards as other team members
+- Smart notifications (assignments, due dates, mentions, AI insights)
+
+### Analytics & AI
+- Completion trends chart, priority distribution
 - Productivity score calculation
-- Team performance metrics
+- Focus session tracking
 - AI-generated recommendations
+- Team performance metrics
 - Custom report generation
 
-### ✅ Real-Time Features
-- WebSocket-based live updates
-- Instant notification delivery
-- Real-time collaboration
-- Activity feed
-- Presence indicators
+### Customization
+- 6 accent color themes (Purple, Blue, Green, Amber, Red, Pink)
+- Dark/Light mode
+- Classic and Modern dashboard layouts (gradient hero cards, donut chart)
+- Collapsible sidebar (icon-only mode on desktop)
+- Welcome tips and configurable tooltip system
 
-### ✅ Integration Capabilities
-- **WhatsApp Integration** - Task reminders, notifications, approval workflows
-- **Telegram Integration** - Push notifications, bot commands, status updates
-- Ready for Slack, Calendar, Email integrations
-
-### ✅ Modern UI/UX
-- Glassmorphism design aesthetic
-- Dark/light mode support
-- Responsive design (mobile, tablet, desktop)
-- Smooth animations with Framer Motion
-- Accessibility best practices
-- Loading states and error handling
-
-### ✅ Authentication & Security
-- JWT-based authentication
-- CORS protection
-- Rate limiting ready
-- Input validation
-- Secure password hashing
-- Audit logging
-- Role-based access control (Admin, Manager, User)
+### Authentication & Security
+- Supabase Auth (email/password + magic links)
+- Quick Login demo mode (5 demo profiles with different roles)
+- Row Level Security (RLS) on all Supabase tables
+- Role-based permissions
+- Team-scoped data isolation
 
 ---
 
-## 📂 Files Created
-
-### Frontend (React + TypeScript)
-
-**Core Files:**
-- `package.json` - Dependencies and scripts
-- `tsconfig.json` - TypeScript configuration
-- `tailwind.config.js` - Tailwind CSS setup
-- `src/main.tsx` - Application entry point
-- `src/App.tsx` - Main component
-- `src/index.css` - Global styles
-
-**Components (12 files):**
-- `Button.tsx` - Styled button with variants
-- `Card.tsx` - Container with header/content
-- `Input.tsx` - Form input field
-- `TextArea.tsx` - Multi-line input
-- `Select.tsx` - Dropdown selector
-- `Modal.tsx` - Dialog system
-- `Badge.tsx` - Status/priority badges
-- `TaskCard.tsx` - Task display component
-- `KanbanBoard.tsx` - Drag-and-drop board
-- `StatCard.tsx` - Statistics card
-- `Sidebar.tsx` - Navigation sidebar
-- `TopBar.tsx` - Header with search
-
-**Pages (2 implemented, 3 ready to extend):**
-- `Dashboard.tsx` - Main dashboard with metrics
-- `Tasks.tsx` - Task management interface
-- `Calendar.tsx` - (Structure ready)
-- `Analytics.tsx` - (Structure ready)
-- `Settings.tsx` - (Structure ready)
-
-**State Management (4 stores):**
-- `taskStore.ts` - Task operations (add, update, delete, filter, sort)
-- `uiStore.ts` - UI state (sidebar, dark mode, modals)
-- `userStore.ts` - User authentication
-- `notificationStore.ts` - Notifications
-
-**Services:**
-- `api.ts` - Axios API client with all endpoints
-- `mockService.ts` - Mock data for development
-
-**Integrations:**
-- `whatsapp.config.ts` - WhatsApp API setup and helpers
-- `telegram.config.ts` - Telegram API setup and helpers
-
-**Types:**
-- `types/index.ts` - Comprehensive TypeScript interfaces
-
----
-
-### Backend (Node.js + Express)
-
-**Server:**
-- `backend/src/index.ts` - Express server with:
-  - Authentication routes (login, register, logout)
-  - Task CRUD endpoints
-  - User profile endpoints
-  - Team management endpoints
-  - Analytics endpoints
-  - Integration endpoints (WhatsApp, Telegram)
-  - WebSocket handling
-  - Error handling middleware
-
-**Configuration:**
-- `backend/package.json` - Dependencies
-- `backend/.env.example` - Environment variables template
-
----
-
-### Database (PostgreSQL + Prisma)
-
-**Schema (13 models):**
-- `users` - User accounts with roles
-- `teams` - Team organization
-- `team_members` - Team membership
-- `projects` - Project grouping
-- `tasks` - Task management (core model)
-- `subtasks` - Task subdivisions
-- `attachments` - File attachments
-- `notifications` - User notifications
-- `integrations` - Connected services
-- `focus_sessions` - Focus time tracking
-- `ai_insights` - AI recommendations
-- `reports` - Generated reports
-- `audit_logs` - Activity tracking
-- `analytics_cache` - Performance optimization
-
-**File:**
-- `prisma/schema.prisma` - Complete ORM schema
-
----
-
-### Configuration & Documentation
-
-**Environment Setup:**
-- `.env.example` - Frontend variables template
-- `backend/.env.example` - Backend variables template
-
-**Documentation:**
-- `README.md` - Project overview (1,200+ words)
-- `ARCHITECTURE.md` - System design (2,000+ words)
-- `DEPLOYMENT.md` - Production guide (1,500+ words)
-- `SETUP_GUIDE.md` - Step-by-step setup (2,000+ words)
-- `PROJECT_SUMMARY.md` - This file
-
----
-
-## 🛠 Technology Stack Summary
+## Tech Stack
 
 | Category | Technologies |
 |----------|--------------|
-| **Frontend Framework** | React 18, TypeScript |
-| **Styling** | Tailwind CSS, Framer Motion |
-| **State Management** | Zustand |
-| **API Client** | Axios |
-| **Charts** | Recharts |
+| **Frontend** | React 18, TypeScript 5, Vite 4 |
+| **Styling** | Tailwind CSS, CSS custom properties (accent theming) |
+| **State** | Zustand 4 (7 stores) |
+| **Charts** | Recharts 2 |
 | **Icons** | Lucide React |
-| **Build Tool** | Vite |
-| **Backend Framework** | Node.js, Express |
-| **Database** | PostgreSQL |
-| **ORM** | Prisma |
-| **Real-time** | Socket.IO |
-| **Authentication** | JWT |
-| **Security** | Helmet, CORS, Bcrypt |
+| **Auth & DB** | Supabase (Auth + Postgres + RLS) |
+| **Hosting** | Render (static site, auto-deploy from staging) |
+| **Utilities** | clsx, uuid, date-fns |
 
 ---
 
-## 📊 Code Statistics
+## Project Structure
 
-- **Total Files Created:** 40+
-- **Frontend Components:** 12
-- **Pages Ready:** 5 (2 complete, 3 for you to extend)
-- **Zustand Stores:** 4
-- **Backend Routes:** 20+
-- **Database Models:** 13
-- **Type Definitions:** 20+
-- **Lines of Code:** 5,000+
+```
+src/
+├── components/       # Reusable UI components (20+)
+│   ├── Sidebar.tsx          # Collapsible nav, accent-themed
+│   ├── TopBar.tsx           # Header, search, notifications, role switcher
+│   ├── ModernDashboard.tsx  # Alternative dashboard layout
+│   ├── KanbanBoard.tsx      # Drag-and-drop task board
+│   ├── ChatBot.tsx          # AI assistant panel
+│   ├── DockedChats.tsx      # Floating chat windows
+│   └── ...                  # Card, Badge, Toast, Modal, MemberTooltip, etc.
+│
+├── pages/            # 11 page components
+│   ├── Dashboard.tsx         # KPI cards, charts, layout toggle
+│   ├── Tasks.tsx             # Task list/kanban with filters
+│   ├── Projects.tsx          # Project cards, detail view, create/delete
+│   ├── Chat.tsx              # Team messaging
+│   ├── Team.tsx              # Member management + invite modal
+│   ├── Analytics.tsx         # Charts and reports
+│   ├── AIInsights.tsx        # AI recommendations
+│   ├── CalendarPage.tsx      # Calendar view
+│   ├── SettingsPage.tsx      # General, Appearance, Notifications, Data
+│   ├── LoginPage.tsx         # Quick Login + email/password
+│   ├── InviteAcceptPage.tsx  # Invite acceptance flow
+│   └── InviteOnboardPage.tsx # Post-invite onboarding
+│
+├── stores/           # 7 Zustand stores
+│   ├── taskStore.ts         # Tasks CRUD, DB hydration
+│   ├── projectStore.ts      # Projects + project_tasks CRUD, localStorage + DB
+│   ├── chatStore.ts         # Conversations, messages
+│   ├── notificationStore.ts # Notifications, preferences
+│   ├── userStore.ts         # Auth, session, roles, team context
+│   ├── settingsStore.ts     # App prefs (accent, layout, mock toggle)
+│   └── uiStore.ts           # Dark mode, sidebar collapse
+│
+├── lib/
+│   ├── supabase.ts      # Supabase client init
+│   └── dataService.ts   # DB abstraction layer (taskDb, projectDb, chatDb, etc.)
+│
+├── types/index.ts       # Shared TypeScript types
+├── App.tsx              # Root layout + hash routing
+├── index.css            # Tailwind + accent color CSS variables
+└── main.tsx             # Entry point
+```
 
 ---
 
-## 🚀 Getting Started (Quick Reference)
+## Supabase Schema (Key Tables)
 
-### 1. Setup (5 minutes)
+| Table | Purpose |
+|-------|---------|
+| `profiles` | User accounts (id, name, email, role, avatar) |
+| `teams` | Companies/workspaces |
+| `team_members` | User-Team relationship |
+| `tasks` | Task backlog (team-scoped) |
+| `projects` | Project portfolio (team-scoped) |
+| `project_tasks` | Tasks within a project |
+| `invites` | Pending team invitations |
+| `conversations` | Chat rooms |
+| `messages` | Chat messages |
+| `notifications` | In-app notification inbox |
+| `user_settings` | Per-user preferences |
+
+---
+
+## Data Persistence
+
+### For Real Supabase Users
+- Projects, tasks, chat, notifications all persist to Supabase DB
+- `isMockMode()` returns `false` for real users regardless of `keepMockData` toggle
+- Mock `assigned_to` values (e.g., `user-1`) are sanitised to `null` before DB writes
+- New users get demo projects seeded to DB with proper UUIDs on first login
+- localStorage acts as a cache for instant display while DB hydration runs
+
+### For Demo/Quick Login Users
+- All data is in-memory only (Zustand stores)
+- `keepMockData: true` — DB is never touched
+- Projects also cached to localStorage to survive page refresh
+
+---
+
+## Getting Started
+
 ```bash
-# Clone/extract files
-# Create PostgreSQL database
-createdb taskflow
+# Clone and install
+git clone https://github.com/SaphoM/PurpleBee.git
+cd PurpleBee && npm install
 
-# Setup environment files
-cp .env.example .env
-cp backend/.env.example backend/.env
-
-# Edit backend/.env with database URL
-DATABASE_URL=postgresql://user:password@localhost:5432/taskflow
-```
-
-### 2. Install & Initialize (3 minutes)
-```bash
-npm install
-cd backend && npm install && cd ..
-cd backend && npx prisma migrate dev && cd ..
-```
-
-### 3. Run (Terminal 1 - Frontend)
-```bash
+# Run in demo mode (no Supabase needed)
 npm run dev
-# Opens at http://localhost:5173
+
+# Or with Supabase: copy .env.example to .env, add credentials
 ```
 
-### 4. Run (Terminal 2 - Backend)
+---
+
+## Deployment
+
+| Branch | Purpose |
+|--------|---------|
+| `staging` | Active development, auto-deploys to Render |
+| `main` | Production |
+
 ```bash
-cd backend && npm run dev
-# API at http://localhost:3000
-```
+# Build
+npm run build
 
-**That's it! Application is running.** 🎉
+# Type check
+npx tsc --noEmit
 
----
-
-## 💡 Features Highlight
-
-### Dashboard
-- Real-time KPI cards showing task metrics
-- Completion trend line chart
-- Priority distribution pie chart
-- Focus session bar chart
-- AI-generated insights panel
-- Responsive grid layout
-
-### Task Management
-- Kanban board with 4 status columns
-- Drag-and-drop functionality
-- Inline task creation
-- Filter by priority/assignee/tags
-- Task details panel
-- Progress bar visualization
-
-### Mock Data Included
-- 5 sample tasks with different statuses
-- Sample user profile (you@example.com)
-- Mock notifications
-- Sample analytics data
-- Ready-to-use Zustand stores
-
----
-
-## 🔄 Data Flow Architecture
-
-```
-User Input
-   ↓
-React Component
-   ↓
-Zustand Store (State Management)
-   ↓
-API Service (Axios)
-   ↓
-Express Backend
-   ↓
-Prisma ORM
-   ↓
-PostgreSQL Database
-   ↓
-(Response back through chain)
-   ↓
-UI Updates
+# Push to staging (triggers Render deploy)
+GITHUB_TOKEN=<token> git push origin staging
 ```
 
 ---
 
-## 🔐 Security Features
-
-- ✅ JWT authentication
-- ✅ Password hashing with bcryptjs
-- ✅ CORS protection
-- ✅ Helmet security headers
-- ✅ SQL injection prevention (Prisma)
-- ✅ XSS protection (React escaping)
-- ✅ Input validation
-- ✅ Rate limiting ready
-- ✅ Audit logging
-- ✅ Environment-based secrets
-
----
-
-## 📈 Scalability Features
-
-- **Horizontal Scaling:** Stateless API design
-- **Database Indexing:** Pre-configured for performance
-- **Caching:** Redis ready
-- **Real-time:** Socket.IO for live updates
-- **API Pagination:** Ready to implement
-- **Analytics Cache:** Dedicated model
-- **Audit Logging:** For compliance
-
----
-
-## 🎓 Learning Resources Included
-
-Each file includes:
-- Clear code comments
-- TypeScript type definitions
-- Proper error handling
-- Industry best practices
-- Scalable architecture patterns
-
-Perfect for learning how to build enterprise applications.
-
----
-
-## 🚢 Deployment Ready
-
-### Frontend Options
-- Vercel (recommended, 1-click deploy)
-- Netlify
-- AWS S3 + CloudFront
-- GitHub Pages
-
-### Backend Options
-- Railway (recommended, easy setup)
-- Heroku
-- AWS EC2
-- DigitalOcean
-- Fly.io
-
-### Database Options
-- AWS RDS
-- Supabase
-- DigitalOcean PostgreSQL
-- Railway Database
-
-Complete deployment guide included.
-
----
-
-## 📝 What You Can Do Next
-
-### Immediate
-- [ ] Follow SETUP_GUIDE.md to get running
-- [ ] Create tasks and explore features
-- [ ] Review ARCHITECTURE.md to understand system
-- [ ] Setup WhatsApp/Telegram integrations
-
-### Short-term
-- [ ] Implement Calendar page
-- [ ] Implement Analytics page (with more charts)
-- [ ] Add user authentication
-- [ ] Deploy to production
-
-### Medium-term
-- [ ] Add team collaboration features
-- [ ] Implement advanced filtering
-- [ ] Add report export (PDF/CSV)
-- [ ] Create mobile app (React Native)
-
-### Long-term
-- [ ] AI integration (GPT, ML)
-- [ ] Advanced workflow automation
-- [ ] Video conferencing integration
-- [ ] File storage integration (S3, Drive)
-
----
-
-## 📞 Support & Documentation
-
-All documentation is included:
-1. **README.md** - Project overview
-2. **SETUP_GUIDE.md** - Step-by-step setup (start here!)
-3. **ARCHITECTURE.md** - Technical deep dive
-4. **DEPLOYMENT.md** - Production deployment
-5. **Code comments** - Throughout the codebase
-
----
-
-## ✨ Key Highlights
-
-- 🎨 **Beautiful UI** - Modern glassmorphism design
-- ⚡ **Fast Performance** - Optimized React components
-- 🔒 **Secure** - JWT auth, CORS, validation
-- 📱 **Responsive** - Works on all devices
-- 🔌 **Extensible** - Easy to add features
-- 📊 **Analytics-Ready** - Charts and metrics
-- 🤖 **AI-Ready** - Integration points for AI
-- 🌍 **Global-Ready** - Multi-language support structure
-- ♿ **Accessible** - WCAG compliance basics
-
----
-
-## 🎯 Success Checklist
-
-After setup, verify:
-- [ ] Frontend loads at http://localhost:5173
-- [ ] Backend API running at http://localhost:3000
-- [ ] Dashboard displays metrics
-- [ ] Can create a new task
-- [ ] Kanban board shows task
-- [ ] Can edit/delete task
-- [ ] Notifications appear
-- [ ] Dark mode toggles
-- [ ] Responsive on mobile
-- [ ] All charts render
-
----
-
-## 🙏 Final Notes
-
-This is a **complete, production-ready application** with:
-- ✅ Full source code
-- ✅ Complete documentation
-- ✅ Setup guides
-- ✅ Deployment guides
-- ✅ Best practices
-- ✅ TypeScript types
-- ✅ Error handling
-- ✅ Mock data
-- ✅ Integration examples
-- ✅ Architecture documentation
-
-Everything you need to launch a professional productivity application.
-
----
-
-## 🚀 Ready to Begin?
-
-Start with: **SETUP_GUIDE.md** (in this directory)
-
-Then explore: **ARCHITECTURE.md** for understanding the system
-
-Finally: **DEPLOYMENT.md** when ready for production
-
-**Happy coding!** 💻
-
----
-
-**TaskFlow v1.0** | Created with ❤️ for productive teams
+**PurpleBee** | Built by Sapho Maqhwazima

@@ -14,6 +14,7 @@ import { Projects } from '@pages/Projects';
 import { LoginPage } from '@pages/LoginPage';
 import { InviteAcceptPage } from '@pages/InviteAcceptPage';
 import { InviteOnboardPage } from '@pages/InviteOnboardPage';
+import { ResetPasswordPage } from '@pages/ResetPasswordPage';
 import { ChatBot } from '@components/ChatBot';
 import { DockedChats } from '@components/DockedChats';
 import { ToastContainer } from '@components/Toast';
@@ -23,7 +24,7 @@ import { useUserStore } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
 
-type PageType = 'dashboard' | 'projects' | 'tasks' | 'calendar' | 'analytics' | 'team' | 'chat' | 'ai-insights' | 'settings' | 'onboard';
+type PageType = 'dashboard' | 'projects' | 'tasks' | 'calendar' | 'analytics' | 'team' | 'chat' | 'ai-insights' | 'settings' | 'onboard' | 'reset-password';
 
 const App: React.FC = () => {
   const { darkMode, sidebarCollapsed } = useUIStore();
@@ -119,6 +120,15 @@ const App: React.FC = () => {
       ? new URLSearchParams(hashParts.slice(1).join('?')).get('token')
       : null);
 
+  // Detect Supabase password recovery redirect.
+  // Supabase adds #access_token=...&type=recovery to the URL hash.
+  // The Supabase client auto-restores the session, so the user is
+  // authenticated — we just need to show the "set new password" form.
+  const hashFragment = window.location.hash.slice(1);
+  const isRecoveryRedirect =
+    hashFragment.includes('type=recovery') ||
+    currentPage === ('reset-password' as PageType);
+
   // Show loading spinner while checking session
   if (!authChecked) {
     return (
@@ -129,6 +139,18 @@ const App: React.FC = () => {
         <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
       </div>
     );
+  }
+
+  // Password recovery — user clicked the reset link in their email.
+  // Supabase auto-restores a session from the hash fragment, so the
+  // user is authenticated. Show the "set new password" form.
+  if (isRecoveryRedirect && isAuthenticated) {
+    return <ResetPasswordPage isRecoveryMode />;
+  }
+
+  // Forgot password page — user clicked "Forgot password?" on login
+  if (currentPage === ('reset-password' as PageType) && !isAuthenticated) {
+    return <ResetPasswordPage />;
   }
 
   // Invite accept page — accessible before or after login

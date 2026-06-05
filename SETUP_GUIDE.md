@@ -1,497 +1,247 @@
-# Complete Setup Guide - TaskFlow Productivity Dashboard
+# PurpleBee - Setup Guide
 
-Welcome! This guide will walk you through setting up the complete TaskFlow productivity dashboard application.
+## What You're Getting
 
-## 📋 What You're Getting
+A production-ready, enterprise-grade AI-powered productivity dashboard with:
+- React 18 frontend with TypeScript
+- Tailwind CSS with accent color theming
+- Zustand state management (7 stores)
+- Recharts data visualization
+- Kanban board with drag-and-drop
+- Supabase backend (Auth + Postgres + RLS)
+- Team collaboration with invite system
+- In-app chat and notifications
 
-A production-ready, enterprise-grade productivity dashboard with:
-- ✅ Modern React frontend with TypeScript
-- ✅ Responsive Tailwind CSS styling
-- ✅ Zustand state management
-- ✅ Real-time analytics with Recharts
-- ✅ Kanban board with drag-and-drop
-- ✅ Node.js/Express backend API
-- ✅ PostgreSQL database with Prisma ORM
-- ✅ WhatsApp & Telegram integrations
-- ✅ Real-time WebSocket communication
-- ✅ Complete authentication system
+## Quick Start (3 minutes)
 
-## 🎯 Quick Start (5 minutes)
-
-### 1. Prerequisites Check
+### 1. Prerequisites
 ```bash
-# Check Node.js version (need 16+)
-node --version
-
-# Check npm version (need 8+)
-npm --version
-
-# Check PostgreSQL (need 12+)
-psql --version
+node --version   # Need 18+
+npm --version    # Need 8+
 ```
 
-### 2. Create PostgreSQL Database
+### 2. Install and Run
 ```bash
-# On Windows/Mac/Linux with PostgreSQL installed
-createdb taskflow
-
-# Or connect to PostgreSQL and run:
-# CREATE DATABASE taskflow;
-```
-
-### 3. Setup Environment Variables
-
-Copy and fill in the files:
-```bash
-# Frontend environment
-cp .env.example .env
-
-# Backend environment
-cp backend/.env.example backend/.env
-```
-
-Edit `backend/.env` with your database URL:
-```env
-DATABASE_URL=postgresql://user:password@localhost:5432/taskflow
-JWT_SECRET=your_secret_key_here
-```
-
-### 4. Install Dependencies
-
-```bash
-# Frontend dependencies
+git clone https://github.com/SaphoM/PurpleBee.git
+cd PurpleBee
 npm install
-
-# Backend dependencies
-cd backend
-npm install
-cd ..
-```
-
-### 5. Initialize Database
-
-```bash
-# Run migrations
-cd backend
-npx prisma migrate dev --name init
-
-# Verify database
-npx prisma studio
-cd ..
-```
-
-### 6. Start Development Servers
-
-**Terminal 1 - Frontend:**
-```bash
 npm run dev
 # Opens at http://localhost:5173
 ```
 
-**Terminal 2 - Backend:**
+That's it! The app runs in demo mode without any backend configuration.
+
+### 3. Optional: Connect Supabase
 ```bash
-cd backend
-npm run dev
-# API running at http://localhost:3000
+cp .env.example .env
 ```
 
-Done! 🎉
+Edit `.env` with your Supabase credentials:
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
 
 ---
 
-## 📁 Project Files Overview
+## Project Files Overview
 
-### Frontend Files (`src/`)
+### Frontend (`src/`)
 
-**Components** (`src/components/`)
-- `Button.tsx` - Reusable button component
-- `Card.tsx` - Card container with header and content
-- `Input.tsx` - Text input with validation
-- `TextArea.tsx` - Multi-line input
-- `Select.tsx` - Dropdown selector
-- `Modal.tsx` - Modal dialog system
-- `Badge.tsx` - Status and priority badges
-- `TaskCard.tsx` - Task display card
-- `KanbanBoard.tsx` - Kanban board with columns
-- `StatCard.tsx` - KPI statistics card
-- `Sidebar.tsx` - Left navigation panel
-- `TopBar.tsx` - Top header bar with search
+**Components** (`src/components/`) - 20+ reusable UI components
+- `Sidebar.tsx` - Collapsible navigation, accent-themed
+- `TopBar.tsx` - Header, search, notifications, role switcher
+- `ModernDashboard.tsx` - Alternative dashboard layout
+- `KanbanBoard.tsx` - Drag-and-drop task board
+- `ChatBot.tsx` - AI assistant panel
+- `DockedChats.tsx` - Floating chat windows
+- `MemberTooltip.tsx` - Team member hover cards
+- Card, Badge, Toast, Modal components
 
-**Pages** (`src/pages/`)
-- `Dashboard.tsx` - Main dashboard with metrics
-- `Tasks.tsx` - Task management page
-- `Calendar.tsx` - Calendar view (ready to extend)
-- `Analytics.tsx` - Analytics dashboard (ready to extend)
-- `Settings.tsx` - User settings (ready to extend)
+**Pages** (`src/pages/`) - 11 page components
+- `Dashboard.tsx` - KPI cards, charts, layout toggle
+- `Tasks.tsx` - Task list/kanban with filters
+- `Projects.tsx` - Project cards, detail view, create/delete
+- `Chat.tsx` - Team messaging
+- `Team.tsx` - Member management + invite modal
+- `Analytics.tsx` - Charts and reports
+- `AIInsights.tsx` - AI recommendations
+- `CalendarPage.tsx` - Calendar view
+- `SettingsPage.tsx` - General, Appearance, Notifications, Data
+- `LoginPage.tsx` - Quick Login + email/password
+- `InviteAcceptPage.tsx` / `InviteOnboardPage.tsx` - Invite flow
 
-**State Management** (`src/stores/`)
-- `taskStore.ts` - Task state and actions
-- `uiStore.ts` - UI state (sidebar, dark mode, etc.)
-- `userStore.ts` - User authentication state
-- `notificationStore.ts` - Notifications system
+**State Management** (`src/stores/`) - 7 Zustand stores
+- `taskStore.ts` - Tasks CRUD, DB hydration
+- `projectStore.ts` - Projects + project_tasks CRUD, localStorage + DB
+- `chatStore.ts` - Conversations, messages
+- `notificationStore.ts` - Notifications, preferences
+- `userStore.ts` - Auth, session, roles, team context
+- `settingsStore.ts` - App prefs (accent, layout, mock toggle)
+- `uiStore.ts` - Dark mode, sidebar collapse
 
-**Services** (`src/services/`)
-- `api.ts` - Axios API client with all endpoints
-- `mockService.ts` - Mock data for development
-
-**Integrations** (`src/integrations/`)
-- `whatsapp.config.ts` - WhatsApp setup and helpers
-- `telegram.config.ts` - Telegram setup and helpers
+**Data Layer** (`src/lib/`)
+- `supabase.ts` - Supabase client initialization
+- `dataService.ts` - DB abstraction layer (taskDb, projectDb, chatDb, etc.)
 
 **Types** (`src/types/`)
-- `index.ts` - All TypeScript type definitions
+- `index.ts` - All shared TypeScript interfaces
 
 **Other Files**
-- `App.tsx` - Main app component
+- `App.tsx` - Root layout + hash-based routing
 - `main.tsx` - Entry point
-- `index.css` - Global styles
+- `index.css` - Tailwind base + accent color CSS variables
 
 ### Configuration Files
-
-- `package.json` - Frontend dependencies
+- `package.json` - Dependencies and scripts
 - `tsconfig.json` - TypeScript configuration
 - `tailwind.config.js` - Tailwind CSS config
-- `.env.example` - Frontend env variables template
-
-### Backend Files (`backend/`)
-
-**Server** (`backend/src/`)
-- `index.ts` - Express server with all API routes
-
-**Configuration**
-- `package.json` - Backend dependencies
-- `.env.example` - Backend env variables template
-
-### Database
-
-- `prisma/schema.prisma` - Complete database schema
-- Database migrations auto-created by Prisma
-
-### Documentation
-
-- `README.md` - Project overview and quick start
-- `ARCHITECTURE.md` - Detailed system architecture
-- `DEPLOYMENT.md` - Production deployment guide
-- `SETUP_GUIDE.md` - This file!
+- `vite.config.ts` - Vite build configuration
+- `.env.example` - Environment variables template
 
 ---
 
-## 🔧 Detailed Configuration
+## Environment Variables
 
-### Frontend Environment Variables
-
-Create `.env` and add:
-```env
-# API Configuration
-REACT_APP_API_URL=http://localhost:3000/api
-
-# WhatsApp Integration
-REACT_APP_WHATSAPP_PHONE_ID=          # Your WhatsApp Phone Number ID
-REACT_APP_WHATSAPP_ACCOUNT_ID=        # Your Business Account ID
-REACT_APP_WHATSAPP_WEBHOOK_TOKEN=     # Webhook verification token
-
-# Telegram Integration
-REACT_APP_TELEGRAM_BOT_TOKEN=         # Your Telegram Bot Token
-REACT_APP_TELEGRAM_BOT_USERNAME=      # Your Bot Username
-REACT_APP_TELEGRAM_WEBHOOK_URL=       # Your webhook URL
+Create `.env` from the template:
+```bash
+cp .env.example .env
 ```
 
-### Backend Environment Variables
-
-Create `backend/.env` and add:
+Add your Supabase credentials:
 ```env
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5432/taskflow
-
-# Server
-PORT=3000
-NODE_ENV=development
-
-# Authentication
-JWT_SECRET=your_super_secret_key_here_change_in_production
-JWT_EXPIRES_IN=7d
-
-# CORS
-FRONTEND_URL=http://localhost:5173
-ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
-
-# WhatsApp
-WHATSAPP_PHONE_ID=
-WHATSAPP_BUSINESS_ACCOUNT_ID=
-WHATSAPP_TOKEN=
-WHATSAPP_WEBHOOK_TOKEN=
-
-# Telegram
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_BOT_USERNAME=
-TELEGRAM_WEBHOOK_URL=
-
-# Optional Services
-REDIS_URL=redis://localhost:6379
-SENTRY_DSN=
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
+
+Without these, the app runs fully in demo mode with mock data.
 
 ---
 
-## 🚀 Development Workflow
+## Demo Mode vs Real Mode
 
-### Creating a New Task
+### Demo Mode (Quick Login)
+- No Supabase credentials needed
+- 5 demo profiles with different roles (Admin, Manager, Team Members)
+- All data in-memory (Zustand stores) + localStorage cache
+- `keepMockData: true` - DB is never touched
+- Projects cached to `purplebee-projects` localStorage key
 
-1. Open the application
+### Real Mode (Supabase Auth)
+- Requires Supabase URL and anon key in `.env`
+- Email/password + magic link authentication
+- All data persists to Supabase Postgres
+- `isMockMode()` returns `false` regardless of settings toggle
+- New users get demo projects seeded with proper UUIDs on first login
+- localStorage acts as cache for instant display during DB hydration
+
+---
+
+## Development Workflow
+
+### Using the App
+
+**Creating a Task:**
+1. Navigate to Tasks page
 2. Click "New Task" button
-3. Fill in task details:
-   - Title (required)
-   - Description (optional)
-   - Priority (Low, Medium, High, Urgent)
-   - Due date
-   - Tags for organization
-   - Assign to team member
+3. Fill in details (title, priority, due date, assignee)
+4. Task appears in Kanban board or list view
 
-4. Task appears in Kanban board
+**Managing Projects:**
+1. Navigate to Projects page
+2. Click "Create Project" - choose from 8 templates
+3. Hover project card for delete icon
+4. Click project card for detail view with tasks
 
-### Managing Tasks
+**Team Features:**
+1. Navigate to Team page
+2. Invite members via email or shareable link
+3. Use Chat for team messaging
+4. Admin can "View As" other team members
 
-- **Drag-and-drop**: Move tasks between status columns
-- **Click task**: View full details
-- **Edit**: Click task and modify details
-- **Delete**: Right-click task for delete option
-- **Filter**: Use filters for priority, status, assignee
-- **View modes**: Toggle between Kanban and List views
+### Useful Commands
+```bash
+# Development server
+npm run dev
 
-### Dashboard Insights
+# Type check
+npx tsc --noEmit
 
-The dashboard shows:
-- Completed tasks count
-- Tasks in progress
-- Overdue tasks
-- Productivity score (0-100)
-- Completion trends chart
-- Priority distribution
-- Focus session data
-- AI-generated insights
+# Production build
+npm run build
+# Output in dist/
+
+# Preview production build
+npm run preview
+```
 
 ---
 
-## 🔌 Setting Up Integrations
+## Supabase Database
 
-### WhatsApp Integration
+### Key Tables (all RLS-enabled)
+| Table | Purpose |
+|-------|---------|
+| `profiles` | User accounts (id, name, email, role, avatar) |
+| `teams` | Companies/workspaces |
+| `team_members` | User-Team relationship with role |
+| `tasks` | Task backlog (team-scoped) |
+| `projects` | Project portfolio (team-scoped) |
+| `project_tasks` | Tasks within a project |
+| `invites` | Pending team invitations |
+| `conversations` | Chat rooms |
+| `messages` | Chat messages |
+| `notifications` | In-app notification inbox |
+| `user_settings` | Per-user preferences |
 
-1. **Get credentials:**
-   - Visit meta.com/en_US/developers
-   - Create Business Account
-   - Create WhatsApp Business App
-   - Get Phone Number ID and Access Token
-
-2. **Add to environment:**
-   ```env
-   REACT_APP_WHATSAPP_PHONE_ID=123456789
-   WHATSAPP_TOKEN=EAAxxxxxx
-   WHATSAPP_WEBHOOK_TOKEN=my_webhook_token
-   ```
-
-3. **Test:**
-   ```bash
-   # In backend code, WhatsApp service is ready to use
-   import { whatsappService } from '@integrations/whatsapp.config'
-   await whatsappService.sendMessage('1234567890', 'Task reminder!')
-   ```
-
-### Telegram Integration
-
-1. **Get credentials:**
-   - Open Telegram, search for @BotFather
-   - Create new bot with /newbot command
-   - Get bot token
-
-2. **Add to environment:**
-   ```env
-   REACT_APP_TELEGRAM_BOT_TOKEN=123456789:ABCDefg
-   REACT_APP_TELEGRAM_BOT_USERNAME=taskflow_bot
-   REACT_APP_TELEGRAM_WEBHOOK_URL=https://api.example.com/webhook/telegram
-   ```
-
-3. **Test:**
-   ```bash
-   # In backend code, Telegram service is ready to use
-   import { telegramService } from '@integrations/telegram.config'
-   await telegramService.sendMessage('123456789', 'Task reminder!')
-   ```
+### Row Level Security
+- Team-scoped reads via `team_members` join
+- `is_admin_or_manager()` helper function
+- `handle_new_user()` trigger auto-creates profile + accepts pending invites
 
 ---
 
-## 📊 Database Schema
+## Troubleshooting
 
-The application uses 13 main tables:
-
-1. **users** - User accounts
-2. **teams** - Team organization
-3. **team_members** - Team membership
-4. **projects** - Project grouping
-5. **tasks** - Individual tasks
-6. **subtasks** - Task subdivisions
-7. **attachments** - File attachments
-8. **notifications** - User notifications
-9. **integrations** - Connected services
-10. **focus_sessions** - Pomodoro/focus tracking
-11. **ai_insights** - AI-generated recommendations
-12. **reports** - Generated reports
-13. **audit_logs** - Activity tracking
-
-See `prisma/schema.prisma` for full details.
-
----
-
-## 🧪 Testing & Debugging
-
-### View Database UI
+**"Module not found" errors:**
 ```bash
-cd backend
-npx prisma studio
-# Opens http://localhost:5555
-```
-
-### Check API Endpoints
-```bash
-# Open http://localhost:3000/api/health
-# Should return: { status: "OK", timestamp: "..." }
-```
-
-### Browser DevTools
-- React DevTools browser extension
-- Redux DevTools (for Zustand state)
-- Network tab to see API calls
-- Application tab to check localStorage
-
-### Common Issues
-
-**Port already in use:**
-```bash
-# Change port in backend/.env
-PORT=3001
-
-# For frontend, Vite will ask to use next port
-```
-
-**Database connection error:**
-```bash
-# Check PostgreSQL is running
-sudo systemctl status postgresql
-
-# Check connection string format
-postgresql://username:password@localhost:5432/taskflow
-```
-
-**Module not found:**
-```bash
-# Reinstall dependencies
 rm -rf node_modules package-lock.json
 npm install
 ```
 
----
+**TypeScript errors:**
+```bash
+npx tsc --noEmit
+# Fix any reported issues
+```
 
-## 📚 Next Steps
+**Projects not persisting:**
+- Check if logged in as real user (not Quick Login)
+- Check browser console for Supabase errors
+- Verify `.env` has correct Supabase credentials
 
-### 1. Explore the Application
-- Create tasks
-- Try different views (Kanban, List)
-- Check the Dashboard
-- View Analytics (mock data)
-
-### 2. Customize for Your Needs
-- Add team members
-- Create projects
-- Setup integrations
-- Configure notifications
-
-### 3. Deploy to Production
-- See `DEPLOYMENT.md` for full guide
-- Popular options: Vercel (frontend), Railway (backend)
-- Database: Supabase, AWS RDS, or DigitalOcean
-
-### 4. Extend Features
-- Add more pages
-- Implement advanced filters
-- Create custom reports
-- Build mobile app (React Native)
+**Blank page after login:**
+- Check browser console for errors
+- Try clearing localStorage: `localStorage.clear()`
+- Refresh the page
 
 ---
 
-## 📖 Documentation Map
+## Documentation Map
 
 | Document | Content |
 |----------|---------|
-| README.md | Project overview, features, quick start |
-| ARCHITECTURE.md | System design, API endpoints, data models |
-| DEPLOYMENT.md | Production deployment guide, CI/CD, monitoring |
-| SETUP_GUIDE.md | This guide - step-by-step setup |
+| `README.md` | Project overview, features, quick start |
+| `PROJECT_SUMMARY.md` | Comprehensive project summary |
+| `ARCHITECTURE.md` | System design, state management, data flow |
+| `DEPLOYMENT.md` | Staging and production deployment |
+| `SETUP_GUIDE.md` | This file - detailed setup walkthrough |
+| `QUICK_START.md` | Minimal 3-minute setup |
+| `START_HERE.md` | Entry point for new developers |
+| `FILE_TREE.md` | Complete file structure |
+| `INDEX.md` | File navigation guide |
+| `CONTEXT.md` | Development context and recent changes |
 
 ---
 
-## 🆘 Getting Help
-
-### Common Questions
-
-**Q: How do I reset the database?**
-```bash
-cd backend
-npx prisma migrate reset
-# This clears data and reruns migrations
-```
-
-**Q: How do I add a new feature?**
-1. Add to database schema (`prisma/schema.prisma`)
-2. Run migration (`npx prisma migrate dev`)
-3. Create API endpoint (backend)
-4. Create React component (frontend)
-5. Connect with Zustand store
-
-**Q: How do I change the port?**
-```env
-# backend/.env
-PORT=3001
-
-# Frontend: Vite auto-detects available ports
-```
-
-### Resources
-
-- [React Documentation](https://react.dev)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
-- [Tailwind CSS](https://tailwindcss.com/docs)
-- [Prisma Documentation](https://www.prisma.io/docs/)
-- [Express.js Guide](https://expressjs.com/)
-
-### Support
-
-- Open issues on GitHub
-- Check existing issues for solutions
-- Read documentation first
-- Provide error messages when asking for help
-
----
-
-## ✅ Verification Checklist
-
-Before going to production, verify:
-
-- [ ] All environment variables set
-- [ ] Database migrations run successfully
-- [ ] Frontend builds without errors
-- [ ] Backend starts without errors
-- [ ] Can create/edit/delete tasks
-- [ ] Dashboard loads all metrics
-- [ ] Integrations configured (optional)
-- [ ] Tested on different browsers
-- [ ] Mobile responsive design works
-- [ ] All tests passing (if added)
-
----
-
-## 🎉 You're All Set!
-
-Your productivity dashboard is ready to use. Enjoy managing tasks more efficiently!
-
-For questions or issues, refer to the documentation or open a GitHub issue.
-
-**Happy tasking! 🚀**
+**PurpleBee** | Built by Sapho Maqhwazima
