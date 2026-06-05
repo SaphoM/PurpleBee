@@ -196,7 +196,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
       // 1. Accepted members from team_members + profiles
       const { data: tmData, error: tmError } = await supabase!
         .from('team_members')
-        .select('user_id, role, profiles!inner(id, name, email, avatar_url, role)')
+        .select('user_id, role, profiles!inner(id, name, email, avatar, role, title, department)')
         .eq('team_id', state.currentTeamId);
 
       if (tmError) {
@@ -209,10 +209,10 @@ export const useUserStore = create<UserStore>((set, get) => ({
           id: p.id,
           name: p.name || p.email?.split('@')[0] || 'User',
           email: p.email || '',
-          avatar: p.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.name || p.id}`,
+          avatar: p.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.name || p.id}`,
           role: (row.role || p.role || 'user') as AppRole,
-          title: '',
-          department: '',
+          title: p.title || '',
+          department: p.department || '',
         };
       });
 
@@ -232,7 +232,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
           // Look up the profile for this invited email
           const { data: profileRow } = await supabase!
             .from('profiles')
-            .select('id, name, email, avatar_url, role')
+            .select('id, name, email, avatar, role, title, department')
             .eq('email', inv.email)
             .single();
 
@@ -242,10 +242,10 @@ export const useUserStore = create<UserStore>((set, get) => ({
               id: profileRow.id,
               name: profileRow.name || profileRow.email?.split('@')[0] || 'User',
               email: profileRow.email || inv.email,
-              avatar: profileRow.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profileRow.name || profileRow.id}`,
+              avatar: profileRow.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profileRow.name || profileRow.id}`,
               role: (inv.role || profileRow.role || 'user') as AppRole,
-              title: '',
-              department: '',
+              title: profileRow.title || '',
+              department: profileRow.department || '',
             });
           }
         }
@@ -326,7 +326,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
       // Fetch profile from profiles table
       const profile = await authDb.getProfile(supaUser.id);
       const name = profile?.name || supaUser.user_metadata?.name || email.split('@')[0];
-      const avatar = profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
+      const avatar = profile?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
       const role: AppRole = profile?.role || 'user';
 
       set({
@@ -403,7 +403,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
         const supaUser = session.user;
         const profile = await authDb.getProfile(supaUser.id);
         const name = profile?.name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User';
-        const avatar = profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
+        const avatar = profile?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
         const role: AppRole = profile?.role || 'user';
 
         set({
