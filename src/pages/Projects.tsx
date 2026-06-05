@@ -133,76 +133,80 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
 
   const handleCreate = () => {
     if (!name.trim() || !user) {
+      reset();
       onClose();
       return;
     }
 
-    const taskList: Omit<ProjectTask, 'id'>[] = [];
+    try {
+      const taskList: Omit<ProjectTask, 'id'>[] = [];
 
-    // Add selected template tasks
-    if (template && !isCustom) {
-      template.tasks.forEach((t, i) => {
-        if (selectedTasks.has(i)) {
-          taskList.push({
-            title: t.title,
-            description: t.description,
-            priority: t.priority,
-            estimatedHours: t.estimatedHours,
-            tags: t.tags,
-            assignedTo: assignments[i] || undefined,
-            order: taskList.length + 1,
-          });
+      // Add selected template tasks
+      if (template && !isCustom) {
+        template.tasks.forEach((t, i) => {
+          if (selectedTasks.has(i)) {
+            taskList.push({
+              title: t.title,
+              description: t.description,
+              priority: t.priority,
+              estimatedHours: t.estimatedHours,
+              tags: t.tags,
+              assignedTo: assignments[i] || undefined,
+              order: taskList.length + 1,
+            });
+          }
+        });
+      }
+
+      // Add custom tasks
+      customTasks.forEach((t, i) => {
+        taskList.push({
+          title: t.title,
+          description: t.description,
+          priority: t.priority,
+          estimatedHours: t.estimatedHours,
+          tags: t.tags,
+          assignedTo: assignments[1000 + i] || undefined,
+          order: taskList.length + 1,
+        });
+      });
+
+      const projectName = name.trim();
+
+      createProject({
+        name: projectName,
+        description: description.trim(),
+        templateId: selectedTemplate || 'custom',
+        icon: template?.icon || '🔧',
+        color: template?.color || '#6b7280',
+        tasks: taskList,
+        createdBy: user.id,
+      });
+
+      // Send project-invite notifications to each assigned member
+      const assignedMembers = new Map<string, number>(); // userId → task count
+      taskList.forEach((t) => {
+        if (t.assignedTo && t.assignedTo !== user.id) {
+          assignedMembers.set(t.assignedTo, (assignedMembers.get(t.assignedTo) || 0) + 1);
         }
       });
+
+      assignedMembers.forEach((taskCount, memberId) => {
+        addNotification({
+          userId: memberId,
+          type: 'project-invite',
+          title: 'Added to project',
+          message: `You've been added to "${projectName}" — ${taskCount} task${taskCount > 1 ? 's' : ''} assigned to you`,
+          read: false,
+          actionUrl: '#projects',
+        });
+      });
+    } catch (err) {
+      console.error('[Projects] handleCreate error:', err);
+    } finally {
+      reset();
+      onClose();
     }
-
-    // Add custom tasks
-    customTasks.forEach((t, i) => {
-      taskList.push({
-        title: t.title,
-        description: t.description,
-        priority: t.priority,
-        estimatedHours: t.estimatedHours,
-        tags: t.tags,
-        assignedTo: assignments[1000 + i] || undefined,
-        order: taskList.length + 1,
-      });
-    });
-
-    const projectName = name.trim();
-
-    createProject({
-      name: projectName,
-      description: description.trim(),
-      templateId: selectedTemplate || 'custom',
-      icon: template?.icon || '🔧',
-      color: template?.color || '#6b7280',
-      tasks: taskList,
-      createdBy: user.id,
-    });
-
-    // Send project-invite notifications to each assigned member
-    const assignedMembers = new Map<string, number>(); // userId → task count
-    taskList.forEach((t) => {
-      if (t.assignedTo && t.assignedTo !== user.id) {
-        assignedMembers.set(t.assignedTo, (assignedMembers.get(t.assignedTo) || 0) + 1);
-      }
-    });
-
-    assignedMembers.forEach((taskCount, memberId) => {
-      const member = assignableMembers.find((p) => p.id === memberId);
-      addNotification({
-        userId: memberId,
-        type: 'project-invite',
-        title: 'Added to project',
-        message: `You've been added to "${projectName}" — ${taskCount} task${taskCount > 1 ? 's' : ''} assigned to you`,
-        read: false,
-        actionUrl: '#projects',
-      });
-    });
-
-    reset();
-    onClose();
   };
 
   if (!isOpen) return null;
@@ -1323,9 +1327,14 @@ export const Projects: React.FC = () => {
               </button>
               <button
                 onClick={() => {
-                  deleteProject(deleteConfirmId);
-                  setDeleteConfirmId(null);
-                  setDeleteConfirmInfo(null);
+                  try {
+                    deleteProject(deleteConfirmId);
+                  } catch (err) {
+                    console.error('[Projects] deleteProject error:', err);
+                  } finally {
+                    setDeleteConfirmId(null);
+                    setDeleteConfirmInfo(null);
+                  }
                 }}
                 className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors"
               >
