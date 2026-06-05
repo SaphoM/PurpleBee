@@ -585,7 +585,43 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           linkedTaskId: t.linked_task_id || undefined,
         })),
     }));
-    persistProjects(mapped);
-    set({ projects: mapped });
+
+    // If DB returned projects, use them. Otherwise fall back to seed data
+    // so new users in real mode still see demo projects on first login.
+    if (mapped.length > 0) {
+      persistProjects(mapped);
+      set({ projects: mapped });
+    } else {
+      // Seed the DB with demo projects so they persist for this user
+      const seeded = seedProjects.map((p) => ({
+        ...p,
+        createdBy: userId,
+      }));
+      persistProjects(seeded);
+      set({ projects: seeded });
+
+      // Fire-and-forget: write seed projects to DB so they're there next time.
+      // Strip mock assignedTo values (e.g. 'user-1') — they're not real UUIDs.
+      for (const p of seeded) {
+        projectDb.insertWithTasks(
+          {
+            id: p.id,
+            name: p.name,
+            description: p.description || null,
+            icon: p.icon,
+            color: p.color,
+            template_id: p.templateId,
+            status: p.status,
+            team_id: teamId || null,
+            created_by: userId,
+          },
+          p.tasks.map((t) => ({
+            ...toDbProjectTask(p.id, t),
+            assigned_to: null, // clear mock user IDs
+          })),
+          false, // not mock mode — persist to DB
+        );
+      }
+    }
   },
 }));
