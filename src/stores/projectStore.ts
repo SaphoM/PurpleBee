@@ -3,7 +3,19 @@ import { v4 as uuidv4 } from 'uuid';
 import { projectDb, type DbProjectTaskInsert } from '@/lib/dataService';
 import { useSettingsStore } from '@stores/settingsStore';
 
-const isMockMode = () => useSettingsStore.getState().keepMockData;
+/**
+ * Returns true only when DB writes should be skipped.
+ * A real Supabase user (not a Quick Login demo user) always persists
+ * to DB regardless of the keepMockData toggle.
+ */
+const isMockMode = () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useUserStore } = require('@stores/userStore') as typeof import('@stores/userStore');
+  const isQuickLogin = useUserStore.getState().isQuickLoginUser();
+  // Real users always persist to DB; quick-login users follow the setting
+  if (!isQuickLogin) return false;
+  return useSettingsStore.getState().keepMockData;
+};
 
 /** Read current team_id at call-time so every write attaches to the company. */
 const getTeamContext = () => {
@@ -13,6 +25,9 @@ const getTeamContext = () => {
   return { teamId: s.currentTeamId, userId: s.user?.id || null };
 };
 
+/** Check if a string looks like a valid UUID (not a mock ID like 'user-1') */
+const isValidUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
 const toDbProjectTask = (projectId: string, t: ProjectTask): DbProjectTaskInsert => ({
   id: t.id,
   project_id: projectId,
@@ -21,7 +36,7 @@ const toDbProjectTask = (projectId: string, t: ProjectTask): DbProjectTaskInsert
   priority: t.priority,
   estimated_hours: t.estimatedHours,
   tags: t.tags,
-  assigned_to: t.assignedTo || null,
+  assigned_to: t.assignedTo && isValidUuid(t.assignedTo) ? t.assignedTo : null,
   order: t.order,
   linked_task_id: t.linkedTaskId || null,
 });
