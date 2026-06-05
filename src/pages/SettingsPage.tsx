@@ -360,8 +360,8 @@ const SettingRow: React.FC<{
 );
 
 // ─── Change Password Card ──────────────────────────────────────────────────
-const ChangePasswordCard: React.FC<{ isQuickLogin: boolean }> = ({ isQuickLogin }) => {
-  const [isOpen, setIsOpen] = useState(false);
+const ChangePasswordCard: React.FC<{ isQuickLogin: boolean; autoOpen?: boolean; skipCurrentPassword?: boolean }> = ({ isQuickLogin, autoOpen = false, skipCurrentPassword = false }) => {
+  const [isOpen, setIsOpen] = useState(autoOpen);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -387,23 +387,25 @@ const ChangePasswordCard: React.FC<{ isQuickLogin: boolean }> = ({ isQuickLogin 
     e.preventDefault();
     setError(null);
 
-    if (!currentPassword.trim()) { setError('Please enter your current password'); return; }
+    if (!skipCurrentPassword && !currentPassword.trim()) { setError('Please enter your current password'); return; }
     if (!newPassword.trim()) { setError('Please enter a new password'); return; }
     if (newPassword.length < 6) { setError('New password must be at least 6 characters'); return; }
     if (newPassword !== confirmPassword) { setError('Passwords do not match'); return; }
-    if (newPassword === currentPassword) { setError('New password must be different from current password'); return; }
+    if (!skipCurrentPassword && newPassword === currentPassword) { setError('New password must be different from current password'); return; }
 
     setIsLoading(true);
 
-    // Verify current password by re-authenticating
-    const { user } = useUserStore.getState();
-    if (!user?.email) { setError('Could not verify account'); setIsLoading(false); return; }
+    // When not in recovery mode, verify current password by re-authenticating
+    if (!skipCurrentPassword) {
+      const { user } = useUserStore.getState();
+      if (!user?.email) { setError('Could not verify account'); setIsLoading(false); return; }
 
-    const signInResult = await authDb.signIn(user.email, currentPassword);
-    if (!signInResult) {
-      setError('Current password is incorrect');
-      setIsLoading(false);
-      return;
+      const signInResult = await authDb.signIn(user.email, currentPassword);
+      if (!signInResult) {
+        setError('Current password is incorrect');
+        setIsLoading(false);
+        return;
+      }
     }
 
     // Update to new password
@@ -412,6 +414,10 @@ const ChangePasswordCard: React.FC<{ isQuickLogin: boolean }> = ({ isQuickLogin 
 
     if (updated) {
       setSuccess(true);
+      // Clean recovery param from URL
+      if (skipCurrentPassword) {
+        window.location.hash = '#settings?tab=account';
+      }
       setTimeout(() => {
         setIsOpen(false);
         reset();
@@ -480,33 +486,42 @@ const ChangePasswordCard: React.FC<{ isQuickLogin: boolean }> = ({ isQuickLogin 
         ) : (
           /* Expanded form */
           <form onSubmit={handleChangePassword} className="space-y-4 py-2">
+            {skipCurrentPassword && (
+              <div className="px-3 py-2.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700/40 text-xs text-purple-600 dark:text-purple-400 font-medium flex items-center gap-2">
+                <KeyRound size={14} />
+                You verified your identity via email. Choose a new password below.
+              </div>
+            )}
+
             {error && (
               <div className="px-3 py-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 text-xs text-red-600 dark:text-red-400 font-medium">
                 {error}
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1.5">
-                Current Password
-              </label>
-              <div className="relative">
-                <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
-                <input
-                  type={showCurrent ? 'text' : 'password'}
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="Enter current password"
-                  autoComplete="current-password"
-                  autoFocus
-                  className={pwInputCls}
-                />
-                <button type="button" onClick={() => setShowCurrent(!showCurrent)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors">
-                  {showCurrent ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
+            {!skipCurrentPassword && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1.5">
+                  Current Password
+                </label>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
+                  <input
+                    type={showCurrent ? 'text' : 'password'}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    autoComplete="current-password"
+                    autoFocus
+                    className={pwInputCls}
+                  />
+                  <button type="button" onClick={() => setShowCurrent(!showCurrent)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors">
+                    {showCurrent ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1.5">
@@ -568,7 +583,7 @@ const ChangePasswordCard: React.FC<{ isQuickLogin: boolean }> = ({ isQuickLogin 
                 type="submit"
                 disabled={
                   isLoading ||
-                  !currentPassword.trim() ||
+                  (!skipCurrentPassword && !currentPassword.trim()) ||
                   !newPassword.trim() ||
                   !confirmPassword.trim() ||
                   newPassword.length < 6 ||
@@ -601,11 +616,14 @@ const ChangePasswordCard: React.FC<{ isQuickLogin: boolean }> = ({ isQuickLogin 
 
 export const SettingsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
-    // If navigated with ?tab=general (from Demo Mode badge), open General tab
     const hash = window.location.hash;
+    if (hash.includes('tab=account')) return 'account';
     if (hash.includes('tab=general')) return 'general';
     return 'notifications';
   });
+
+  // Detect recovery mode — user arrived via password reset email link
+  const isRecoveryMode = window.location.hash.includes('recovery=true');
   const { preferences, updatePreferences, resetPreferences } = useNotificationStore();
   const { user, isQuickLoginUser } = useUserStore();
   const { darkMode, toggleDarkMode } = useUIStore();
@@ -616,7 +634,9 @@ export const SettingsPage: React.FC = () => {
   // Listen for hash changes (e.g. clicking Demo Mode while already on Settings)
   useEffect(() => {
     const onHashChange = () => {
-      if (window.location.hash.includes('tab=general')) {
+      if (window.location.hash.includes('tab=account')) {
+        setActiveTab('account');
+      } else if (window.location.hash.includes('tab=general')) {
         setActiveTab('general');
       }
     };
@@ -1101,7 +1121,7 @@ export const SettingsPage: React.FC = () => {
                 </CardContent>
               </Card>
 
-              <ChangePasswordCard isQuickLogin={isQuickLoginUser()} />
+              <ChangePasswordCard isQuickLogin={isQuickLoginUser()} autoOpen={isRecoveryMode} skipCurrentPassword={isRecoveryMode} />
 
               <Card>
                 <CardHeader title="Security" subtitle="Additional security options" />

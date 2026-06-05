@@ -122,12 +122,11 @@ const App: React.FC = () => {
 
   // Detect Supabase password recovery redirect.
   // Supabase adds #access_token=...&type=recovery to the URL hash.
-  // The Supabase client auto-restores the session, so the user is
-  // authenticated — we just need to show the "set new password" form.
+  // The Supabase client auto-restores the session. We redirect to
+  // Settings > Account with the change password form auto-opened
+  // (no current password required since they verified via email).
   const hashFragment = window.location.hash.slice(1);
-  const isRecoveryRedirect =
-    hashFragment.includes('type=recovery') ||
-    currentPage === ('reset-password' as PageType);
+  const isRecoveryRedirect = hashFragment.includes('type=recovery');
 
   // Show loading spinner while checking session
   if (!authChecked) {
@@ -142,10 +141,12 @@ const App: React.FC = () => {
   }
 
   // Password recovery — user clicked the reset link in their email.
-  // Supabase auto-restores a session from the hash fragment, so the
-  // user is authenticated. Show the "set new password" form.
+  // Redirect to Settings > Account with change password form auto-opened.
+  // No current password required since they verified identity via email.
   if (isRecoveryRedirect && isAuthenticated) {
-    return <ResetPasswordPage isRecoveryMode />;
+    // Clean the recovery hash and redirect to settings
+    window.location.hash = '#settings?tab=account&recovery=true';
+    return null;
   }
 
   // Forgot password page — user clicked "Forgot password?" on login
