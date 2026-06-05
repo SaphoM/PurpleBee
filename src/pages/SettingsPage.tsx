@@ -37,6 +37,9 @@ import {
   Loader2,
   X,
   Sparkles,
+  Lock,
+  KeyRound,
+  CheckCircle2,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@components/Card';
 import { useNotificationStore, NotificationPreferences, notificationCategoryConfig } from '@stores/notificationStore';
@@ -48,6 +51,7 @@ import { useProjectStore } from '@stores/projectStore';
 import { useChatStore } from '@stores/chatStore';
 import { NotificationType } from '@/types/index';
 import { isDbConnected } from '@/lib/supabase';
+import { authDb } from '@/lib/dataService';
 
 // ─── Demo-to-Real Auth Modal ──────────────────────────────────────────────────
 // Shown when a Quick Login (demo) user tries to turn off mock data.
@@ -354,6 +358,246 @@ const SettingRow: React.FC<{
     <div className="flex-shrink-0 ml-4">{children}</div>
   </div>
 );
+
+// ─── Change Password Card ──────────────────────────────────────────────────
+const ChangePasswordCard: React.FC<{ isQuickLogin: boolean }> = ({ isQuickLogin }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const reset = () => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowCurrent(false);
+    setShowNew(false);
+    setShowConfirm(false);
+    setError(null);
+    setSuccess(false);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!currentPassword.trim()) { setError('Please enter your current password'); return; }
+    if (!newPassword.trim()) { setError('Please enter a new password'); return; }
+    if (newPassword.length < 6) { setError('New password must be at least 6 characters'); return; }
+    if (newPassword !== confirmPassword) { setError('Passwords do not match'); return; }
+    if (newPassword === currentPassword) { setError('New password must be different from current password'); return; }
+
+    setIsLoading(true);
+
+    // Verify current password by re-authenticating
+    const { user } = useUserStore.getState();
+    if (!user?.email) { setError('Could not verify account'); setIsLoading(false); return; }
+
+    const signInResult = await authDb.signIn(user.email, currentPassword);
+    if (!signInResult) {
+      setError('Current password is incorrect');
+      setIsLoading(false);
+      return;
+    }
+
+    // Update to new password
+    const updated = await authDb.updatePassword(newPassword);
+    setIsLoading(false);
+
+    if (updated) {
+      setSuccess(true);
+      setTimeout(() => {
+        setIsOpen(false);
+        reset();
+      }, 2000);
+    } else {
+      setError('Failed to update password. Please try again.');
+    }
+  };
+
+  const pwInputCls = clsx(
+    'w-full rounded-xl pl-10 pr-12 py-2.5 text-sm',
+    'bg-gray-50 border border-gray-200 text-gray-800 placeholder-gray-400',
+    'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+    'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all',
+  );
+
+  return (
+    <Card>
+      <CardHeader title="Password" subtitle="Change your account password" />
+      <CardContent>
+        {isQuickLogin ? (
+          /* Demo user — show disabled state with explanation */
+          <div className="flex items-center gap-3 py-3">
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-gray-100 dark:bg-slate-700/50 flex items-center justify-center text-gray-400 dark:text-slate-500">
+              <Lock size={16} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-400 dark:text-slate-500">Change Password</p>
+              <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+                Create a real account to set a password. Demo accounts don't have passwords.
+              </p>
+            </div>
+            <button
+              disabled
+              className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 text-xs font-semibold text-gray-300 dark:text-slate-600 cursor-not-allowed"
+            >
+              Change
+            </button>
+          </div>
+        ) : !isOpen ? (
+          /* Collapsed state — show button to expand */
+          <SettingRow
+            icon={<KeyRound size={16} />}
+            label="Change Password"
+            description="Update your account password"
+            noBorder
+          >
+            <button
+              onClick={() => { reset(); setIsOpen(true); }}
+              className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 text-xs font-semibold text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors"
+            >
+              Change
+            </button>
+          </SettingRow>
+        ) : success ? (
+          /* Success state */
+          <div className="flex items-center gap-3 py-6 justify-center">
+            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/20 flex items-center justify-center">
+              <CheckCircle2 size={20} className="text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Password updated successfully!</p>
+              <p className="text-xs text-gray-500 dark:text-slate-400">Your new password is now active.</p>
+            </div>
+          </div>
+        ) : (
+          /* Expanded form */
+          <form onSubmit={handleChangePassword} className="space-y-4 py-2">
+            {error && (
+              <div className="px-3 py-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 text-xs text-red-600 dark:text-red-400 font-medium">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1.5">
+                Current Password
+              </label>
+              <div className="relative">
+                <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
+                <input
+                  type={showCurrent ? 'text' : 'password'}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Enter current password"
+                  autoComplete="current-password"
+                  autoFocus
+                  className={pwInputCls}
+                />
+                <button type="button" onClick={() => setShowCurrent(!showCurrent)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors">
+                  {showCurrent ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1.5">
+                New Password
+              </label>
+              <div className="relative">
+                <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
+                <input
+                  type={showNew ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  autoComplete="new-password"
+                  className={pwInputCls}
+                />
+                <button type="button" onClick={() => setShowNew(!showNew)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors">
+                  {showNew ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              {newPassword.length > 0 && newPassword.length < 6 && (
+                <p className="text-[11px] text-amber-500 mt-1">Must be at least 6 characters</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 dark:text-slate-300 mb-1.5">
+                Confirm New Password
+              </label>
+              <div className="relative">
+                <KeyRound size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
+                <input
+                  type={showConfirm ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  autoComplete="new-password"
+                  className={pwInputCls}
+                />
+                <button type="button" onClick={() => setShowConfirm(!showConfirm)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors">
+                  {showConfirm ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              {confirmPassword.length > 0 && newPassword !== confirmPassword && (
+                <p className="text-[11px] text-red-500 mt-1">Passwords do not match</p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => { setIsOpen(false); reset(); }}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium border border-gray-200 dark:border-slate-600 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={
+                  isLoading ||
+                  !currentPassword.trim() ||
+                  !newPassword.trim() ||
+                  !confirmPassword.trim() ||
+                  newPassword.length < 6 ||
+                  newPassword !== confirmPassword
+                }
+                className={clsx(
+                  'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold',
+                  'bg-gradient-to-r from-purple-600 to-blue-600 text-white',
+                  'hover:from-purple-700 hover:to-blue-700',
+                  'shadow-md shadow-purple-500/20',
+                  'disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200',
+                )}
+              >
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <KeyRound size={14} />
+                    Update Password
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
 
 export const SettingsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
@@ -857,18 +1101,11 @@ export const SettingsPage: React.FC = () => {
                 </CardContent>
               </Card>
 
+              <ChangePasswordCard isQuickLogin={isQuickLoginUser()} />
+
               <Card>
-                <CardHeader title="Security" subtitle="Manage your password and sessions" />
+                <CardHeader title="Security" subtitle="Additional security options" />
                 <CardContent>
-                  <SettingRow
-                    icon={<Shield size={16} />}
-                    label="Change Password"
-                    description="Update your account password"
-                  >
-                    <button className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 text-xs font-semibold text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors">
-                      Change
-                    </button>
-                  </SettingRow>
                   <SettingRow
                     icon={<Smartphone size={16} />}
                     label="Two-Factor Authentication"
