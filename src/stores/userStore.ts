@@ -142,13 +142,10 @@ function hydrateStores(userId: string, userName: string) {
     useTaskStore.getState().restoreMockData(userId);
     useProjectStore.getState().restoreMockData();
   } else {
-    // ── Mock data OFF: always clear all stores first ──
-    useTaskStore.getState().clearMockData();
-    useProjectStore.getState().clearMockData();
-    useChatStore.getState().clearMockData();
-    useNotificationStore.getState().clearMockData();
-
-    // Then hydrate from Supabase if DB is available
+    // ── Mock data OFF: hydrate from Supabase ──
+    // Don't clear stores first — let hydrateFromDb replace state when it
+    // resolves. This avoids a flash of empty state while the async fetch
+    // runs. Stores that don't get DB data will fall back to seed/localStorage.
     if (isDbConnected()) {
       useTaskStore.getState().hydrateFromDb(userId);
       useChatStore.getState().hydrateFromDb(userId);

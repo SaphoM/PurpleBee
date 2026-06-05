@@ -592,16 +592,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       persistProjects(mapped);
       set({ projects: mapped });
     } else {
-      // Seed the DB with demo projects so they persist for this user
-      const seeded = seedProjects.map((p) => ({
+      // Seed the DB with demo projects. Generate proper UUIDs for IDs
+      // because the DB columns are uuid type — mock IDs like 'proj-1' fail.
+      const seeded: Project[] = seedProjects.map((p) => ({
         ...p,
+        id: uuidv4(),
         createdBy: userId,
+        tasks: p.tasks.map((t) => ({
+          ...t,
+          id: uuidv4(),
+          assignedTo: undefined, // clear mock user IDs
+        })),
       }));
       persistProjects(seeded);
       set({ projects: seeded });
 
-      // Fire-and-forget: write seed projects to DB so they're there next time.
-      // Strip mock assignedTo values (e.g. 'user-1') — they're not real UUIDs.
+      // Write seed projects to DB so they persist across sessions.
       for (const p of seeded) {
         projectDb.insertWithTasks(
           {
@@ -617,7 +623,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           },
           p.tasks.map((t) => ({
             ...toDbProjectTask(p.id, t),
-            assigned_to: null, // clear mock user IDs
+            assigned_to: null,
           })),
           false, // not mock mode — persist to DB
         );
