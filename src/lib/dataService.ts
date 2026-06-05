@@ -602,26 +602,42 @@ export const authDb = {
     return data;
   },
 
-  /** Get the team a user belongs to */
+  /** Get the team a user belongs to.
+   *  Deterministic selection: a user may belong to several teams (their own
+   *  auto-created one plus any they were invited to). We prefer a team the
+   *  user did NOT create (i.e. one they were invited to — the real shared
+   *  workspace), and tiebreak by the oldest team. This prevents the app from
+   *  flip-flopping between teams across sessions.
+   *  IMPORTANT: throws on a read error rather than returning null, so callers
+   *  (getOrCreateTeam) don't mistake a transient failure for "no team" and
+   *  create a duplicate team. */
   async getTeamForUser(userId: string) {
     if (!isDbConnected()) return null;
-    // Step 1: get team_id from team_members
-    const { data: membership, error: memErr } = await supabase!
+    const { data: memberships, error: memErr } = await supabase!
       .from('team_members')
-      .select('team_id, role')
-      .eq('user_id', userId)
-      .limit(1)
-      .maybeSingle();
-    if (memErr) { console.error('[dataService] getTeamForUser membership', memErr); return null; }
-    if (!membership) return null;
-    // Step 2: get team name
-    const { data: team, error: teamErr } = await supabase!
-      .from('teams')
-      .select('id, name')
-      .eq('id', membership.team_id)
-      .single();
-    if (teamErr) { console.error('[dataService] getTeamForUser team', teamErr); return null; }
-    return { team_id: membership.team_id, role: membership.role, team };
+      .select('team_id, role, teams!inner(id, name, created_by, created_at)')
+      .eq('user_id', userId);
+    if (memErr) {
+      console.error('[dataService] getTeamForUser membership', memErr);
+      throw memErr;
+    }
+    if (!memberships || memberships.length === 0) return null;
+
+    const sorted = [...memberships].sort((a: any, b: any) => {
+      // Prefer teams the user did not create (invited workspaces)
+      const aInvited = a.teams.created_by !== userId ? 0 : 1;
+      const bInvited = b.teams.created_by !== userId ? 0 : 1;
+      if (aInvited !== bInvited) return aInvited - bInvited;
+      // Tiebreak: oldest team first
+      return new Date(a.teams.created_at).getTime() - new Date(b.teams.created_at).getTime();
+    });
+
+    const m: any = sorted[0];
+    return {
+      team_id: m.team_id,
+      role: m.role,
+      team: { id: m.teams.id, name: m.teams.name },
+    };
   },
 
   /** Get the user's team, auto-creating one if none exists */
