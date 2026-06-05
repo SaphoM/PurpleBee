@@ -191,33 +191,19 @@ export const useUserStore = create<UserStore>((set, get) => ({
       return;
     }
 
-    // Real mode: fetch from team_members + profiles, scoped to currentTeamId
+    // Real mode: fetch accepted team_members + pending invitees, scoped to currentTeamId
     try {
-      const { data, error } = await supabase!
+      // 1. Accepted members from team_members + profiles
+      const { data: tmData, error: tmError } = await supabase!
         .from('team_members')
         .select('user_id, role, profiles!inner(id, name, email, avatar_url, role)')
         .eq('team_id', state.currentTeamId);
 
-      if (error || !data) {
-        console.error('[userStore] loadAssignableMembers', error);
-        // Fallback: at least include the current user
-        if (state.user) {
-          set({
-            assignableMembers: [{
-              id: state.user.id,
-              name: state.user.name,
-              email: state.user.email,
-              avatar: state.user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${state.user.name}`,
-              role: (state.user.role as AppRole) || 'user',
-              title: '',
-              department: '',
-            }],
-          });
-        }
-        return;
+      if (tmError) {
+        console.error('[userStore] loadAssignableMembers team_members query', tmError);
       }
 
-      const members: TeamProfile[] = data.map((row: any) => {
+      const members: TeamProfile[] = (tmData || []).map((row: any) => {
         const p = row.profiles;
         return {
           id: p.id,
@@ -229,6 +215,54 @@ export const useUserStore = create<UserStore>((set, get) => ({
           department: '',
         };
       });
+
+      const seenIds = new Set(members.map((m) => m.id));
+
+      // 2. Pending invitees — they've been invited to this team but haven't
+      //    fully accepted yet. Include them so tasks can be pre-assigned.
+      //    Join with profiles to get name/avatar if they've already signed up.
+      const { data: inviteData, error: inviteError } = await supabase!
+        .from('invites')
+        .select('email, role, accepted_by')
+        .eq('team_id', state.currentTeamId)
+        .eq('status', 'pending');
+
+      if (!inviteError && inviteData) {
+        for (const inv of inviteData) {
+          // Look up the profile for this invited email
+          const { data: profileRow } = await supabase!
+            .from('profiles')
+            .select('id, name, email, avatar_url, role')
+            .eq('email', inv.email)
+            .single();
+
+          if (profileRow && !seenIds.has(profileRow.id)) {
+            seenIds.add(profileRow.id);
+            members.push({
+              id: profileRow.id,
+              name: profileRow.name || profileRow.email?.split('@')[0] || 'User',
+              email: profileRow.email || inv.email,
+              avatar: profileRow.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profileRow.name || profileRow.id}`,
+              role: (inv.role || profileRow.role || 'user') as AppRole,
+              title: '',
+              department: '',
+            });
+          }
+        }
+      }
+
+      // Fallback: at least include the current user
+      if (members.length === 0 && state.user) {
+        members.push({
+          id: state.user.id,
+          name: state.user.name,
+          email: state.user.email,
+          avatar: state.user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${state.user.name}`,
+          role: (state.user.role as AppRole) || 'user',
+          title: '',
+          department: '',
+        });
+      }
 
       set({ assignableMembers: members });
     } catch (err) {
