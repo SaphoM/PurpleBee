@@ -327,8 +327,38 @@ const shouldStartWithMock = (() => {
   } catch { return true; }
 })();
 
+// ─── localStorage persistence helpers ─────────────────────────────────
+const PROJECTS_STORAGE_KEY = 'purplebee-projects';
+
+const persistProjects = (projects: Project[]) => {
+  try {
+    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+  } catch { /* quota exceeded – silently skip */ }
+};
+
+const loadPersistedProjects = (): Project[] | null => {
+  try {
+    const raw = localStorage.getItem(PROJECTS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Project[];
+    // Rehydrate Date objects
+    return parsed.map((p) => ({
+      ...p,
+      createdAt: new Date(p.createdAt),
+      updatedAt: new Date(p.updatedAt),
+    }));
+  } catch { return null; }
+};
+
+/** Determine initial projects: persisted > seed (if mock) > empty */
+const getInitialProjects = (): Project[] => {
+  const persisted = loadPersistedProjects();
+  if (persisted && persisted.length > 0) return persisted;
+  return shouldStartWithMock ? seedProjects : [];
+};
+
 export const useProjectStore = create<ProjectStore>((set, get) => ({
-  projects: shouldStartWithMock ? seedProjects : [],
+  projects: getInitialProjects(),
   selectedProjectId: null,
 
   createProject: (data) => {
@@ -346,7 +376,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    set((state) => ({ projects: [project, ...state.projects] }));
+    set((state) => {
+      const next = [project, ...state.projects];
+      persistProjects(next);
+      return { projects: next };
+    });
 
     // Persist to DB only when mock mode is OFF. Attach team_id so the
     // project belongs to the company, not just the creator. Fire-and-forget.
@@ -371,11 +405,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   updateProject: (id, updates) => {
-    set((state) => ({
-      projects: state.projects.map((p) =>
+    set((state) => {
+      const next = state.projects.map((p) =>
         p.id === id ? { ...p, ...updates, updatedAt: new Date() } : p
-      ),
-    }));
+      );
+      persistProjects(next);
+      return { projects: next };
+    });
     // Persist whitelisted fields. Tasks array is handled by add/remove/updateProjectTask.
     const payload: Record<string, unknown> = {};
     if (updates.name !== undefined) payload.name = updates.name;
@@ -390,10 +426,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   deleteProject: (id) => {
-    set((state) => ({
-      projects: state.projects.filter((p) => p.id !== id),
-      selectedProjectId: state.selectedProjectId === id ? null : state.selectedProjectId,
-    }));
+    set((state) => {
+      const next = state.projects.filter((p) => p.id !== id);
+      persistProjects(next);
+      return {
+        projects: next,
+        selectedProjectId: state.selectedProjectId === id ? null : state.selectedProjectId,
+      };
+    });
     projectDb.delete(id, isMockMode());
   },
 
@@ -402,30 +442,34 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   addProjectTask: (projectId, task) => {
     const newId = uuidv4();
     const newTask: ProjectTask = { ...task, id: newId };
-    set((state) => ({
-      projects: state.projects.map((p) =>
+    set((state) => {
+      const next = state.projects.map((p) =>
         p.id === projectId
           ? { ...p, tasks: [...p.tasks, newTask], updatedAt: new Date() }
           : p
-      ),
-    }));
+      );
+      persistProjects(next);
+      return { projects: next };
+    });
     projectDb.insertTask(toDbProjectTask(projectId, newTask), isMockMode());
   },
 
   removeProjectTask: (projectId, taskId) => {
-    set((state) => ({
-      projects: state.projects.map((p) =>
+    set((state) => {
+      const next = state.projects.map((p) =>
         p.id === projectId
           ? { ...p, tasks: p.tasks.filter((t) => t.id !== taskId), updatedAt: new Date() }
           : p
-      ),
-    }));
+      );
+      persistProjects(next);
+      return { projects: next };
+    });
     projectDb.deleteTask(taskId, isMockMode());
   },
 
   updateProjectTask: (projectId, taskId, updates) => {
-    set((state) => ({
-      projects: state.projects.map((p) =>
+    set((state) => {
+      const next = state.projects.map((p) =>
         p.id === projectId
           ? {
               ...p,
@@ -433,8 +477,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
               updatedAt: new Date(),
             }
           : p
-      ),
-    }));
+      );
+      persistProjects(next);
+      return { projects: next };
+    });
     const payload: Record<string, unknown> = {};
     if (updates.title !== undefined) payload.title = updates.title;
     if (updates.description !== undefined) payload.description = updates.description || null;
@@ -488,9 +534,22 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return results;
   },
 
-  clearMockData: () => set({ projects: [], selectedProjectId: null }),
+  clearMockData: () => {
+    persistProjects([]);
+    set({ projects: [], selectedProjectId: null });
+  },
 
-  restoreMockData: () => set({ projects: seedProjects, selectedProjectId: null }),
+  restoreMockData: () => {
+    // Prefer user's persisted projects over seed data so user-created
+    // projects survive page refresh. Only fall back to seed when empty.
+    const persisted = loadPersistedProjects();
+    if (persisted && persisted.length > 0) {
+      set({ projects: persisted, selectedProjectId: null });
+    } else {
+      persistProjects(seedProjects);
+      set({ projects: seedProjects, selectedProjectId: null });
+    }
+  },
 
   /**
    * Pull all projects for the user's team from Supabase (mock mode OFF only).
@@ -526,6 +585,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           linkedTaskId: t.linked_task_id || undefined,
         })),
     }));
+    persistProjects(mapped);
     set({ projects: mapped });
   },
 }));

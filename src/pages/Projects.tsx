@@ -1087,12 +1087,13 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
 
 // ── Main Projects Page ─────────────────────────────────────────────────
 export const Projects: React.FC = () => {
-  const { projects } = useProjectStore();
+  const { projects, deleteProject } = useProjectStore();
   const { isAdmin, isManager } = useUserStore();
   const assignableMembers = useUserStore((s) => s.assignableMembers);
   const canManage = isAdmin() || isManager();
   const [showCreate, setShowCreate] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   if (selectedProjectId) {
     return <ProjectDetail projectId={selectedProjectId} onBack={() => setSelectedProjectId(null)} />;
@@ -1179,7 +1180,24 @@ export const Projects: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  <ChevronRight size={16} className="text-gray-300 dark:text-slate-600 group-hover:text-purple-500 transition-colors" />
+                  <div className="flex items-center gap-1">
+                    {canManage && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteConfirmId(project.id);
+                        }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setDeleteConfirmId(project.id); } }}
+                        className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-all"
+                        title="Delete project"
+                      >
+                        <Trash2 size={14} />
+                      </span>
+                    )}
+                    <ChevronRight size={16} className="text-gray-300 dark:text-slate-600 group-hover:text-purple-500 transition-colors" />
+                  </div>
                 </div>
 
                 {project.description && (
@@ -1271,6 +1289,49 @@ export const Projects: React.FC = () => {
       )}
 
       <CreateProjectModal isOpen={showCreate} onClose={() => setShowCreate(false)} />
+
+      {/* Delete confirmation modal */}
+      {deleteConfirmId && (() => {
+        const proj = projects.find((p) => p.id === deleteConfirmId);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setDeleteConfirmId(null)}>
+            <div
+              className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 mx-4 max-w-sm w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <Trash2 size={20} className="text-red-500" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100">Delete Project</h3>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">This action cannot be undone</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 dark:text-slate-300 mb-5">
+                Are you sure you want to delete <span className="font-semibold">{proj?.name}</span> and all its {proj?.tasks.length || 0} tasks?
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteConfirmId(null)}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    deleteProject(deleteConfirmId);
+                    setDeleteConfirmId(null);
+                  }}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
