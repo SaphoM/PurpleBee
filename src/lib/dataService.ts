@@ -504,6 +504,29 @@ export const chatDb = {
     return true;
   },
 
+  /** Fetch all team members (profiles) for use in the chat member list */
+  async fetchTeamMembers(userId: string, teamId: string | null, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return null;
+
+    // If we have a team, fetch team_members + joined profiles
+    if (teamId) {
+      const { data, error } = await supabase!
+        .from('team_members')
+        .select('user_id, role, profiles!inner(id, name, email, avatar, role, title, department)')
+        .eq('team_id', teamId);
+      if (error) { console.error('[dataService] chat.fetchTeamMembers', error); return null; }
+      return data;
+    }
+
+    // No team — just fetch the user's own profile
+    const { data, error } = await supabase!
+      .from('profiles')
+      .select('id, name, email, avatar, role, title, department')
+      .eq('id', userId);
+    if (error) { console.error('[dataService] chat.fetchTeamMembers solo', error); return null; }
+    return data?.map((p: any) => ({ user_id: p.id, role: p.role, profiles: p })) || null;
+  },
+
   async deleteAllForUser(_userId: string, mockMode?: boolean) {
     if (!shouldPersist(mockMode)) return true;
     // Conversations are shared — cascade via team deletion in practice

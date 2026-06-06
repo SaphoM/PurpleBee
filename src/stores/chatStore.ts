@@ -9,6 +9,9 @@ import { chatDb } from '@/lib/dataService';
 import { useSettingsStore } from '@stores/settingsStore';
 const isMockMode = () => useSettingsStore.getState().keepMockData;
 
+// Lazy import to avoid circular dependency (userStore → chatStore → userStore)
+const getUserStore = () => import('@stores/userStore').then((m) => m.useUserStore);
+
 /** Aggregate DB reaction rows into the app's { emoji, users[] } shape */
 function aggregateReactions(rows: { emoji: string; user_id: string }[]): { emoji: string; users: string[] }[] {
   const map = new Map<string, string[]>();
@@ -650,89 +653,130 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   /**
    * Hydrate chat store from Supabase when mock mode is OFF and DB is connected.
    * When mock mode is ON, this is a no-op.
+   *
+   * Always initialises currentUserId, teamMembers etc. even when the DB has
+   * no conversations yet — so the Chat UI is functional (user can create new
+   * DMs/channels) even on a fresh account.
    */
   hydrateFromDb: async (userId: string) => {
     const mock = isMockMode();
     if (mock) return;
 
+    // ── 1. Load real team members from DB ──────────────────────────
+    const useUserStore = await getUserStore();
+    const teamId = useUserStore.getState().currentTeamId;
+    const dbMembers = await chatDb.fetchTeamMembers(userId, teamId, false);
+
+    let realParticipants: ChatParticipant[];
+    let myName = 'Me';
+    let myAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`;
+
+    if (dbMembers && dbMembers.length > 0) {
+      realParticipants = dbMembers.map((row: any) => {
+        const p = row.profiles || row;
+        const uid = p.id || row.user_id;
+        const name = p.name || p.email?.split('@')[0] || 'User';
+        const avatar = p.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
+        if (uid === userId) { myName = name; myAvatar = avatar; }
+        return {
+          userId: uid,
+          name,
+          avatar,
+          role: (row.role || p.role || 'user') as 'admin' | 'member',
+          online: uid === userId,
+        };
+      });
+    } else {
+      // Fallback: at least include the current user
+      const userState = useUserStore.getState().user;
+      if (userState) { myName = userState.name; myAvatar = userState.avatar || myAvatar; }
+      realParticipants = [{
+        userId,
+        name: myName,
+        avatar: myAvatar,
+        role: 'admin',
+        online: true,
+      }];
+    }
+
+    // ── 2. Load conversations from DB ──────────────────────────────
     const dbConversations = await chatDb.fetchConversations(userId, false);
-    if (!dbConversations || dbConversations.length === 0) return;
 
-    const me = getMemberInfo(userId);
-    const participants = allTeamMembers.map((m) => toParticipant(m, m.id === userId ? true : undefined));
-
-    // Map DB conversations to app Conversation type
     const convs: Conversation[] = [];
     const msgs: Record<string, ChatMessage[]> = {};
 
-    for (const dbConv of dbConversations) {
-      // Fetch full messages for this conversation
-      const dbMessages = await chatDb.fetchMessages(dbConv.id, false);
+    if (dbConversations && dbConversations.length > 0) {
+      for (const dbConv of dbConversations) {
+        const dbMessages = await chatDb.fetchMessages(dbConv.id, false);
 
-      const convParticipants: ChatParticipant[] = (dbConv.conversation_participants || []).map((cp: any) => ({
-        userId: cp.user_id,
-        name: cp.profile?.name || 'Unknown',
-        avatar: cp.profile?.avatar,
-        role: cp.role || 'member',
-        online: cp.user_id === userId,
-      }));
+        const convParticipants: ChatParticipant[] = (dbConv.conversation_participants || []).map((cp: any) => {
+          // Try to resolve name/avatar from our loaded team members
+          const known = realParticipants.find((rp) => rp.userId === cp.user_id);
+          return {
+            userId: cp.user_id,
+            name: known?.name || cp.profile?.name || 'Unknown',
+            avatar: known?.avatar || cp.profile?.avatar,
+            role: cp.role || 'member',
+            online: cp.user_id === userId,
+          };
+        });
 
-      const chatMessages: ChatMessage[] = (dbMessages || []).map((m: any) => ({
-        id: m.id,
-        conversationId: m.conversation_id,
-        senderId: m.sender_id,
-        senderName: m.sender?.name || 'Unknown',
-        senderAvatar: m.sender?.avatar,
-        text: m.text,
-        timestamp: new Date(m.created_at),
-        readBy: [m.sender_id], // Simplified — full read receipts would need message_reads query
-        attachments: (m.attachments || []).map((a: any) => ({
-          id: a.id,
-          name: a.name,
-          url: a.url,
-          type: a.type,
-          size: a.size,
-          previewUrl: a.preview_url,
-          uploadedAt: new Date(a.uploaded_at),
-        })),
-        reactions: aggregateReactions(m.reactions || []),
-      }));
+        const chatMessages: ChatMessage[] = (dbMessages || []).map((m: any) => ({
+          id: m.id,
+          conversationId: m.conversation_id,
+          senderId: m.sender_id,
+          senderName: m.sender?.name || 'Unknown',
+          senderAvatar: m.sender?.avatar,
+          text: m.text,
+          timestamp: new Date(m.created_at),
+          readBy: [m.sender_id],
+          attachments: (m.attachments || []).map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            url: a.url,
+            type: a.type,
+            size: a.size,
+            previewUrl: a.preview_url,
+            uploadedAt: new Date(a.uploaded_at),
+          })),
+          reactions: aggregateReactions(m.reactions || []),
+        }));
 
-      msgs[dbConv.id] = chatMessages;
+        msgs[dbConv.id] = chatMessages;
+        const lastMsg = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : undefined;
 
-      const lastMsg = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : undefined;
+        let convName = dbConv.name;
+        if (dbConv.type === 'dm') {
+          const other = convParticipants.find((p) => p.userId !== userId);
+          convName = other?.name || dbConv.name;
+        }
 
-      // For DMs, resolve name to the other participant
-      let convName = dbConv.name;
-      if (dbConv.type === 'dm') {
-        const other = convParticipants.find((p) => p.userId !== userId);
-        convName = other?.name || dbConv.name;
+        convs.push({
+          id: dbConv.id,
+          type: dbConv.type,
+          name: convName,
+          description: dbConv.description,
+          participants: convParticipants,
+          taskId: dbConv.task_id,
+          taskTitle: dbConv.task_title,
+          teamId: dbConv.team_id,
+          lastMessage: lastMsg,
+          unreadCount: 0,
+          pinned: dbConv.pinned,
+          createdAt: new Date(dbConv.created_at),
+          updatedAt: new Date(dbConv.updated_at),
+        });
       }
-
-      convs.push({
-        id: dbConv.id,
-        type: dbConv.type,
-        name: convName,
-        description: dbConv.description,
-        participants: convParticipants,
-        taskId: dbConv.task_id,
-        taskTitle: dbConv.task_title,
-        teamId: dbConv.team_id,
-        lastMessage: lastMsg,
-        unreadCount: 0, // TODO: compute from message_reads
-        pinned: dbConv.pinned,
-        createdAt: new Date(dbConv.created_at),
-        updatedAt: new Date(dbConv.updated_at),
-      });
     }
 
+    // ── 3. Always set user context + team members ──────────────────
     set({
       conversations: convs,
       messages: msgs,
       currentUserId: userId,
-      currentUserName: me.name,
-      currentUserAvatar: me.avatar,
-      teamMembers: participants,
+      currentUserName: myName,
+      currentUserAvatar: myAvatar,
+      teamMembers: realParticipants,
       activeConversationId: null,
       dockedChatIds: [],
     });

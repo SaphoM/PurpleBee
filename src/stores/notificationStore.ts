@@ -423,12 +423,16 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   /**
    * Pull the user's notification inbox from Supabase (mock mode OFF only).
    * Each user has their own row scope (user_id = auth.uid()).
+   *
+   * Always completes — even when the DB returns 0 rows, we set the
+   * notifications array (empty) so the UI shows the correct empty state
+   * and addNotification can create new ones.
    */
   hydrateFromDb: async (userId: string) => {
     if (isMockMode()) return;
     const rows = await notificationDb.fetchAll(userId, false);
-    if (!rows) return;
-    const mapped: Notification[] = (rows as Array<Record<string, any>>).map((r) => ({
+    // rows may be null (DB error) or [] (no notifications yet) — both are fine
+    const mapped: Notification[] = (rows as Array<Record<string, any>> || []).map((r) => ({
       id: r.id,
       userId: r.user_id,
       type: r.type as NotificationType,
