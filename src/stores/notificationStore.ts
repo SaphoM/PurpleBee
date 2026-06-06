@@ -4,6 +4,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { notificationDb } from '@/lib/dataService';
 import { useSettingsStore } from '@stores/settingsStore';
 
+/**
+ * Returns true when mock/sample data mode is active.
+ * When true, all DB reads and writes are skipped — data lives in-memory only.
+ */
 const isMockMode = () => useSettingsStore.getState().keepMockData;
 
 // ─── Notification preferences ───────────────────────────────────────────

@@ -11,17 +11,11 @@ import { taskDb } from '@/lib/dataService';
 import { useSettingsStore } from '@stores/settingsStore';
 
 /**
- * Returns true only when DB writes should be skipped.
- * A real Supabase user (not a Quick Login demo user) always persists
- * to DB regardless of the keepMockData toggle — matches projectStore behaviour.
+ * Returns true when mock/sample data mode is active.
+ * When true, all DB reads and writes are skipped — data lives in-memory only.
+ * This keeps a clean separation: mock operations never touch the DB.
  */
-const isMockMode = () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { useUserStore } = require('@stores/userStore') as typeof import('@stores/userStore');
-  const isQuickLogin = useUserStore.getState().isQuickLoginUser();
-  if (!isQuickLogin) return false;
-  return useSettingsStore.getState().keepMockData;
-};
+const isMockMode = () => useSettingsStore.getState().keepMockData;
 
 /** Read the current team_id and creator from userStore at call-time. */
 const getTeamContext = () => {
@@ -410,10 +404,6 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   /**
    * Hydrate store from Supabase when mock mode is OFF and DB is connected.
-   * When mock mode is ON, this is a no-op — stores stay in-memory.
-   */
-  /**
-   * Hydrate store from Supabase when mock mode is OFF and DB is connected.
    * When the DB is empty (first real-mode login), seeds demo tasks and
    * writes them to Supabase so they persist across refresh / re-login.
    */
@@ -459,18 +449,17 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 
   restoreMockData: (currentUserId?: string) => {
-    // Mock mode is being turned ON → populate in-memory only, never write to DB.
-    // When a real (Supabase) user is logged in, reassign a spread of mock tasks
-    // to their ID so the dashboard shows data regardless of role permissions.
-    if (currentUserId && !['user-1','user-2','user-3','user-4','user-5'].includes(currentUserId)) {
-      const reassigned = mockTasks.map((t, i) => {
-        // Assign roughly half the tasks to the current user so the dashboard isn't empty
-        if (i % 2 === 0) return { ...t, assignedTo: currentUserId };
-        return t;
-      });
-      set({ tasks: reassigned });
+    // Mock mode ON → populate in-memory only, never write to DB.
+    // Assign ALL mock tasks to the current user so the full set is visible
+    // on the dashboard (which filters by assignedTo for non-admin users).
+    if (currentUserId) {
+      const reassigned = mockTasks.map((t) => ({
+        ...t,
+        assignedTo: currentUserId,
+      }));
+      set({ tasks: reassigned, selectedTaskId: null });
     } else {
-      set({ tasks: mockTasks });
+      set({ tasks: mockTasks, selectedTaskId: null });
     }
   },
 }));

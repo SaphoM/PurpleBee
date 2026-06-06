@@ -4,7 +4,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { chatDb } from '@/lib/dataService';
 
 /**
- * Helper: read keepMockData at call-time (same pattern as taskStore).
+ * Returns true when mock/sample data mode is active.
+ * When true, all DB reads and writes are skipped — data lives in-memory only.
+ * This keeps a clean separation: mock operations never touch the DB.
  */
 import { useSettingsStore } from '@stores/settingsStore';
 const isMockMode = () => useSettingsStore.getState().keepMockData;

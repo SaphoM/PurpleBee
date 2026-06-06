@@ -4,18 +4,11 @@ import { projectDb, type DbProjectTaskInsert } from '@/lib/dataService';
 import { useSettingsStore } from '@stores/settingsStore';
 
 /**
- * Returns true only when DB writes should be skipped.
- * A real Supabase user (not a Quick Login demo user) always persists
- * to DB regardless of the keepMockData toggle.
+ * Returns true when mock/sample data mode is active.
+ * When true, all DB reads and writes are skipped — data lives in-memory only.
+ * This keeps a clean separation: mock operations never touch the DB.
  */
-const isMockMode = () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { useUserStore } = require('@stores/userStore') as typeof import('@stores/userStore');
-  const isQuickLogin = useUserStore.getState().isQuickLoginUser();
-  // Real users always persist to DB; quick-login users follow the setting
-  if (!isQuickLogin) return false;
-  return useSettingsStore.getState().keepMockData;
-};
+const isMockMode = () => useSettingsStore.getState().keepMockData;
 
 /** Read current team_id at call-time so every write attaches to the company. */
 const getTeamContext = () => {
@@ -550,20 +543,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   clearMockData: () => {
-    persistProjects([]);
+    // Clear in-memory state only — do NOT wipe localStorage.
+    // hydrateFromDb will overwrite localStorage with DB data on next hydration.
     set({ projects: [], selectedProjectId: null });
   },
 
   restoreMockData: () => {
-    // Prefer user's persisted projects over seed data so user-created
-    // projects survive page refresh. Only fall back to seed when empty.
-    const persisted = loadPersistedProjects();
-    if (persisted && persisted.length > 0) {
-      set({ projects: persisted, selectedProjectId: null });
-    } else {
-      persistProjects(seedProjects);
-      set({ projects: seedProjects, selectedProjectId: null });
-    }
+    // Mock mode ON → always show the built-in seed projects (sample data).
+    // Never load from localStorage here — that may contain real DB data
+    // from a previous hydration, which would break mock/real separation.
+    set({ projects: seedProjects, selectedProjectId: null });
   },
 
   /**
