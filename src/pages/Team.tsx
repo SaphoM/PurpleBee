@@ -34,6 +34,7 @@ import { Card, CardHeader, CardContent } from '@components/Card';
 import { useChatStore } from '@stores/chatStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useUserStore } from '@stores/userStore';
+import { useSettingsStore } from '@stores/settingsStore';
 import { ChatParticipant, Task, TaskStatus } from '@/types/index';
 import { format, formatDistanceToNow, isPast, isToday } from 'date-fns';
 import { authDb, inviteDb } from '@/lib/dataService';
@@ -470,7 +471,8 @@ const MemberDetailModal: React.FC<{
 export const Team: React.FC = () => {
   const { teamMembers, createDM, conversations, currentUserId } = useChatStore();
   const { tasks } = useTaskStore();
-  const { canInviteMembers, canManageTeam } = useUserStore();
+  const { canInviteMembers, canManageTeam, assignableMembers } = useUserStore();
+  const keepMockData = useSettingsStore((s) => s.keepMockData);
 
   const [search, setSearch] = useState('');
   const [showInvite, setShowInvite] = useState(false);
@@ -478,14 +480,50 @@ export const Team: React.FC = () => {
   const [deptFilter, setDeptFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name' | 'tasks' | 'completion'>('name');
 
-  // Build enriched member data
+  // Build enriched member data.
+  // Mock ON  → chatStore.teamMembers + hardcoded mockExtendedData (demo users)
+  // Mock OFF → userStore.assignableMembers (real DB profiles with title/dept/email),
+  //            merged with chatStore.teamMembers for online status & chat features
   const membersData: TeamMemberData[] = useMemo(() => {
-    return teamMembers.map((member) => {
-      const assigned = tasks.filter((t) => t.assignedTo === member.userId);
+    if (keepMockData) {
+      // ── Mock mode: use demo team members ──
+      return teamMembers.map((member) => {
+        const assigned = tasks.filter((t) => t.assignedTo === member.userId);
+        const completed = assigned.filter((t) => t.status === 'completed').length;
+        const inProgress = assigned.filter((t) => t.status === 'in-progress').length;
+        const overdue = assigned.filter((t) => t.dueDate && isPast(new Date(t.dueDate)) && t.status !== 'completed' && !isToday(new Date(t.dueDate))).length;
+        const ext = mockExtendedData[member.userId] || { department: 'Engineering', title: 'Team Member', joinedDate: new Date(), email: `${member.name.toLowerCase().replace(' ', '.')}@xspark.co.za` };
+
+        return {
+          member,
+          tasksAssigned: assigned,
+          tasksCompleted: completed,
+          tasksInProgress: inProgress,
+          tasksOverdue: overdue,
+          totalTasks: assigned.length,
+          completionRate: assigned.length > 0 ? Math.round((completed / assigned.length) * 100) : 0,
+          avgProgress: assigned.length > 0 ? Math.round(assigned.reduce((s, t) => s + t.progress, 0) / assigned.length) : 0,
+          ...ext,
+        };
+      });
+    }
+
+    // ── Real mode: build from assignableMembers (DB profiles) ──
+    return assignableMembers.map((profile) => {
+      // Merge online status from chatStore if available
+      const chatMember = teamMembers.find((m) => m.userId === profile.id);
+      const member: ChatParticipant = chatMember || {
+        userId: profile.id,
+        name: profile.name,
+        avatar: profile.avatar,
+        role: profile.role === 'admin' ? 'admin' : 'member',
+        online: false,
+      };
+
+      const assigned = tasks.filter((t) => t.assignedTo === profile.id);
       const completed = assigned.filter((t) => t.status === 'completed').length;
       const inProgress = assigned.filter((t) => t.status === 'in-progress').length;
       const overdue = assigned.filter((t) => t.dueDate && isPast(new Date(t.dueDate)) && t.status !== 'completed' && !isToday(new Date(t.dueDate))).length;
-      const ext = mockExtendedData[member.userId] || { department: 'Engineering', title: 'Team Member', joinedDate: new Date(), email: `${member.name.toLowerCase().replace(' ', '.')}@xspark.co.za` };
 
       return {
         member,
@@ -496,10 +534,13 @@ export const Team: React.FC = () => {
         totalTasks: assigned.length,
         completionRate: assigned.length > 0 ? Math.round((completed / assigned.length) * 100) : 0,
         avgProgress: assigned.length > 0 ? Math.round(assigned.reduce((s, t) => s + t.progress, 0) / assigned.length) : 0,
-        ...ext,
+        department: profile.department || 'General',
+        title: profile.title || 'Team Member',
+        joinedDate: new Date(),
+        email: profile.email || `${profile.name.toLowerCase().replace(' ', '.')}@company.com`,
       };
     });
-  }, [teamMembers, tasks]);
+  }, [keepMockData, teamMembers, assignableMembers, tasks]);
 
   // Filter and sort
   const filteredMembers = useMemo(() => {
@@ -558,12 +599,23 @@ export const Team: React.FC = () => {
   }, [conversations, currentUserId]);
 
   const handleMessage = (userId: string) => {
-    const member = teamMembers.find((m) => m.userId === userId);
+    // Try chatStore first, then build from assignableMembers
+    let member = teamMembers.find((m) => m.userId === userId);
+    if (!member) {
+      const profile = assignableMembers.find((p) => p.id === userId);
+      if (profile) {
+        member = {
+          userId: profile.id,
+          name: profile.name,
+          avatar: profile.avatar,
+          role: profile.role === 'admin' ? 'admin' : 'member',
+          online: false,
+        };
+      }
+    }
     if (member) {
       const convId = createDM(member);
-      const isMobile = window.innerWidth < 1024;
-      if (isMobile) {
-        // On mobile, open the chat as a docked bubble instead of navigating away
+      if (window.innerWidth < 1024) {
         useChatStore.getState().dockChat(convId);
       } else {
         window.location.hash = 'chat';

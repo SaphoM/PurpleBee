@@ -182,6 +182,13 @@ When tasks are assigned to real Supabase users (UUIDs, not `user-1` demo IDs):
 - 6 palettes: purple (default), blue, green, amber, red, pink
 - `accentColorMap` in settingsStore maps each to hex/label/tw values
 
+### Team Page Data Sources
+The Team page (`Team.tsx`) uses different data sources depending on mode:
+- **Mock ON** → `chatStore.teamMembers` (demo users) + hardcoded `mockExtendedData` (title, department, email for `user-1` through `user-5`)
+- **Mock OFF** → `userStore.assignableMembers` (real DB profiles with title, department, email from `profiles` table), merged with `chatStore.teamMembers` for online status and chat DM functionality
+
+The **project assignment dropdown** always uses `userStore.assignableMembers`, which loads from DB in real mode (showing real team members) and falls back to hardcoded `teamProfiles` in demo mode.
+
 ### Roles & Permissions
 - Roles: `admin`, `manager`, `user`
 - `canViewAllTasks()` — admin/manager see all; users see only their tasks
