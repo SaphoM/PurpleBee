@@ -569,13 +569,24 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   /**
    * Pull all projects for the user's team from Supabase (mock mode OFF only).
    * Maps DB rows back into the Project shape used across the UI.
+   *
+   * When the DB is empty (first real-mode login), seeds demo projects and
+   * writes them to Supabase so they persist across refresh / re-login.
+   * Also claims orphaned projects (team_id IS NULL) when the team resolves.
    */
   hydrateFromDb: async (userId: string) => {
     if (isMockMode()) return;
     const { teamId } = getTeamContext();
+
+    // If team just resolved, attach any orphaned projects to it
+    if (teamId) {
+      await projectDb.claimOrphanedProjects(userId, teamId, false);
+    }
+
     const rows = await projectDb.fetchAll(userId, false, teamId);
-    if (!rows) return;
-    const mapped: Project[] = (rows as Array<Record<string, any>>).map((r) => ({
+    // rows is null on DB error — treat as empty so we can seed
+    const dbRows = rows || [];
+    const mapped: Project[] = (dbRows as Array<Record<string, any>>).map((r) => ({
       id: r.id,
       name: r.name,
       description: r.description || '',
@@ -601,48 +612,47 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         })),
     }));
 
-    // If DB returned projects, use them. Otherwise fall back to seed data
-    // so new users in real mode still see demo projects on first login.
+    // If DB returned projects, use them.
     if (mapped.length > 0) {
       persistProjects(mapped);
       set({ projects: mapped });
-    } else {
-      // Seed the DB with demo projects. Generate proper UUIDs for IDs
-      // because the DB columns are uuid type — mock IDs like 'proj-1' fail.
-      const seeded: Project[] = seedProjects.map((p) => ({
-        ...p,
-        id: uuidv4(),
-        createdBy: userId,
-        tasks: p.tasks.map((t) => ({
-          ...t,
-          id: uuidv4(),
-          assignedTo: undefined, // clear mock user IDs
-        })),
-      }));
-      persistProjects(seeded);
-      set({ projects: seeded });
+      return;
+    }
 
-      // Write seed projects to DB so they persist across sessions.
-      for (const p of seeded) {
-        projectDb.insertWithTasks(
-          {
-            id: p.id,
-            name: p.name,
-            description: p.description || null,
-            icon: p.icon,
-            color: p.color,
-            template_id: p.templateId,
-            status: p.status,
-            team_id: teamId || null,
-            created_by: userId,
-          },
-          p.tasks.map((t) => ({
-            ...toDbProjectTask(p.id, t),
-            assigned_to: null,
-          })),
-          false, // not mock mode — persist to DB
-        );
-      }
+    // ── DB empty: seed demo projects ────────────────────────────────
+    const seeded: Project[] = seedProjects.map((p) => ({
+      ...p,
+      id: uuidv4(),
+      createdBy: userId,
+      tasks: p.tasks.map((t) => ({
+        ...t,
+        id: uuidv4(),
+        assignedTo: undefined, // clear mock user IDs
+      })),
+    }));
+    persistProjects(seeded);
+    set({ projects: seeded });
+
+    // Write seed projects to DB (await so they persist before next refresh)
+    for (const p of seeded) {
+      await projectDb.insertWithTasks(
+        {
+          id: p.id,
+          name: p.name,
+          description: p.description || null,
+          icon: p.icon,
+          color: p.color,
+          template_id: p.templateId,
+          status: p.status,
+          team_id: teamId || null,
+          created_by: userId,
+        },
+        p.tasks.map((t) => ({
+          ...toDbProjectTask(p.id, t),
+          assigned_to: null,
+        })),
+        false,
+      );
     }
   },
 }));

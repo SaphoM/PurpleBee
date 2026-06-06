@@ -353,10 +353,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
         set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
         // Now that team is resolved, load real assignable members
         await get().loadAssignableMembers();
-        // Re-hydrate chat with team context so team members are loaded
+        // Re-hydrate chat + projects with team context so team members
+        // and team-scoped projects are loaded correctly
         const { keepMockData } = useSettingsStore.getState();
         if (!keepMockData && isDbConnected()) {
           useChatStore.getState().hydrateFromDb(supaUser.id);
+          useProjectStore.getState().hydrateFromDb(supaUser.id);
         }
       } catch (err) {
         console.warn('[userStore] could not resolve team on login', err);
@@ -446,10 +448,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
           set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
           // Now that team is resolved, load real assignable members
           await get().loadAssignableMembers();
-          // Re-hydrate chat with team context so team members are loaded
+          // Re-hydrate chat + projects with team context so team members
+          // and team-scoped projects are loaded correctly
           const { keepMockData } = useSettingsStore.getState();
           if (!keepMockData && isDbConnected()) {
             useChatStore.getState().hydrateFromDb(supaUser.id);
+            useProjectStore.getState().hydrateFromDb(supaUser.id);
           }
         } catch (err) {
           console.warn('[userStore] could not resolve team on session restore', err);

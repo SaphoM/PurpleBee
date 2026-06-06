@@ -309,6 +309,18 @@ export const projectDb = {
     return true;
   },
 
+  /** Attach orphaned projects (team_id IS NULL) to the user's team */
+  async claimOrphanedProjects(userId: string, teamId: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!
+      .from('projects')
+      .update({ team_id: teamId })
+      .eq('created_by', userId)
+      .is('team_id', null);
+    if (error) { console.error('[dataService] projects.claimOrphaned', error); return false; }
+    return true;
+  },
+
   /** Project-task subtable CRUD */
   async insertTask(task: DbProjectTaskInsert, mockMode?: boolean) {
     if (!shouldPersist(mockMode)) return true;

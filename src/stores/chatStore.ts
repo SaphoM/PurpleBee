@@ -702,7 +702,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // ── 2. Load conversations from DB ──────────────────────────────
     const dbConversations = await chatDb.fetchConversations(userId, false);
 
-    const convs: Conversation[] = [];
+    let convs: Conversation[] = [];
     const msgs: Record<string, ChatMessage[]> = {};
 
     if (dbConversations && dbConversations.length > 0) {
@@ -769,7 +769,55 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     }
 
-    // ── 3. Always set user context + team members ──────────────────
+    // ── 3. Seed default channels if DB is empty ─────────────────────
+    if (convs.length === 0 && teamId) {
+      const generalId = uuidv4();
+      const announceId = uuidv4();
+      const participantIds = realParticipants.map((p) => p.userId);
+      const now = new Date();
+
+      const seedChannels: Conversation[] = [
+        {
+          id: generalId,
+          type: 'team',
+          name: 'General',
+          description: 'Team-wide discussions and check-ins',
+          participants: realParticipants,
+          teamId,
+          unreadCount: 0,
+          pinned: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: announceId,
+          type: 'announcement',
+          name: 'Announcements',
+          description: 'Company-wide announcements',
+          participants: realParticipants,
+          teamId,
+          unreadCount: 0,
+          pinned: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+
+      convs = seedChannels;
+      msgs[generalId] = [];
+      msgs[announceId] = [];
+
+      // Persist to DB (await so they exist before next refresh)
+      for (const ch of seedChannels) {
+        await chatDb.createConversation(
+          { id: ch.id, type: ch.type, name: ch.name, description: ch.description, teamId },
+          participantIds,
+          false,
+        );
+      }
+    }
+
+    // ── 4. Always set user context + team members ──────────────────
     set({
       conversations: convs,
       messages: msgs,
