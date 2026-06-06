@@ -102,14 +102,18 @@ src/
 - **Real Supabase users always persist to DB** — `isMockMode()` in projectStore returns `false` for non-Quick-Login users regardless of `keepMockData`.
 - `toDbProjectTask` sanitises `assigned_to` — mock IDs like `user-1` are replaced with `null` to avoid FK violations.
 
-### Hydration Flow (`hydrateStores()` in userStore.ts)
+### Hydration Flow (`hydrateStores()` + `hydrateWithTeam()` in userStore.ts)
 Called after every login (demo, email, or session restore):
 1. **Mock ON** → populate all stores with mock/seed data (in-memory only, DB never touched)
-2. **Mock OFF** → clear all stores first, then hydrate from Supabase if connected:
-   - `taskStore.hydrateFromDb(userId)` — team-scoped task fetch
-   - `chatStore.hydrateFromDb(userId)`
-   - `projectStore.hydrateFromDb(userId)` — project + project_tasks
-   - `notificationStore.hydrateFromDb(userId)` — user's notification inbox
+2. **Mock OFF** → two-phase hydration to avoid race conditions:
+   - **Phase 1 (`hydrateStores`)**: Only hydrates `notificationStore` (user-scoped, no team dependency)
+   - **Phase 2 (`hydrateWithTeam`)**: Runs AFTER `currentTeamId` resolves — hydrates tasks, chat, and projects with proper team context via `Promise.all`:
+     - `taskStore.hydrateFromDb(userId)` — team-scoped task fetch
+     - `chatStore.hydrateFromDb(userId)` — loads real team members, seeds General/Announcements if DB is empty
+     - `projectStore.hydrateFromDb(userId)` — project + project_tasks, seeds demo projects if DB is empty
+     - Auth session is guaranteed valid (getOrCreateTeam already succeeded)
+
+> **Why two phases?** Chat, projects, and tasks need `currentTeamId` for team-scoped queries. Calling `hydrateFromDb` before team resolves caused: (a) project seed inserts rejected by RLS (`auth.uid()` timing), (b) duplicate chat channels from concurrent calls.
 
 ### Team Context & Data Scoping
 Every DB write that should belong to a company attaches a `team_id`.  
@@ -318,7 +322,7 @@ GITHUB_TOKEN=<token> git push origin staging
 ## 12. Known Quirks & Gotchas
 
 1. **Circular dep prevention:** Stores that need `userStore` data at call-time (not module init) use a lazy `require('@stores/userStore')` inside the action body.
-2. **team_id on tasks:** Tasks written before `currentTeamId` resolves (< 1s) may lack `team_id`. This is non-critical — fetching falls back to `assigned_to`/`created_by`.
+2. **team_id on tasks:** All team-scoped hydration now waits for `currentTeamId` (via `hydrateWithTeam`). Legacy tasks without `team_id` are still found via `assigned_to`/`created_by` fallback.
 3. **Mock task assignment:** Mock tasks use IDs `user-1` to `user-5`. Real Supabase users have UUIDs. `restoreMockData(userId)` handles the mapping.
 4. **Supabase magic link redirects:** Hash fragments are stripped by Supabase. Invite tokens must travel as `?invite_token=xxx` query params (not `#invite?token=`).
 5. **`localStorage` keys:** `purplebee-settings`, `purplebee-sidebar-collapsed`, `purplebee-notif-prefs`, `purplebee-projects`.
@@ -332,6 +336,8 @@ GITHUB_TOKEN=<token> git push origin staging
 
 | Description |
 |-------------|
+| Fix race condition — two-phase hydration (hydrateStores + hydrateWithTeam) prevents duplicate seeding and RLS failures |
+| Fix messaging and notifications not working when mock data OFF — chatStore always initializes user context + real team members |
 | Fix modals not closing — wrap handleCreate/deleteProject in try/finally so onClose always runs |
 | Fix delete modal showing blank project name — capture name at click time, not render time |
 | Always persist projects to Supabase for real authenticated users — `isMockMode()` now returns false for non-Quick-Login users |
