@@ -31,6 +31,7 @@ const App: React.FC = () => {
   const hasDockedChats = useChatStore((s) => s.dockedChatIds.length > 0);
   const isAuthenticated = useUserStore((s) => s.isAuthenticated);
   const authChecked = useUserStore((s) => s.authChecked);
+  const pendingPasswordRecovery = useUserStore((s) => s.pendingPasswordRecovery);
   const initSession = useUserStore((s) => s.initSession);
   const viewingAsId = useUserStore((s) => s.viewingAsId);
   const getViewingProfile = useUserStore((s) => s.getViewingProfile);
@@ -120,13 +121,9 @@ const App: React.FC = () => {
       ? new URLSearchParams(hashParts.slice(1).join('?')).get('token')
       : null);
 
-  // Detect Supabase password recovery redirect.
-  // Supabase adds #access_token=...&type=recovery to the URL hash.
-  // The Supabase client auto-restores the session. We redirect to
-  // Settings > Account with the change password form auto-opened
-  // (no current password required since they verified via email).
-  const hashFragment = window.location.hash.slice(1);
-  const isRecoveryRedirect = hashFragment.includes('type=recovery');
+  // Password recovery is detected via Supabase's onAuthStateChange
+  // PASSWORD_RECOVERY event (set in userStore.initSession). The hash
+  // fragment detection is unreliable because Supabase consumes it before render.
 
   // Show loading spinner while checking session
   if (!authChecked) {
@@ -141,12 +138,10 @@ const App: React.FC = () => {
   }
 
   // Password recovery — user clicked the reset link in their email.
-  // Redirect to Settings > Account with change password form auto-opened.
-  // No current password required since they verified identity via email.
-  if (isRecoveryRedirect && isAuthenticated) {
-    // Clean the recovery hash and redirect to settings
-    window.location.hash = '#settings?tab=account&recovery=true';
-    return null;
+  // Show the standalone ResetPasswordPage (not the dashboard) so
+  // the user MUST set a new password before accessing the app.
+  if (pendingPasswordRecovery && isAuthenticated) {
+    return <ResetPasswordPage isRecoveryMode />;
   }
 
   // Forgot password page — user clicked "Forgot password?" on login

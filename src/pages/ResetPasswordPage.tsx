@@ -12,6 +12,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { authDb } from '@/lib/dataService';
+import { useUserStore } from '@stores/userStore';
 
 // ─── Shared input class ──────────────────────────────────────────────
 const inputCls = clsx(
@@ -98,13 +99,16 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
     setIsLoading(false);
     if (success) {
       setPasswordUpdated(true);
+      // Clear the recovery flag so the user can access the app
+      useUserStore.setState({ pendingPasswordRecovery: false });
     } else {
       setError('Failed to update password. The reset link may have expired. Please try again.');
     }
   };
 
   const goToLogin = () => {
-    // Clear any recovery hash fragments and go back to login
+    // Clear recovery flag and navigate
+    useUserStore.setState({ pendingPasswordRecovery: false });
     window.location.hash = '';
     window.location.search = '';
     window.location.reload();
@@ -158,11 +162,23 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
                   Password updated!
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">
-                  Your password has been reset successfully. You can now sign in with your new password.
+                  {isRecoveryMode
+                    ? 'Your password has been reset successfully. You can now access your workspace.'
+                    : 'Your password has been reset successfully. You can now sign in with your new password.'}
                 </p>
-                <button onClick={goToLogin} className={btnPrimary}>
-                  <ArrowLeft size={16} />
-                  Back to Sign In
+                <button onClick={() => {
+                  useUserStore.setState({ pendingPasswordRecovery: false });
+                  if (isRecoveryMode) {
+                    window.location.hash = '#dashboard';
+                  } else {
+                    goToLogin();
+                  }
+                }} className={btnPrimary}>
+                  {isRecoveryMode ? (
+                    <><ArrowLeft size={16} /> Go to Dashboard</>
+                  ) : (
+                    <><ArrowLeft size={16} /> Back to Sign In</>
+                  )}
                 </button>
               </div>
             )}

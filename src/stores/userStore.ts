@@ -74,6 +74,7 @@ interface UserStore {
   isAuthenticated: boolean;
   isLoading: boolean;
   authChecked: boolean; // true once initSession has run
+  pendingPasswordRecovery: boolean; // true when user arrived via password reset email
   error: string | null;
 
   // "View As" — admin/manager peek at a member's dashboard
@@ -172,6 +173,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
   isAuthenticated: false,
   isLoading: false,
   authChecked: false,
+  pendingPasswordRecovery: false,
   error: null,
   viewingAsId: null,
   currentTeamId: null,
@@ -394,6 +396,18 @@ export const useUserStore = create<UserStore>((set, get) => ({
       return;
     }
     set({ isLoading: true });
+
+    // Listen for PASSWORD_RECOVERY event from Supabase Auth.
+    // This fires when a user clicks the reset-password link in their email.
+    // We set a flag so App.tsx can show the reset form instead of the dashboard.
+    if (supabase) {
+      supabase.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          set({ pendingPasswordRecovery: true });
+        }
+      });
+    }
+
     try {
       const session = await authDb.getSession();
       if (session?.user) {
