@@ -687,15 +687,13 @@ export const SettingsPage: React.FC = () => {
   //        Otherwise clear Zustand and hydrate from DB.
   const applyRealMode = async () => {
     setKeepMockData(false);
-    useTaskStore.getState().clearMockData();
-    useProjectStore.getState().clearMockData();
-    useChatStore.getState().clearMockData();
-    useNotificationStore.getState().clearMockData();
     useUserStore.getState().clearViewAs();
     const currentUser = useUserStore.getState().user;
     if (isDbConnected() && currentUser) {
-      // Await all hydrations so seed data persists to DB before any
-      // subsequent toggle or refresh.
+      // Hydrate from DB — each hydrateFromDb replaces Zustand state with
+      // DB data (seeding when empty), so we don't need to clearMockData first.
+      // Calling clearMockData before hydration was destructive: it wiped state
+      // and localStorage, leaving nothing if the DB was also empty.
       await Promise.all([
         useTaskStore.getState().hydrateFromDb(currentUser.id),
         useNotificationStore.getState().hydrateFromDb(currentUser.id),
@@ -703,6 +701,9 @@ export const SettingsPage: React.FC = () => {
         useProjectStore.getState().hydrateFromDb(currentUser.id),
       ]);
     }
+    // Reset selection state (hydrate handles the data arrays)
+    useTaskStore.setState({ selectedTaskId: null });
+    useProjectStore.setState({ selectedProjectId: null });
   };
 
   const handleMockDataToggle = (enabled: boolean) => {

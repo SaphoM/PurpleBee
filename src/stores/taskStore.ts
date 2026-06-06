@@ -9,7 +9,19 @@ import { taskDb } from '@/lib/dataService';
  * settingsStore doesn't import taskStore at module level (only in event handlers).
  */
 import { useSettingsStore } from '@stores/settingsStore';
-const isMockMode = () => useSettingsStore.getState().keepMockData;
+
+/**
+ * Returns true only when DB writes should be skipped.
+ * A real Supabase user (not a Quick Login demo user) always persists
+ * to DB regardless of the keepMockData toggle — matches projectStore behaviour.
+ */
+const isMockMode = () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useUserStore } = require('@stores/userStore') as typeof import('@stores/userStore');
+  const isQuickLogin = useUserStore.getState().isQuickLoginUser();
+  if (!isQuickLogin) return false;
+  return useSettingsStore.getState().keepMockData;
+};
 
 /** Read the current team_id and creator from userStore at call-time. */
 const getTeamContext = () => {
@@ -400,13 +412,43 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
    * Hydrate store from Supabase when mock mode is OFF and DB is connected.
    * When mock mode is ON, this is a no-op — stores stay in-memory.
    */
+  /**
+   * Hydrate store from Supabase when mock mode is OFF and DB is connected.
+   * When the DB is empty (first real-mode login), seeds demo tasks and
+   * writes them to Supabase so they persist across refresh / re-login.
+   */
   hydrateFromDb: async (userId: string) => {
     const mock = isMockMode();
     if (mock) return; // Mock mode ON → don't touch DB
     const { teamId } = getTeamContext();
     const dbTasks = await taskDb.fetchAll(userId, false, teamId);
-    if (dbTasks !== null) {
+    if (dbTasks === null) return; // DB error — keep current state
+
+    // If DB returned tasks, use them.
+    if (dbTasks.length > 0) {
       set({ tasks: dbTasks });
+      return;
+    }
+
+    // ── DB empty: seed demo tasks ────────────────────────────────
+    const seeded: Task[] = mockTasks.map((t) => ({
+      ...t,
+      id: uuidv4(),
+      assignedTo: userId,        // assign all to current user
+      projectId: undefined,      // clear mock project IDs
+      teamId: teamId || undefined,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+    set({ tasks: seeded });
+
+    // Write seed tasks to DB (await so they persist before next refresh)
+    for (const t of seeded) {
+      await taskDb.insert(
+        { ...t, teamId: teamId || undefined },
+        userId,
+        false,
+      );
     }
   },
 
