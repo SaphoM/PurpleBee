@@ -94,7 +94,7 @@ src/
 
 ### Mock Data System
 - `keepMockData` (default: `true`) controls whether stores show sample data.
-- **All 4 stores** use the same `isMockMode()` = `keepMockData`. When true, all DB reads and writes are skipped — data lives in-memory only. This ensures clean separation between sample and real data.
+- **All 4 data stores** (task, project, chat, notification) use `isMockMode()` = `useSettingsStore.getState().keepMockData`. When true, all DB reads and writes are skipped — data lives in-memory only. This ensures clean separation between sample and real data for both Quick Login users and real Supabase users.
 - On toggle **OFF** (`applyRealMode` in SettingsPage): `clearMockData()` wipes Zustand state (not localStorage or DB), then `hydrateFromDb()` replaces state with DB data (seeding if empty).
 - On toggle **ON**: all stores call `restoreMockData()` with the current user ID.
 - `taskStore` and `projectStore` read `keepMockData` from localStorage at *module init* to avoid flash of mock data on refresh.
@@ -344,6 +344,9 @@ GITHUB_TOKEN=<token> git push origin staging
 
 | Description |
 |-------------|
+| Fix assign-task dropdown showing real DB users in mock mode — `loadAssignableMembers()` now checks `keepMockData` first; SettingsPage calls it in both toggle directions for immediate refresh |
+| Fix Team page showing real DB users when mock OFF — split data source: mock ON uses `chatStore.teamMembers` + `mockExtendedData`; mock OFF uses `userStore.assignableMembers` merged with `chatStore.teamMembers` for online status |
+| Standardise `isMockMode()` across all stores — all 4 data stores now use `useSettingsStore.getState().keepMockData` (no more `isQuickLoginUser` override in projectStore); `restoreMockData` always uses seed data, never localStorage |
 | Fix race condition — two-phase hydration (hydrateStores + hydrateWithTeam) prevents duplicate seeding and RLS failures |
 | Fix messaging and notifications not working when mock data OFF — chatStore always initializes user context + real team members |
 | Fix modals not closing — wrap handleCreate/deleteProject in try/finally so onClose always runs |
@@ -382,8 +385,6 @@ GITHUB_TOKEN=<token> git push origin staging
 - [ ] Supabase dashboard: set Site URL to `https://purplebee-staging.onrender.com` in Auth > URL Configuration (and add to Redirect URLs allowlist)
 - [ ] Real-time subscriptions for tasks/chat (Supabase Realtime)
 - [ ] File uploads / attachment storage (Supabase Storage bucket)
-- [ ] `taskStore` team-member list — load real DB members (not hardcoded `teamProfiles`) when mock OFF
-- [ ] `Projects.tsx` — assignee dropdown should show real team members from DB when mock OFF
 - [ ] Notification fan-out: when a task is assigned to a teammate, write notification for *their* `user_id` (currently only writes to the creator's inbox)
 - [ ] Production deploy to `main` branch
 - [ ] Supabase Row Level Security audit — ensure all tables are properly locked down

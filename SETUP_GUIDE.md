@@ -118,22 +118,27 @@ Without these, the app runs fully in demo mode with mock data.
 
 ---
 
-## Demo Mode vs Real Mode
+## Mock Mode vs Real Mode
 
-### Demo Mode (Quick Login)
-- No Supabase credentials needed
-- 5 demo profiles with different roles (Admin, Manager, Team Members)
-- All data in-memory (Zustand stores) + localStorage cache
-- `keepMockData: true` - DB is never touched
-- Projects cached to `purplebee-projects` localStorage key
+The `keepMockData` setting (default: `true`) controls data separation uniformly for **all** user types.
 
-### Real Mode (Supabase Auth)
-- Requires Supabase URL and anon key in `.env`
+### Mock Mode ON (`keepMockData: true`)
+- No Supabase credentials needed — works with Quick Login and real accounts alike
+- 5 hardcoded demo profiles (Sapho, Thando, Lerato, Kabelo, Naledi) used for task/project assignment
+- All data in-memory only (Zustand stores) — DB is never read or written
+- `restoreMockData()` populates 10 tasks, 3 projects, notifications, and chat channels
+- Projects also cached to `purplebee-projects` localStorage key to survive page refresh
+
+### Mock Mode OFF (`keepMockData: false`)
+- Requires Supabase URL and anon key in `.env` for full functionality
 - Email/password + magic link authentication
-- All data persists to Supabase Postgres
-- `isMockMode()` returns `false` regardless of settings toggle
-- New users get demo projects seeded with proper UUIDs on first login
-- localStorage acts as cache for instant display during DB hydration
+- All data persists to Supabase Postgres (tasks, projects, notifications, chat)
+- `isMockMode()` = `keepMockData` — same function for Quick Login and real Supabase users
+- New users get demo data seeded to DB with proper UUIDs on first login (when DB is empty)
+- Task/project assignment dropdowns show real team members from `team_members` + `invites` tables
+- localStorage acts as cache for instant display during async DB hydration
+
+> **Toggling in SettingsPage** calls `loadAssignableMembers()` in both directions so dropdowns update immediately without a page reload.
 
 ---
 

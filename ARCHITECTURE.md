@@ -72,19 +72,36 @@ User Action → Component → Zustand Store Action
 
 ### Mock vs Real Mode
 
-The `isMockMode()` function determines whether DB writes happen:
-- **Quick Login users** (`user-1` to `user-5`): follows `keepMockData` setting — DB never touched when ON
-- **Real Supabase users**: always returns `false` — DB writes always happen regardless of toggle
-- `toDbProjectTask` sanitises mock `assigned_to` values to `null` to avoid FK violations
+`isMockMode()` = `useSettingsStore.getState().keepMockData` — a simple boolean, identical for all user types.
+
+- **Mock ON** (default): DB reads and writes are skipped for all 4 data stores (task, project, chat, notification). Data lives in-memory only.
+- **Mock OFF**: DB reads and writes are active. Stores hydrate from Supabase on login.
+- `toDbProjectTask` sanitises mock `assigned_to` values (e.g. `user-1`) to `null` to avoid FK violations when seeds are written to DB.
+
+### Assignable Members
+
+All task and project assignment dropdowns use `userStore.assignableMembers`.
+
+`loadAssignableMembers()` in `userStore.ts` checks `keepMockData` first:
+- **Mock ON** → returns hardcoded `teamProfiles` (5 demo profiles: user-1 to user-5)
+- **Mock OFF** → fetches accepted `team_members` + pending `invites` from Supabase, scoped to `currentTeamId`
+
+`SettingsPage` calls `loadAssignableMembers()` in both toggle directions so dropdowns update immediately without a page reload.
 
 ### Hydration Flow
 
-`hydrateStores()` in `userStore.ts` runs after every login:
+Two-phase hydration in `userStore.ts` runs after every login to avoid race conditions:
 
-1. **Mock ON** → `restoreMockData()` on all stores (in-memory only)
-2. **Mock OFF** → `hydrateFromDb(userId)` on all stores (async, DB fetch)
-   - No `clearMockData()` before hydration to avoid race condition flash
-   - If DB returns 0 projects, seeds demo projects with proper UUIDs
+**Mock ON** → `restoreMockData()` on all 4 data stores (in-memory only, DB never touched).
+
+**Mock OFF** → Two phases:
+1. **Phase 1 (`hydrateStores`)** — hydrates `notificationStore` only (user-scoped, no team dependency)
+2. **Phase 2 (`hydrateWithTeam`)** — runs AFTER `currentTeamId` resolves via `getOrCreateTeam`:
+   - `taskStore.hydrateFromDb(userId)` — team-scoped task fetch, seeds 10 demo tasks if DB is empty
+   - `chatStore.hydrateFromDb(userId)` — loads real team members, seeds General/Announcements if empty
+   - `projectStore.hydrateFromDb(userId)` — project + project_tasks, seeds demo projects if empty
+
+> **Why two phases?** Chat, tasks, and projects need `currentTeamId` for team-scoped RLS queries. Running `hydrateFromDb` before team resolves causes (a) RLS failures on seed inserts, (b) duplicate chat channels from concurrent calls.
 
 ## Routing
 
@@ -149,4 +166,4 @@ CSS custom properties (`--accent-50` through `--accent-900`) defined in `index.c
 
 ---
 
-**PurpleBee Architecture** | Last updated June 2026
+**PurpleBee Architecture** | Last updated June 2026 (isMockMode fix, two-phase hydration, assignableMembers)

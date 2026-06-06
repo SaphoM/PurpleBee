@@ -144,17 +144,20 @@ src/
 
 ## Data Persistence
 
-### For Real Supabase Users
-- Projects, tasks, chat, notifications all persist to Supabase DB
-- `isMockMode()` returns `false` for real users regardless of `keepMockData` toggle
-- Mock `assigned_to` values (e.g., `user-1`) are sanitised to `null` before DB writes
-- New users get demo projects seeded to DB with proper UUIDs on first login
-- localStorage acts as a cache for instant display while DB hydration runs
+### Mock Mode ON (`keepMockData: true`, default)
+- All data lives in-memory only (Zustand stores) — DB is never read or written
+- Applies equally to Quick Login demo users and real Supabase users
+- `restoreMockData()` populates 10 tasks, 3 projects, seed notifications, and chat channels
+- Task assignment dropdowns show 5 hardcoded demo profiles (`user-1` through `user-5`)
+- Projects are also cached to `purplebee-projects` localStorage key to survive page refresh
 
-### For Demo/Quick Login Users
-- All data is in-memory only (Zustand stores)
-- `keepMockData: true` — DB is never touched
-- Projects also cached to localStorage to survive page refresh
+### Mock Mode OFF (`keepMockData: false`)
+- Projects, tasks, chat, and notifications all persist to Supabase DB
+- `isMockMode()` = `keepMockData` — same logic for all user types
+- Mock `assigned_to` values (e.g. `user-1`) are sanitised to `null` before DB writes to avoid FK violations
+- New users get demo data seeded to DB with proper UUIDs on first login (when DB is empty)
+- localStorage acts as a fast cache for instant display while DB hydration runs in the background
+- Task assignment dropdowns show real team members fetched from `team_members` + `invites` tables
 
 ---
 
