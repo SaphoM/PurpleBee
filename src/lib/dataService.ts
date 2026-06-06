@@ -356,13 +356,27 @@ export const projectDb = {
 // ═══════════════════════════════════════════════════════════════════════
 
 export const chatDb = {
-  /** Fetch all conversations the user participates in, with participants */
+  /** Fetch all conversations the user participates in, with ALL participants and their profiles */
   async fetchConversations(userId: string, mockMode?: boolean) {
     if (!shouldPersist(mockMode)) return null;
+
+    // Step 1: get conversation IDs the user belongs to
+    const { data: membership, error: memErr } = await supabase!
+      .from('conversation_participants')
+      .select('conversation_id')
+      .eq('user_id', userId);
+    if (memErr) { console.error('[dataService] chat.fetchConversations membership', memErr); return null; }
+    if (!membership || membership.length === 0) return [];
+
+    const convIds = membership.map((r: any) => r.conversation_id as string);
+
+    // Step 2: fetch full conversation rows + ALL participants (with profiles)
+    // Using a separate select avoids PostgREST filtering the participants array
+    // to only the current user (which happens with !inner + .eq()).
     const { data, error } = await supabase!
       .from('conversations')
-      .select('*, conversation_participants!inner(*)')
-      .eq('conversation_participants.user_id', userId)
+      .select('*, conversation_participants(*, profile:profiles(id, name, avatar, role))')
+      .in('id', convIds)
       .order('updated_at', { ascending: false });
     if (error) { console.error('[dataService] chat.fetchConversations', error); return null; }
     return data;

@@ -344,6 +344,7 @@ GITHUB_TOKEN=<token> git push origin staging
 
 | Description |
 |-------------|
+| Fix Chat page data split — mock mode for real Supabase users now maps to `user-1` demo profile so seed conversations are visible; live mode `fetchConversations` restructured to return all participants (not just current user), enabling correct DM partner names and participant lists |
 | Fix assign-task dropdown showing real DB users in mock mode — `loadAssignableMembers()` now checks `keepMockData` first; SettingsPage calls it in both toggle directions for immediate refresh |
 | Fix Team page showing real DB users when mock OFF — split data source: mock ON uses `chatStore.teamMembers` + `mockExtendedData`; mock OFF uses `userStore.assignableMembers` merged with `chatStore.teamMembers` for online status |
 | Standardise `isMockMode()` across all stores — all 4 data stores now use `useSettingsStore.getState().keepMockData` (no more `isQuickLoginUser` override in projectStore); `restoreMockData` always uses seed data, never localStorage |

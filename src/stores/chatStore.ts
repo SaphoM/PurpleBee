@@ -58,6 +58,9 @@ function toParticipant(member: TeamMemberInfo, online?: boolean): ChatParticipan
   };
 }
 
+// ─── Detect demo/quick-login user IDs (user-1 … user-5) ──────────────
+const isDemoUserId = (id: string) => /^user-\d+$/.test(id);
+
 // ─── Stable DM conversation ID from two user IDs (order-independent) ──
 function dmConvId(a: string, b: string): string {
   const sorted = [a, b].sort();
@@ -712,13 +715,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const dbMessages = await chatDb.fetchMessages(dbConv.id, false);
 
         const convParticipants: ChatParticipant[] = (dbConv.conversation_participants || []).map((cp: any) => {
-          // Try to resolve name/avatar from our loaded team members
+          // Prefer data from our already-loaded team members list (has online status),
+          // then fall back to the profile joined in the query.
           const known = realParticipants.find((rp) => rp.userId === cp.user_id);
+          const profile = cp.profile || {};
           return {
             userId: cp.user_id,
-            name: known?.name || cp.profile?.name || 'Unknown',
-            avatar: known?.avatar || cp.profile?.avatar,
-            role: cp.role || 'member',
+            name: known?.name || profile.name || cp.user_id,
+            avatar: known?.avatar || profile.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${cp.user_id}`,
+            role: (cp.role || profile.role || 'member') as 'admin' | 'member',
             online: cp.user_id === userId,
           };
         });
@@ -845,10 +850,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   restoreMockData: (userId) => {
-    // Re-seed and reload for the user
+    // Re-seed and reload for the user.
+    // Real Supabase users (UUIDs) are mapped to 'user-1' (admin demo profile)
+    // so the seed conversations are visible to them in mock mode.
+    // Quick Login users (user-1 … user-5) use their own demo ID directly.
     seeded = false;
     seedConversations = [];
     seedMessages = {};
-    get().loadForUser(userId);
+    const demoId = isDemoUserId(userId) ? userId : 'user-1';
+    get().loadForUser(demoId);
   },
 }));
