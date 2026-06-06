@@ -94,12 +94,13 @@ src/
 
 ### Mock Data System
 - `keepMockData` (default: `true`) controls whether stores show sample data.
-- On toggle **OFF**: stores hydrate from Supabase (no clearMockData race).
-- On toggle **ON**: all stores call `restoreMockData()` with current user ID.
+- **All 4 stores** use the same `isMockMode()` = `keepMockData`. When true, all DB reads and writes are skipped — data lives in-memory only. This ensures clean separation between sample and real data.
+- On toggle **OFF** (`applyRealMode` in SettingsPage): `clearMockData()` wipes Zustand state (not localStorage or DB), then `hydrateFromDb()` replaces state with DB data (seeding if empty).
+- On toggle **ON**: all stores call `restoreMockData()` with the current user ID.
 - `taskStore` and `projectStore` read `keepMockData` from localStorage at *module init* to avoid flash of mock data on refresh.
-- `restoreMockData(userId)` in taskStore reassigns half the mock tasks to the current user's ID so non-admin (Supabase) users see data.
-- `projectStore.restoreMockData()` prefers localStorage-persisted projects over seed data.
-- **Real Supabase users always persist to DB** — `isMockMode()` in projectStore returns `false` for non-Quick-Login users regardless of `keepMockData`.
+- `taskStore.restoreMockData(userId)` assigns **all** mock tasks to the current user so non-admin users see the full set.
+- `projectStore.restoreMockData()` always uses built-in seed projects (never localStorage, which may contain real DB data).
+- `taskStore.hydrateFromDb` seeds demo tasks when DB is empty (mirrors projectStore pattern).
 - `toDbProjectTask` sanitises `assigned_to` — mock IDs like `user-1` are replaced with `null` to avoid FK violations.
 
 ### Hydration Flow (`hydrateStores()` + `hydrateWithTeam()` in userStore.ts)

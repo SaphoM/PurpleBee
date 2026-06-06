@@ -394,11 +394,8 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   loadForUser: (userId, userName) => {
-    const notifications = generateNotificationsForUser(userId, userName);
-    set({
-      notifications,
-      unreadCount: notifications.filter((n) => !n.read).length,
-    });
+    // Delegates to restoreMockData — same sample data generation.
+    get().restoreMockData(userId, userName);
   },
 
   updatePreferences: (prefs) => {

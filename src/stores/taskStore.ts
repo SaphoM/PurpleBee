@@ -3,17 +3,11 @@ import { Task, TaskStatus, TaskPriority, TaskCollaborator } from '@/types/index'
 import { v4 as uuidv4 } from 'uuid';
 import { taskDb } from '@/lib/dataService';
 
-/**
- * Helper: read keepMockData at call-time.
- * We import settingsStore directly — there's no circular dep because
- * settingsStore doesn't import taskStore at module level (only in event handlers).
- */
 import { useSettingsStore } from '@stores/settingsStore';
 
 /**
  * Returns true when mock/sample data mode is active.
  * When true, all DB reads and writes are skipped — data lives in-memory only.
- * This keeps a clean separation: mock operations never touch the DB.
  */
 const isMockMode = () => useSettingsStore.getState().keepMockData;
 

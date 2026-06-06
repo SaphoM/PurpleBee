@@ -132,38 +132,23 @@ interface UserStore {
   canAssignTasks: () => boolean;
 }
 
-// ── Shared helper: populate stores after any login ────────────────────
-//
-// Chat and projects are NOT hydrated here — they need team context
-// (currentTeamId) which resolves asynchronously AFTER this function runs.
-// They are hydrated in hydrateWithTeam() once the team is known.
-// Tasks and notifications are user-scoped (not team-scoped for fetch)
-// and can hydrate immediately.
+/**
+ * Populate stores after any login (demo or Supabase).
+ *
+ * - Mock ON → fill all stores with sample data (in-memory only).
+ * - Mock OFF → hydrate notifications from DB immediately.
+ *   Tasks, chat, and projects wait for team context (see hydrateWithTeam).
+ */
 function hydrateStores(userId: string, userName: string) {
   const { keepMockData } = useSettingsStore.getState();
 
   if (keepMockData) {
-    // ── Mock data ON: populate in-memory stores only, never touch DB ──
     useNotificationStore.getState().restoreMockData(userId, userName);
     useChatStore.getState().restoreMockData(userId);
     useTaskStore.getState().restoreMockData(userId);
     useProjectStore.getState().restoreMockData();
-  } else {
-    // ── Mock data OFF: hydrate notifications immediately ──
-    // Tasks, chat, and projects wait for team context (see hydrateWithTeam).
-    if (isDbConnected()) {
-      useNotificationStore.getState().hydrateFromDb(userId);
-    }
-  }
-
-  // Ensure team members & notifications are loaded when mock mode is ON.
-  if (keepMockData) {
-    if (useChatStore.getState().teamMembers.length === 0) {
-      useChatStore.getState().loadForUser(userId);
-    }
-    if (useNotificationStore.getState().notifications.length === 0) {
-      useNotificationStore.getState().loadForUser(userId, userName);
-    }
+  } else if (isDbConnected()) {
+    useNotificationStore.getState().hydrateFromDb(userId);
   }
 }
 
