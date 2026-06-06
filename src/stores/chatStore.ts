@@ -408,7 +408,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
 
     // ── DB persistence (fire-and-forget, skipped when mock mode ON) ──
-    const mock = isMockMode();
+    // Also skip if conversationId is not a real UUID — string IDs like
+    // "conv-dm-..." or "conv-task-..." are mock-only and would cause a
+    // Postgres "invalid input syntax for type uuid" error on insert.
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId);
+    const mock = isMockMode() || !isUuid;
     chatDb.sendMessage(
       { id: newMessage.id, conversationId, senderId: currentUserId, text: trimmed },
       mock
@@ -459,7 +463,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     seedMessages[conversationId] = updatedMsgs;
 
     // DB persistence (fire-and-forget)
-    chatDb.toggleReaction(messageId, currentUserId, emoji, !isRemoving, isMockMode());
+    const convIsUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId);
+    chatDb.toggleReaction(messageId, currentUserId, emoji, !isRemoving, isMockMode() || !convIsUuid);
   },
 
   getConversationMessages: (conversationId) => {
@@ -521,30 +526,72 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   createDM: (participant) => {
     const { currentUserId, currentUserName, currentUserAvatar } = get();
+    const mockMode = isMockMode();
 
-    // Use stable pair-based ID
-    const convId = dmConvId(currentUserId, participant.userId);
+    if (mockMode) {
+      // ── Mock mode: use stable human-readable string ID (never written to DB) ──
+      const convId = dmConvId(currentUserId, participant.userId);
 
-    // Check if already exists in current view
-    const existing = get().conversations.find((c) => c.id === convId);
-    if (existing) {
-      set({ activeConversationId: existing.id });
-      return existing.id;
-    }
+      const existing = get().conversations.find((c) => c.id === convId);
+      if (existing) {
+        set({ activeConversationId: existing.id });
+        return existing.id;
+      }
 
-    // Check if it exists in seed but not in current view (shouldn't happen, but safe)
-    const seedExists = seedConversations.find((c) => c.id === convId);
-    if (seedExists) {
-      const other = seedExists.participants.find((p) => p.userId !== currentUserId);
-      const conv = { ...seedExists, name: other?.name || participant.name };
+      const seedExists = seedConversations.find((c) => c.id === convId);
+      if (seedExists) {
+        const other = seedExists.participants.find((p) => p.userId !== currentUserId);
+        const conv = { ...seedExists, name: other?.name || participant.name };
+        set((state) => ({
+          conversations: [conv, ...state.conversations],
+          activeConversationId: convId,
+        }));
+        return convId;
+      }
+
+      const newConv: Conversation = {
+        id: convId,
+        type: 'dm',
+        name: participant.name,
+        participants: [
+          { userId: currentUserId, name: currentUserName, avatar: currentUserAvatar, role: 'admin', online: true },
+          participant,
+        ],
+        unreadCount: 0,
+        pinned: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      seedConversations.push(newConv);
+      seedMessages[convId] = [];
+
       set((state) => ({
-        conversations: [conv, ...state.conversations],
+        conversations: [{ ...newConv }, ...state.conversations],
+        messages: { ...state.messages, [convId]: [] },
         activeConversationId: convId,
       }));
+
       return convId;
     }
 
-    // Create brand new DM
+    // ── Live mode: conversations have UUID IDs loaded from DB by hydrateFromDb ──
+    // Find existing DM between the two users rather than reconstructing a string ID.
+    // (String IDs like "conv-dm-uuid1-uuid2" are not valid Postgres UUIDs and would
+    //  fail the conversations.id column constraint.)
+    const existingDM = get().conversations.find(
+      (c) =>
+        c.type === 'dm' &&
+        c.participants.some((p) => p.userId === participant.userId) &&
+        c.participants.some((p) => p.userId === currentUserId)
+    );
+    if (existingDM) {
+      set({ activeConversationId: existingDM.id });
+      return existingDM.id;
+    }
+
+    // Create brand new DM with a proper UUID so the DB insert succeeds.
+    const convId = uuidv4();
     const newConv: Conversation = {
       id: convId,
       type: 'dm',
@@ -559,35 +606,70 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       updatedAt: new Date(),
     };
 
-    // Persist to seed data (in-memory)
-    seedConversations.push(newConv);
-    seedMessages[convId] = [];
-
     set((state) => ({
       conversations: [{ ...newConv }, ...state.conversations],
       messages: { ...state.messages, [convId]: [] },
       activeConversationId: convId,
     }));
 
-    // DB persistence (fire-and-forget)
+    // DB persistence (fire-and-forget) — convId is now a real UUID
     chatDb.createConversation(
       { id: convId, type: 'dm', name: participant.name },
       [currentUserId, participant.userId],
-      isMockMode()
+      false
     );
 
     return convId;
   },
 
   createTaskChat: (taskId, taskTitle, participants) => {
-    const convId = `conv-task-${taskId}`;
+    const mockMode = isMockMode();
 
-    const existing = get().conversations.find((c) => c.id === convId);
+    if (mockMode) {
+      // ── Mock mode: use human-readable string ID (never written to DB) ──
+      const convId = `conv-task-${taskId}`;
+
+      const existing = get().conversations.find((c) => c.id === convId);
+      if (existing) {
+        set({ activeConversationId: existing.id });
+        return existing.id;
+      }
+
+      const newConv: Conversation = {
+        id: convId,
+        type: 'task',
+        name: taskTitle,
+        taskId,
+        taskTitle,
+        participants,
+        unreadCount: 0,
+        pinned: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      seedConversations.push(newConv);
+      seedMessages[convId] = [];
+
+      set((state) => ({
+        conversations: [{ ...newConv }, ...state.conversations],
+        messages: { ...state.messages, [convId]: [] },
+        activeConversationId: convId,
+      }));
+
+      return convId;
+    }
+
+    // ── Live mode: look up by taskId, then create with real UUID if missing ──
+    const existing = get().conversations.find(
+      (c) => c.type === 'task' && c.taskId === taskId
+    );
     if (existing) {
       set({ activeConversationId: existing.id });
       return existing.id;
     }
 
+    const convId = uuidv4();
     const newConv: Conversation = {
       id: convId,
       type: 'task',
@@ -601,21 +683,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       updatedAt: new Date(),
     };
 
-    // Persist to seed data (in-memory)
-    seedConversations.push(newConv);
-    seedMessages[convId] = [];
-
     set((state) => ({
       conversations: [{ ...newConv }, ...state.conversations],
       messages: { ...state.messages, [convId]: [] },
       activeConversationId: convId,
     }));
 
-    // DB persistence (fire-and-forget)
+    // DB persistence (fire-and-forget) — convId is now a real UUID
     chatDb.createConversation(
       { id: convId, type: 'task', name: taskTitle, taskId, taskTitle },
       participants.map((p) => p.userId),
-      isMockMode()
+      false
     );
 
     return convId;
@@ -629,7 +707,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         c.id === conversationId ? { ...c, pinned: newPinned } : c
       ),
     }));
-    chatDb.updatePin(conversationId, newPinned, isMockMode());
+    const pinIsUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId);
+    chatDb.updatePin(conversationId, newPinned, isMockMode() || !pinIsUuid);
   },
 
   getTotalUnread: () => {
