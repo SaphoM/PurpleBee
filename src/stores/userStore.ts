@@ -181,9 +181,10 @@ export const useUserStore = create<UserStore>((set, get) => ({
   // ── Load team members who can be assigned tasks ───────────────────
   loadAssignableMembers: async () => {
     const state = get();
+    const { keepMockData } = useSettingsStore.getState();
 
-    if (!isDbConnected() || !state.currentTeamId) {
-      // No DB or no team resolved yet: use hardcoded demo profiles
+    if (keepMockData || !isDbConnected() || !state.currentTeamId) {
+      // Mock mode ON, no DB, or no team resolved: use hardcoded demo profiles
       set({ assignableMembers: teamProfiles });
       return;
     }

@@ -707,6 +707,8 @@ export const SettingsPage: React.FC = () => {
         useChatStore.getState().hydrateFromDb(currentUser.id),
         useProjectStore.getState().hydrateFromDb(currentUser.id),
       ]);
+      // Refresh assignable members so dropdowns show real DB users
+      await useUserStore.getState().loadAssignableMembers();
     }
   };
 
@@ -720,6 +722,8 @@ export const SettingsPage: React.FC = () => {
         useNotificationStore.getState().restoreMockData(user.id, user.name);
         useChatStore.getState().restoreMockData(user.id);
       }
+      // Refresh assignable members so dropdowns show demo profiles
+      useUserStore.getState().loadAssignableMembers();
     } else {
       // ── Switching to real mode ──
       // If the user is on a Quick Login demo session they have no real

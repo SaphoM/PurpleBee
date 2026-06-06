@@ -187,7 +187,7 @@ The Team page (`Team.tsx`) uses different data sources depending on mode:
 - **Mock ON** → `chatStore.teamMembers` (demo users) + hardcoded `mockExtendedData` (title, department, email for `user-1` through `user-5`)
 - **Mock OFF** → `userStore.assignableMembers` (real DB profiles with title, department, email from `profiles` table), merged with `chatStore.teamMembers` for online status and chat DM functionality
 
-The **project assignment dropdown** always uses `userStore.assignableMembers`, which loads from DB in real mode (showing real team members) and falls back to hardcoded `teamProfiles` in demo mode.
+The **task/project assignment dropdowns** all use `userStore.assignableMembers`. The `loadAssignableMembers()` function checks `keepMockData` first — when mock is ON it returns hardcoded `teamProfiles`; when mock is OFF it fetches real team members from DB. The SettingsPage toggle handler calls `loadAssignableMembers()` in both directions (mock ON and OFF) so dropdowns update immediately.
 
 ### Roles & Permissions
 - Roles: `admin`, `manager`, `user`
