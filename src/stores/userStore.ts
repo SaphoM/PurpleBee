@@ -133,6 +133,12 @@ interface UserStore {
 }
 
 // ── Shared helper: populate stores after any login ────────────────────
+//
+// Chat and projects are NOT hydrated here — they need team context
+// (currentTeamId) which resolves asynchronously AFTER this function runs.
+// They are hydrated in hydrateWithTeam() once the team is known.
+// Tasks and notifications are user-scoped (not team-scoped for fetch)
+// and can hydrate immediately.
 function hydrateStores(userId: string, userName: string) {
   const { keepMockData } = useSettingsStore.getState();
 
@@ -143,20 +149,14 @@ function hydrateStores(userId: string, userName: string) {
     useTaskStore.getState().restoreMockData(userId);
     useProjectStore.getState().restoreMockData();
   } else {
-    // ── Mock data OFF: hydrate from Supabase ──
-    // Don't clear stores first — let hydrateFromDb replace state when it
-    // resolves. This avoids a flash of empty state while the async fetch
-    // runs. Stores that don't get DB data will fall back to seed/localStorage.
+    // ── Mock data OFF: hydrate notifications immediately ──
+    // Tasks, chat, and projects wait for team context (see hydrateWithTeam).
     if (isDbConnected()) {
-      useTaskStore.getState().hydrateFromDb(userId);
-      useChatStore.getState().hydrateFromDb(userId);
-      useProjectStore.getState().hydrateFromDb(userId);
       useNotificationStore.getState().hydrateFromDb(userId);
     }
   }
 
   // Ensure team members & notifications are loaded when mock mode is ON.
-  // When mock mode is OFF these contain generated/seed data, so skip them.
   if (keepMockData) {
     if (useChatStore.getState().teamMembers.length === 0) {
       useChatStore.getState().loadForUser(userId);
@@ -165,7 +165,20 @@ function hydrateStores(userId: string, userName: string) {
       useNotificationStore.getState().loadForUser(userId, userName);
     }
   }
+}
 
+// ── Hydrate team-scoped stores AFTER team resolves ─────────────────────
+// Called once from initSession/loginWithEmail after currentTeamId is set.
+// This is the single source of truth for chat, project & task DB hydration
+// — avoids the race condition of calling hydrateFromDb before team resolves.
+async function hydrateWithTeam(userId: string) {
+  const { keepMockData } = useSettingsStore.getState();
+  if (keepMockData || !isDbConnected()) return;
+  await Promise.all([
+    useTaskStore.getState().hydrateFromDb(userId),
+    useChatStore.getState().hydrateFromDb(userId),
+    useProjectStore.getState().hydrateFromDb(userId),
+  ]);
 }
 
 export const useUserStore = create<UserStore>((set, get) => ({
@@ -351,18 +364,11 @@ export const useUserStore = create<UserStore>((set, get) => ({
       try {
         const team = await authDb.getOrCreateTeam(supaUser.id, name);
         set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
-        // Now that team is resolved, load real assignable members
         await get().loadAssignableMembers();
-        // Re-hydrate chat + projects with team context so team members
-        // and team-scoped projects are loaded correctly
-        const { keepMockData } = useSettingsStore.getState();
-        if (!keepMockData && isDbConnected()) {
-          useChatStore.getState().hydrateFromDb(supaUser.id);
-          useProjectStore.getState().hydrateFromDb(supaUser.id);
-        }
+        // Now hydrate chat + projects with team context (single call, no race)
+        await hydrateWithTeam(supaUser.id);
       } catch (err) {
         console.warn('[userStore] could not resolve team on login', err);
-        // Fallback to demo profiles
         get().loadAssignableMembers();
       }
       return true;
@@ -446,18 +452,11 @@ export const useUserStore = create<UserStore>((set, get) => ({
         try {
           const team = await authDb.getOrCreateTeam(supaUser.id, name);
           set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
-          // Now that team is resolved, load real assignable members
           await get().loadAssignableMembers();
-          // Re-hydrate chat + projects with team context so team members
-          // and team-scoped projects are loaded correctly
-          const { keepMockData } = useSettingsStore.getState();
-          if (!keepMockData && isDbConnected()) {
-            useChatStore.getState().hydrateFromDb(supaUser.id);
-            useProjectStore.getState().hydrateFromDb(supaUser.id);
-          }
+          // Now hydrate chat + projects with team context (single call, no race)
+          await hydrateWithTeam(supaUser.id);
         } catch (err) {
           console.warn('[userStore] could not resolve team on session restore', err);
-          // Fallback to demo profiles
           get().loadAssignableMembers();
         }
 

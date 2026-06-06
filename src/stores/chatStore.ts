@@ -769,7 +769,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     }
 
-    // ── 3. Seed default channels if DB is empty ─────────────────────
+    // ── 3. Seed default channels if user has none ───────────────────
+    // Guard: only seed when this user truly has zero conversations for
+    // this team. This prevents duplicates on concurrent calls.
     if (convs.length === 0 && teamId) {
       const generalId = uuidv4();
       const announceId = uuidv4();

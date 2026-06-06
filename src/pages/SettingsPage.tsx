@@ -685,7 +685,7 @@ export const SettingsPage: React.FC = () => {
   // ON  → populate Zustand with mock arrays (in-memory only, DB untouched)
   // OFF → if Quick Login user, show auth modal first.
   //        Otherwise clear Zustand and hydrate from DB.
-  const applyRealMode = () => {
+  const applyRealMode = async () => {
     setKeepMockData(false);
     useTaskStore.getState().clearMockData();
     useProjectStore.getState().clearMockData();
@@ -694,10 +694,14 @@ export const SettingsPage: React.FC = () => {
     useUserStore.getState().clearViewAs();
     const currentUser = useUserStore.getState().user;
     if (isDbConnected() && currentUser) {
-      useTaskStore.getState().hydrateFromDb(currentUser.id);
-      useChatStore.getState().hydrateFromDb(currentUser.id);
-      useProjectStore.getState().hydrateFromDb(currentUser.id);
-      useNotificationStore.getState().hydrateFromDb(currentUser.id);
+      // Await all hydrations so seed data persists to DB before any
+      // subsequent toggle or refresh.
+      await Promise.all([
+        useTaskStore.getState().hydrateFromDb(currentUser.id),
+        useNotificationStore.getState().hydrateFromDb(currentUser.id),
+        useChatStore.getState().hydrateFromDb(currentUser.id),
+        useProjectStore.getState().hydrateFromDb(currentUser.id),
+      ]);
     }
   };
 
