@@ -335,7 +335,7 @@ GITHUB_TOKEN=<token> git push origin staging
 4. **Supabase magic link redirects:** Hash fragments are stripped by Supabase. Invite tokens must travel as `?invite_token=xxx` query params (not `#invite?token=`).
 5. **`localStorage` keys:** `purplebee-settings`, `purplebee-sidebar-collapsed`, `purplebee-notif-prefs`, `purplebee-projects`.
 6. **No global git config** on this machine — always use `-c` flags.
-7. **RLS infinite recursion:** Never write a policy on table X that subqueries table X. Use a `SECURITY DEFINER` helper function instead.
+7. **RLS infinite recursion:** Never write a policy on table X that subqueries table X. Use a `SECURITY DEFINER` helper function instead. `is_conversation_participant(conv_id)` is the SECURITY DEFINER helper for all chat policies — do NOT rewrite chat policies to use raw `conversation_participants` subqueries.
 8. **Supabase MCP** available for direct DB queries during development.
 
 ---
@@ -344,6 +344,7 @@ GITHUB_TOKEN=<token> git push origin staging
 
 | Description |
 |-------------|
+| Fix chat messages not persisting and conversations re-seeding on every refresh — root cause was `conversation_participants` SELECT RLS policy self-referencing itself (infinite recursion). Introduced `is_conversation_participant()` SECURITY DEFINER helper and rewrote all affected policies (`conversation_participants`, `conversations`, `messages`, `message_reactions`). Cleaned 90 duplicate conversation rows from DB. |
 | Fix Chat page data split — mock mode for real Supabase users now maps to `user-1` demo profile so seed conversations are visible; live mode `fetchConversations` restructured to return all participants (not just current user), enabling correct DM partner names and participant lists |
 | Fix assign-task dropdown showing real DB users in mock mode — `loadAssignableMembers()` now checks `keepMockData` first; SettingsPage calls it in both toggle directions for immediate refresh |
 | Fix Team page showing real DB users when mock OFF — split data source: mock ON uses `chatStore.teamMembers` + `mockExtendedData`; mock OFF uses `userStore.assignableMembers` merged with `chatStore.teamMembers` for online status |
