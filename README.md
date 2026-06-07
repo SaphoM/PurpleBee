@@ -36,6 +36,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - In-app team chat with docked chat windows
 - Admin "View As" to preview other members' dashboards
 - Smart notifications (assignments, due dates, mentions, AI insights)
+- Project task assignment triggers instant `task-assigned` notification to the assignee (live mode)
 
 ### Analytics & AI Insights
 - Completion trends and productivity score

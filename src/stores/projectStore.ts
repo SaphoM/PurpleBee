@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { projectDb, type DbProjectTaskInsert } from '@/lib/dataService';
+import { projectDb, notificationDb, type DbProjectTaskInsert } from '@/lib/dataService';
 import { useSettingsStore } from '@stores/settingsStore';
 
 /**
@@ -528,6 +528,31 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   assignProjectTask: (projectId, taskId, userId) => {
     get().updateProjectTask(projectId, taskId, { assignedTo: userId });
+
+    // Notify the newly-assigned user (live mode only, skip self-assignment and demo IDs)
+    const { userId: currentUserId } = getTeamContext();
+    if (
+      !isMockMode() &&
+      isValidUuid(userId) &&
+      userId !== currentUserId
+    ) {
+      const project = get().projects.find((p) => p.id === projectId);
+      const task = project?.tasks.find((t) => t.id === taskId);
+      if (project && task) {
+        notificationDb.insert(
+          {
+            id: uuidv4(),
+            userId,
+            type: 'task-assigned',
+            title: 'You've been assigned a task',
+            message: `${project.name}: ${task.title}`,
+            read: false,
+            actionUrl: '#projects',
+          },
+          false,
+        ).catch(() => {});
+      }
+    }
   },
 
   linkProjectTask: (projectId, projectTaskId, linkedTaskId) => {
