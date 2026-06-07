@@ -15,6 +15,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Subtasks and file attachments
 - Time estimation and tracking
 - Task assignment to team members
+- `createdBy` stamped on every new task; hydrated from `created_by` DB column on load
 
 ### Multiple View Modes
 - **Kanban Board** - Drag-and-drop task management
@@ -25,7 +26,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 ### Project Management
 - Project templates (Web App, Mobile, Marketing, API, Design System, Training, Services, Custom)
 - Project task breakdown with suggested tasks per template
-- Team member assignment per project task
+- Team member assignment per project task — triggers instant `task-assigned` notification to the assignee (live mode)
 - Project status tracking (Planning, Active, On Hold, Completed)
 - Delete projects with confirmation modal
 - Projects persist to Supabase for real users
@@ -36,7 +37,24 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - In-app team chat with docked chat windows
 - Admin "View As" to preview other members' dashboards
 - Smart notifications (assignments, due dates, mentions, AI insights)
-- Project task assignment triggers instant `task-assigned` notification to the assignee (live mode)
+- Chat messages trigger `mention` notifications to all other conversation participants (live mode)
+- Task completion triggers `task-completed` notification to the task creator (live mode)
+
+### Notifications (Live Mode)
+All notifications are written directly to Supabase via `notificationDb.insert` and delivered in real-time to the recipient's bell via Supabase Realtime (`postgres_changes` on the `notifications` table filtered by `user_id`). Mock mode uses in-memory notifications only.
+
+| Trigger | Type | Recipient |
+|---|---|---|
+| Project task assigned | `task-assigned` | Assignee |
+| Kanban task assigned | `task-assigned` | Assignee |
+| Kanban task completed | `task-completed` | Task creator |
+| Chat message sent (DM or channel) | `mention` | All other participants |
+
+### Sample Data Toggle
+- **ON** — all stores use in-memory mock data; DB is never read or written
+- **OFF** — all stores hydrate from Supabase on login; mock data is cleared
+- Toggling OFF calls `clearMockData` + `hydrateFromDb` on all stores
+- DB tables start empty for new accounts — no auto-seeding in live mode
 
 ### Analytics & AI Insights
 - Completion trends and productivity score
@@ -63,8 +81,23 @@ A modern, enterprise-grade productivity management platform with advanced task m
 | Charts | Recharts 2 |
 | Icons | Lucide React |
 | Auth & DB | Supabase (Auth + Postgres + RLS) |
+| Realtime | Supabase Realtime (`postgres_changes`) |
 | Hosting | Render (static site, staging branch auto-deploys) |
 | Utilities | clsx, uuid, date-fns |
+
+## Store Architecture
+
+| Store | Responsibility |
+|---|---|
+| `userStore` | Auth, session, team resolution, store hydration orchestration |
+| `taskStore` | Kanban tasks, notifications on assign/complete, `createdBy` stamping |
+| `projectStore` | Projects + project tasks, assignment notifications |
+| `chatStore` | Conversations, messages, chat message notifications |
+| `notificationStore` | Notification inbox, Realtime subscription, preferences |
+| `settingsStore` | App settings, sample data toggle, accent colour |
+
+### Context injection (no circular deps)
+`userStore` injects `userId`/`teamId`/`userName` into `taskStore` and `projectStore` via exported setter functions (`setTaskUserContext`, `setProjectUserContext`) — avoids the `require()` pattern which is not available in Vite's ESM browser runtime.
 
 ## Quick Start
 
@@ -122,6 +155,16 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
 When missing, the app runs in offline demo mode with mock data.
+
+## Supabase RLS Policies (key)
+
+| Table | Policy | Rule |
+|---|---|---|
+| `notifications` | INSERT | `WITH CHECK: true` — any authenticated user can insert for any `user_id` (enables cross-user notifications) |
+| `notifications` | SELECT | `user_id = auth.uid()` — users see only their own notifications |
+| `tasks` | SELECT/INSERT/UPDATE/DELETE | scoped to `team_id` or `created_by` |
+| `projects` | SELECT/INSERT/UPDATE/DELETE | scoped to `team_id` or `created_by` |
+| `teams` | SELECT | `id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())` |
 
 ## Deployment
 
