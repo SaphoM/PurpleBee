@@ -3,7 +3,7 @@ import { User } from '@/types/index';
 import { useNotificationStore } from '@stores/notificationStore';
 import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
-import { useTaskStore } from '@stores/taskStore';
+import { useTaskStore, setTaskUserContext } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { supabase, isDbConnected } from '@/lib/supabase';
 import { authDb } from '@/lib/dataService';
@@ -142,6 +142,11 @@ interface UserStore {
 function hydrateStores(userId: string, userName: string) {
   const { keepMockData } = useSettingsStore.getState();
 
+  // Give taskStore the current user identity so it can stamp createdBy/teamId
+  // on new tasks and send notifications. teamId will be updated again by
+  // hydrateWithTeam once the team resolves (live mode).
+  setTaskUserContext(userId, null, userName);
+
   if (keepMockData) {
     useNotificationStore.getState().restoreMockData(userId, userName);
     useChatStore.getState().restoreMockData(userId);
@@ -156,9 +161,18 @@ function hydrateStores(userId: string, userName: string) {
 // Called once from initSession/loginWithEmail after currentTeamId is set.
 // This is the single source of truth for chat, project & task DB hydration
 // — avoids the race condition of calling hydrateFromDb before team resolves.
-async function hydrateWithTeam(userId: string) {
+async function hydrateWithTeam(
+  userId: string,
+  teamId: string | null,
+  userName: string,
+) {
   const { keepMockData } = useSettingsStore.getState();
   if (keepMockData || !isDbConnected()) return;
+
+  // Update taskStore context with the now-resolved teamId so new tasks are
+  // scoped correctly and notifications carry the right sender identity.
+  setTaskUserContext(userId, teamId, userName);
+
   await Promise.all([
     useTaskStore.getState().hydrateFromDb(userId),
     useChatStore.getState().hydrateFromDb(userId),
@@ -355,7 +369,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
       }
       // Always hydrate chat/tasks/projects — they load by userId even without a team
       await get().loadAssignableMembers();
-      await hydrateWithTeam(supaUser.id);
+      await hydrateWithTeam(supaUser.id, get().currentTeamId, name);
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Login failed';
@@ -442,7 +456,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
         }
         // Always hydrate chat/tasks/projects — they load by userId even without a team
         await get().loadAssignableMembers();
-        await hydrateWithTeam(supaUser.id);
+        await hydrateWithTeam(supaUser.id, get().currentTeamId, name);
 
         // Auto-accept pending invite if user just signed up via invite link
         const pendingToken = sessionStorage.getItem('purplebee-invite-token');

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Conversation, ChatMessage, ConversationType, ChatParticipant } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
-import { chatDb } from '@/lib/dataService';
+import { chatDb, notificationDb } from '@/lib/dataService';
 
 /**
  * Returns true when mock/sample data mode is active.
@@ -421,30 +421,31 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       chatDb.insertAttachments(newMessage.id, attachments, currentUserId, mock);
     }
 
-    // ── Notify other participants of new message ──
-    // Each participant who isn't the sender and isn't currently viewing
-    // this conversation gets an in-app update notification.
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { useNotificationStore } = require('@stores/notificationStore') as typeof import('@stores/notificationStore');
+    // ── Notify other participants of new message (live mode only) ──
+    // Direct notificationDb.insert() avoids the circular require() that
+    // fails in Vite's ESM runtime. The recipient's Realtime subscription
+    // picks up the new row and lights up their bell without any polling.
+    if (!mock) {
       const conv = get().conversations.find((c) => c.id === conversationId);
       if (conv) {
         const preview = trimmed.length > 60 ? trimmed.slice(0, 57) + '…' : trimmed;
         const convLabel = conv.type === 'dm' ? currentUserName : `#${conv.name}`;
         for (const participant of conv.participants) {
           if (participant.userId === currentUserId) continue;
-          useNotificationStore.getState().addNotification({
-            userId: participant.userId,
-            type: 'mention',
-            title: `New message from ${currentUserName}`,
-            message: `${convLabel}: ${preview}`,
-            read: false,
-            actionUrl: '#chat',
-          });
+          notificationDb.insert(
+            {
+              id: uuidv4(),
+              userId: participant.userId,
+              type: 'mention',
+              title: `New message from ${currentUserName}`,
+              message: `${convLabel}: ${preview}`,
+              read: false,
+              actionUrl: '#chat',
+            },
+            false,
+          );
         }
       }
-    } catch {
-      // Non-critical
     }
   },
 

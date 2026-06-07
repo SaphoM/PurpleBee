@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Task, TaskStatus, TaskPriority, TaskCollaborator } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
-import { taskDb } from '@/lib/dataService';
+import { taskDb, notificationDb } from '@/lib/dataService';
 
 import { useSettingsStore } from '@stores/settingsStore';
 
@@ -11,18 +11,36 @@ import { useSettingsStore } from '@stores/settingsStore';
  */
 const isMockMode = () => useSettingsStore.getState().keepMockData;
 
-/** Read the current team_id and creator from userStore at call-time. */
-const getTeamContext = () => {
-  // Lazy import to avoid circular dep at module init.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { useUserStore } = require('@stores/userStore') as typeof import('@stores/userStore');
-  const s = useUserStore.getState();
-  return { teamId: s.currentTeamId, userId: s.user?.id || null, userName: s.user?.name || 'Someone' };
+/**
+ * Module-level user context — set by userStore after login so taskStore
+ * can stamp createdBy/teamId on new tasks and send notifications without
+ * a circular require() dep (require is not defined in Vite's ESM runtime).
+ */
+let _ctx: { userId: string | null; teamId: string | null; userName: string } = {
+  userId: null,
+  teamId: null,
+  userName: 'Someone',
 };
 
 /**
- * Fire a notification for the given recipient via notificationStore.
- * Lazy import breaks the circular dep: taskStore → notificationStore.
+ * Called by userStore immediately after login / team resolve so every
+ * subsequent task action has the right creator + team scope.
+ */
+export function setTaskUserContext(
+  userId: string | null,
+  teamId: string | null,
+  userName: string,
+) {
+  _ctx = { userId, teamId, userName };
+}
+
+const getTeamContext = () => _ctx;
+
+/**
+ * Write a notification to the DB for the given recipient.
+ * In mock mode: skipped (DB not used; bell shows pre-loaded mock data).
+ * In live mode: inserts directly via notificationDb — avoids the
+ * circular require() that fails in Vite's browser ESM context.
  */
 function notify(notification: {
   userId: string;
@@ -31,13 +49,19 @@ function notify(notification: {
   message: string;
   actionUrl?: string;
 }) {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { useNotificationStore } = require('@stores/notificationStore') as typeof import('@stores/notificationStore');
-    useNotificationStore.getState().addNotification({ ...notification, read: false });
-  } catch {
-    // Non-critical — never let notification errors break task actions
-  }
+  if (isMockMode()) return;
+  notificationDb.insert(
+    {
+      id: uuidv4(),
+      userId: notification.userId,
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      read: false,
+      actionUrl: notification.actionUrl,
+    },
+    false,
+  ).catch(() => {});
 }
 
 interface TaskStore {

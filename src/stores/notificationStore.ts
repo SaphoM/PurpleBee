@@ -308,53 +308,49 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   preferences: loadNotifPrefs(),
 
   addNotification: (notification) => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { useUserStore } = require('@stores/userStore') as typeof import('@stores/userStore');
-    const currentUserId = useUserStore.getState().user?.id;
-
-    const prefs = get().preferences;
-
-    // Check if this notification type is enabled
-    const typeMap: Record<NotificationType, keyof NotificationPreferences> = {
-      'task-assigned': 'taskAssigned',
-      'task-due': 'taskDue',
-      'task-completed': 'taskCompleted',
-      'project-invite': 'projectInvite',
-      'mention': 'mentions',
-      'update': 'updates',
-      'ai-insight': 'aiInsights',
-    };
-    if (!prefs[typeMap[notification.type]]) return; // silently skip disabled types
-
     const newNotification: Notification = {
       ...notification,
       id: uuidv4(),
       createdAt: new Date(),
     };
 
-    // Only add to in-memory store when the notification is for the current user.
-    // Cross-user notifications (e.g. sapho notifying studio) must only go to DB —
-    // adding them to the sender's in-memory store would show the wrong user's alerts.
-    if (notification.userId === currentUserId) {
+    if (isMockMode()) {
+      // ── Mock mode: update in-memory only (no DB). Apply preference filter. ──
+      const prefs = get().preferences;
+      const typeMap: Record<NotificationType, keyof NotificationPreferences> = {
+        'task-assigned': 'taskAssigned',
+        'task-due': 'taskDue',
+        'task-completed': 'taskCompleted',
+        'project-invite': 'projectInvite',
+        'mention': 'mentions',
+        'update': 'updates',
+        'ai-insight': 'aiInsights',
+      };
+      if (!prefs[typeMap[notification.type]]) return;
       set((state) => ({
         notifications: [newNotification, ...state.notifications],
         unreadCount: state.unreadCount + 1,
       }));
+    } else {
+      // ── Live mode: write to DB only. ──
+      // The recipient's Realtime subscription (subscribeRealtime) fires on
+      // INSERT and adds the notification to their in-memory bell automatically.
+      // Preferences apply at display time, not delivery time.
+      // NOTE: require() is NOT available in Vite's ESM browser runtime, so we
+      // never use require() here — direct DB write is the correct pattern.
+      notificationDb.insert(
+        {
+          id: newNotification.id,
+          userId: newNotification.userId,
+          type: newNotification.type,
+          title: newNotification.title,
+          message: newNotification.message,
+          read: newNotification.read,
+          actionUrl: newNotification.actionUrl,
+        },
+        false,
+      );
     }
-
-    // Always persist to DB (recipient reads it on next login/hydration).
-    notificationDb.insert(
-      {
-        id: newNotification.id,
-        userId: newNotification.userId,
-        type: newNotification.type,
-        title: newNotification.title,
-        message: newNotification.message,
-        read: newNotification.read,
-        actionUrl: newNotification.actionUrl,
-      },
-      isMockMode(),
-    );
   },
 
   removeNotification: (id) => {
