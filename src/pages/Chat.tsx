@@ -734,10 +734,11 @@ export const Chat: React.FC = () => {
                 ) : (
                   activeMessages.map((msg, idx) => {
                     const isMe = msg.senderId === currentUserId;
-                    const showAvatar = idx === 0 || activeMessages[idx - 1].senderId !== msg.senderId;
                     const showTimeSeparator = idx === 0 || (
                       new Date(msg.timestamp).getTime() - new Date(activeMessages[idx - 1].timestamp).getTime() > 30 * 60 * 1000
                     );
+                    // Always re-show avatar/name after a time separator or sender change
+                    const showAvatar = idx === 0 || showTimeSeparator || activeMessages[idx - 1].senderId !== msg.senderId;
 
                     return (
                       <React.Fragment key={msg.id}>
@@ -760,7 +761,7 @@ export const Chat: React.FC = () => {
                           ) : (
                             <div className="w-8 flex-shrink-0" />
                           )}
-                          <div className={clsx('max-w-[70%]', isMe && 'items-end')}>
+                          <div className={clsx('flex flex-col max-w-[70%]', isMe ? 'items-end' : 'items-start')}>
                             {showAvatar && (
                               <p className={clsx('text-[11px] font-semibold mb-1', isMe ? 'text-right' : 'text-left', 'text-gray-500 dark:text-slate-400')}>
                                 {isMe ? 'You' : msg.senderName}
@@ -1055,10 +1056,10 @@ export const Chat: React.FC = () => {
               ) : (
                 activeMessages.map((msg, idx) => {
                   const isMe = msg.senderId === currentUserId;
-                  const showAvatar = idx === 0 || activeMessages[idx - 1].senderId !== msg.senderId;
                   const showTimeSeparator = idx === 0 || (
                     new Date(msg.timestamp).getTime() - new Date(activeMessages[idx - 1].timestamp).getTime() > 30 * 60 * 1000
                   );
+                  const showAvatar = idx === 0 || showTimeSeparator || activeMessages[idx - 1].senderId !== msg.senderId;
 
                   return (
                     <React.Fragment key={msg.id}>
@@ -1077,7 +1078,7 @@ export const Chat: React.FC = () => {
                         ) : (
                           <div className="w-7 flex-shrink-0" />
                         )}
-                        <div className={clsx('max-w-[75%]', isMe && 'items-end')}>
+                        <div className={clsx('flex flex-col max-w-[75%]', isMe ? 'items-end' : 'items-start')}>
                           {showAvatar && (
                             <p className={clsx('text-[11px] font-semibold mb-1', isMe ? 'text-right' : 'text-left', 'text-gray-500 dark:text-slate-400')}>
                               {isMe ? 'You' : msg.senderName}
