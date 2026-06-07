@@ -490,8 +490,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   /**
    * Hydrate store from Supabase when mock mode is OFF and DB is connected.
-   * When the DB is empty (first real-mode login), seeds demo tasks and
-   * writes them to Supabase so they persist across refresh / re-login.
+   * Shows DB tasks only — never seeds mock data into live mode.
+   * An empty DB returns an empty board so users can create their own tasks.
    */
   hydrateFromDb: async (userId: string) => {
     const mock = isMockMode();
@@ -500,32 +500,9 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     const dbTasks = await taskDb.fetchAll(userId, false, teamId);
     if (dbTasks === null) return; // DB error — keep current state
 
-    // If DB returned tasks, use them.
-    if (dbTasks.length > 0) {
-      set({ tasks: dbTasks });
-      return;
-    }
-
-    // ── DB empty: seed demo tasks ────────────────────────────────
-    const seeded: Task[] = mockTasks.map((t) => ({
-      ...t,
-      id: uuidv4(),
-      assignedTo: userId,        // assign all to current user
-      projectId: undefined,      // clear mock project IDs
-      teamId: teamId || undefined,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }));
-    set({ tasks: seeded });
-
-    // Write seed tasks to DB (await so they persist before next refresh)
-    for (const t of seeded) {
-      await taskDb.insert(
-        { ...t, teamId: teamId || undefined },
-        userId,
-        false,
-      );
-    }
+    // Always replace in-memory state with DB data (empty array is correct
+    // for a fresh account — sample data is only shown when toggle is ON).
+    set({ tasks: dbTasks });
   },
 
   clearMockData: () => {

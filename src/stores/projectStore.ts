@@ -10,13 +10,24 @@ import { useSettingsStore } from '@stores/settingsStore';
  */
 const isMockMode = () => useSettingsStore.getState().keepMockData;
 
-/** Read current team_id at call-time so every write attaches to the company. */
-const getTeamContext = () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { useUserStore } = require('@stores/userStore') as typeof import('@stores/userStore');
-  const s = useUserStore.getState();
-  return { teamId: s.currentTeamId, userId: s.user?.id || null };
+/**
+ * Module-level user context — set by userStore after login so projectStore
+ * can attach teamId to writes without a circular require() dep.
+ * (require is not defined in Vite's ESM browser runtime.)
+ */
+let _ctx: { userId: string | null; teamId: string | null } = {
+  userId: null,
+  teamId: null,
 };
+
+export function setProjectUserContext(
+  userId: string | null,
+  teamId: string | null,
+) {
+  _ctx = { userId, teamId };
+}
+
+const getTeamContext = () => _ctx;
 
 /** Check if a string looks like a valid UUID (not a mock ID like 'user-1') */
 const isValidUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
@@ -601,47 +612,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         })),
     }));
 
-    // If DB returned projects, use them.
-    if (mapped.length > 0) {
-      persistProjects(mapped);
-      set({ projects: mapped });
-      return;
-    }
-
-    // ── DB empty: seed demo projects ────────────────────────────────
-    const seeded: Project[] = seedProjects.map((p) => ({
-      ...p,
-      id: uuidv4(),
-      createdBy: userId,
-      tasks: p.tasks.map((t) => ({
-        ...t,
-        id: uuidv4(),
-        assignedTo: undefined, // clear mock user IDs
-      })),
-    }));
-    persistProjects(seeded);
-    set({ projects: seeded });
-
-    // Write seed projects to DB (await so they persist before next refresh)
-    for (const p of seeded) {
-      await projectDb.insertWithTasks(
-        {
-          id: p.id,
-          name: p.name,
-          description: p.description || null,
-          icon: p.icon,
-          color: p.color,
-          template_id: p.templateId,
-          status: p.status,
-          team_id: teamId || null,
-          created_by: userId,
-        },
-        p.tasks.map((t) => ({
-          ...toDbProjectTask(p.id, t),
-          assigned_to: null,
-        })),
-        false,
-      );
-    }
+    // Always replace in-memory state with DB data.
+    // An empty array is correct for a fresh account — sample data is only
+    // shown when the "Sample Data" toggle is ON.
+    persistProjects(mapped);
+    set({ projects: mapped });
   },
 }));

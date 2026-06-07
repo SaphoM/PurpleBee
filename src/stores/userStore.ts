@@ -4,7 +4,7 @@ import { useNotificationStore } from '@stores/notificationStore';
 import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { useTaskStore, setTaskUserContext } from '@stores/taskStore';
-import { useProjectStore } from '@stores/projectStore';
+import { useProjectStore, setProjectUserContext } from '@stores/projectStore';
 import { supabase, isDbConnected } from '@/lib/supabase';
 import { authDb } from '@/lib/dataService';
 
@@ -142,10 +142,11 @@ interface UserStore {
 function hydrateStores(userId: string, userName: string) {
   const { keepMockData } = useSettingsStore.getState();
 
-  // Give taskStore the current user identity so it can stamp createdBy/teamId
-  // on new tasks and send notifications. teamId will be updated again by
-  // hydrateWithTeam once the team resolves (live mode).
+  // Give taskStore + projectStore the current user identity so they can
+  // attach teamId/userId to writes. Updated again by hydrateWithTeam once
+  // the real team resolves (live mode).
   setTaskUserContext(userId, null, userName);
+  setProjectUserContext(userId, null);
 
   if (keepMockData) {
     useNotificationStore.getState().restoreMockData(userId, userName);
@@ -169,9 +170,10 @@ async function hydrateWithTeam(
   const { keepMockData } = useSettingsStore.getState();
   if (keepMockData || !isDbConnected()) return;
 
-  // Update taskStore context with the now-resolved teamId so new tasks are
-  // scoped correctly and notifications carry the right sender identity.
+  // Update task + project store context with the now-resolved teamId so
+  // writes are scoped correctly and notifications carry the right sender.
   setTaskUserContext(userId, teamId, userName);
+  setProjectUserContext(userId, teamId);
 
   await Promise.all([
     useTaskStore.getState().hydrateFromDb(userId),
