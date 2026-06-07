@@ -906,6 +906,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
 
     // ── 4. Always set user context + team members ──────────────────
+    // Auto-select the first pinned conversation (or just the first one)
+    // so the chat panel shows messages immediately after hydration.
+    // Prefer to keep the previously active conversation if it still exists.
+    const prevActiveId = get().activeConversationId;
+    const autoSelectId =
+      (prevActiveId && convs.find((c) => c.id === prevActiveId)?.id) ||
+      convs.find((c) => c.pinned)?.id ||
+      convs[0]?.id ||
+      null;
+
     set({
       conversations: convs,
       messages: msgs,
@@ -913,7 +923,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       currentUserName: myName,
       currentUserAvatar: myAvatar,
       teamMembers: realParticipants,
-      activeConversationId: null,
+      activeConversationId: autoSelectId,
       dockedChatIds: [],
     });
   },
