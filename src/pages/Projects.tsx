@@ -3,6 +3,7 @@ import clsx from 'clsx';
 import {
   Plus,
   X,
+  Search,
   ChevronRight,
   CheckCircle2,
   Clock,
@@ -1102,6 +1103,19 @@ export const Projects: React.FC = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteConfirmInfo, setDeleteConfirmInfo] = useState<{ name: string; taskCount: number } | null>(null);
+  const [projectSearch, setProjectSearch] = useState('');
+
+  const filteredProjects = projectSearch.trim()
+    ? projects.filter((p) => {
+        const q = projectSearch.toLowerCase();
+        return (
+          p.name.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q) ||
+          p.status.toLowerCase().includes(q) ||
+          p.templateId.toLowerCase().includes(q)
+        );
+      })
+    : projects;
 
   if (selectedProjectId) {
     return <ProjectDetail projectId={selectedProjectId} onBack={() => setSelectedProjectId(null)} />;
@@ -1133,6 +1147,35 @@ export const Projects: React.FC = () => {
         )}
       </div>
 
+      {/* Search bar */}
+      {projects.length > 0 && (
+        <div className="relative max-w-sm">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+          <input
+            type="text"
+            value={projectSearch}
+            onChange={(e) => setProjectSearch(e.target.value)}
+            placeholder="Search projects..."
+            className={clsx(
+              'w-full pl-9 pr-9 py-2 text-sm rounded-xl border',
+              'bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100',
+              'border-gray-200 dark:border-slate-700',
+              'placeholder-gray-400 dark:placeholder-slate-500',
+              'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 dark:focus:border-purple-500',
+              'transition-all'
+            )}
+          />
+          {projectSearch && (
+            <button
+              onClick={() => setProjectSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Project grid */}
       {projects.length === 0 ? (
         <div className="py-20 text-center">
@@ -1153,9 +1196,15 @@ export const Projects: React.FC = () => {
             </button>
           )}
         </div>
+      ) : filteredProjects.length === 0 ? (
+        <div className="py-16 text-center">
+          <Search size={36} className="mx-auto text-gray-300 dark:text-slate-600 mb-3" />
+          <p className="text-base font-medium text-gray-400 dark:text-slate-500">No projects match &ldquo;{projectSearch}&rdquo;</p>
+          <button onClick={() => setProjectSearch('')} className="mt-3 text-sm text-purple-600 dark:text-purple-400 hover:underline">Clear search</button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {projects.map((project) => {
+          {filteredProjects.map((project) => {
             const sc = statusConfig[project.status];
             const assignedCount = project.tasks.filter((t) => t.assignedTo).length;
             const totalHours = project.tasks.reduce((sum, t) => sum + t.estimatedHours, 0);
