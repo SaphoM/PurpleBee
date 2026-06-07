@@ -1095,7 +1095,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
 
 // ── Main Projects Page ─────────────────────────────────────────────────
 export const Projects: React.FC = () => {
-  const { projects, deleteProject } = useProjectStore();
+  const { projects, deleteProject, projectSearchQuery, setProjectSearchQuery } = useProjectStore();
   const { isAdmin, isManager } = useUserStore();
   const assignableMembers = useUserStore((s) => s.assignableMembers);
   const canManage = isAdmin() || isManager();
@@ -1103,11 +1103,11 @@ export const Projects: React.FC = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteConfirmInfo, setDeleteConfirmInfo] = useState<{ name: string; taskCount: number } | null>(null);
-  const [projectSearch, setProjectSearch] = useState('');
 
-  const filteredProjects = projectSearch.trim()
+  // projectSearchQuery is shared with TopBar — typing in either filters the grid
+  const filteredProjects = projectSearchQuery.trim()
     ? projects.filter((p) => {
-        const q = projectSearch.toLowerCase();
+        const q = projectSearchQuery.toLowerCase();
         return (
           p.name.toLowerCase().includes(q) ||
           p.description.toLowerCase().includes(q) ||
@@ -1147,14 +1147,14 @@ export const Projects: React.FC = () => {
         )}
       </div>
 
-      {/* Search bar */}
+      {/* Search bar — synced with TopBar global search */}
       {projects.length > 0 && (
         <div className="relative max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
           <input
             type="text"
-            value={projectSearch}
-            onChange={(e) => setProjectSearch(e.target.value)}
+            value={projectSearchQuery}
+            onChange={(e) => setProjectSearchQuery(e.target.value)}
             placeholder="Search projects..."
             className={clsx(
               'w-full pl-9 pr-9 py-2 text-sm rounded-xl border',
@@ -1165,9 +1165,9 @@ export const Projects: React.FC = () => {
               'transition-all'
             )}
           />
-          {projectSearch && (
+          {projectSearchQuery && (
             <button
-              onClick={() => setProjectSearch('')}
+              onClick={() => setProjectSearchQuery('')}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300"
             >
               <X size={14} />
@@ -1199,8 +1199,8 @@ export const Projects: React.FC = () => {
       ) : filteredProjects.length === 0 ? (
         <div className="py-16 text-center">
           <Search size={36} className="mx-auto text-gray-300 dark:text-slate-600 mb-3" />
-          <p className="text-base font-medium text-gray-400 dark:text-slate-500">No projects match &ldquo;{projectSearch}&rdquo;</p>
-          <button onClick={() => setProjectSearch('')} className="mt-3 text-sm text-purple-600 dark:text-purple-400 hover:underline">Clear search</button>
+          <p className="text-base font-medium text-gray-400 dark:text-slate-500">No projects match &ldquo;{projectSearchQuery}&rdquo;</p>
+          <button onClick={() => setProjectSearchQuery('')} className="mt-3 text-sm text-purple-600 dark:text-purple-400 hover:underline">Clear search</button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

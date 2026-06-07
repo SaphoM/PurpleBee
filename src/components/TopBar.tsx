@@ -56,6 +56,7 @@ export const TopBar: React.FC = () => {
   const dockChat = useChatStore((s) => s.dockChat);
   const tasks = useTaskStore((s) => s.tasks);
   const projects = useProjectStore((s) => s.projects);
+  const setProjectSearchQuery = useProjectStore((s) => s.setProjectSearchQuery);
   const teamMembersChat = useChatStore((s) => s.teamMembers);
   const assignableMembers = useUserStore((s) => s.assignableMembers);
   const [showNotifications, setShowNotifications] = React.useState(false);
@@ -138,6 +139,13 @@ export const TopBar: React.FC = () => {
   }, [searchQuery, tasks, projects, teamMembersChat]);
 
   const handleSearchSelect = (result: SearchResult) => {
+    if (result.category === 'project') {
+      // Push the project name into the shared store so the Projects grid filters to it
+      setProjectSearchQuery(result.label);
+    } else {
+      // Clear any active project filter when navigating away
+      setProjectSearchQuery('');
+    }
     window.location.hash = result.page;
     setSearchQuery('');
     setShowSearchResults(false);
@@ -210,8 +218,11 @@ export const TopBar: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => {
-                setSearchQuery(e.target.value);
+                const val = e.target.value;
+                setSearchQuery(val);
                 setShowSearchResults(true);
+                // Mirror into project store so the Projects grid filters in real-time
+                setProjectSearchQuery(val);
               }}
               onFocus={() => { if (searchQuery.trim().length >= 2) setShowSearchResults(true); }}
               placeholder="Search tasks, projects, people..."
@@ -226,7 +237,7 @@ export const TopBar: React.FC = () => {
             />
             {searchQuery && (
               <button
-                onClick={() => { setSearchQuery(''); setShowSearchResults(false); }}
+                onClick={() => { setSearchQuery(''); setShowSearchResults(false); setProjectSearchQuery(''); }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300"
               >
                 <X size={16} />
