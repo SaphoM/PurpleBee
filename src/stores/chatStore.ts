@@ -924,7 +924,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Persist to DB (await so they exist before next refresh)
       for (const ch of seedChannels) {
         await chatDb.createConversation(
-          { id: ch.id, type: ch.type, name: ch.name, description: ch.description, teamId },
+          { id: ch.id, type: ch.type, name: ch.name, description: ch.description, teamId, pinned: ch.pinned },
           participantIds,
           false,
         );

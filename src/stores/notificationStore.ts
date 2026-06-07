@@ -300,6 +300,10 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   preferences: loadNotifPrefs(),
 
   addNotification: (notification) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { useUserStore } = require('@stores/userStore') as typeof import('@stores/userStore');
+    const currentUserId = useUserStore.getState().user?.id;
+
     const prefs = get().preferences;
 
     // Check if this notification type is enabled
@@ -320,13 +324,17 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       createdAt: new Date(),
     };
 
-    set((state) => ({
-      notifications: [newNotification, ...state.notifications],
-      unreadCount: state.unreadCount + 1,
-    }));
+    // Only add to in-memory store when the notification is for the current user.
+    // Cross-user notifications (e.g. sapho notifying studio) must only go to DB —
+    // adding them to the sender's in-memory store would show the wrong user's alerts.
+    if (notification.userId === currentUserId) {
+      set((state) => ({
+        notifications: [newNotification, ...state.notifications],
+        unreadCount: state.unreadCount + 1,
+      }));
+    }
 
-    // Persist to DB only when mock mode is OFF. Notifications are user-scoped
-    // (each member has their own inbox) — so we write to the recipient's row.
+    // Always persist to DB (recipient reads it on next login/hydration).
     notificationDb.insert(
       {
         id: newNotification.id,

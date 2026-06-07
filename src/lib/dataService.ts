@@ -496,7 +496,7 @@ export const chatDb = {
 
   /** Create a conversation + add participants */
   async createConversation(
-    conv: { id: string; type: string; name: string; description?: string; taskId?: string; taskTitle?: string; teamId?: string },
+    conv: { id: string; type: string; name: string; description?: string; taskId?: string; taskTitle?: string; teamId?: string; pinned?: boolean },
     participantUserIds: string[],
     mockMode?: boolean
   ): Promise<boolean> {
@@ -509,6 +509,7 @@ export const chatDb = {
       task_id: conv.taskId || null,
       task_title: conv.taskTitle || null,
       team_id: conv.teamId || null,
+      pinned: conv.pinned ?? false,
     });
     if (convErr) { console.error('[dataService] chat.createConversation', convErr); return false; }
 
