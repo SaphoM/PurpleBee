@@ -47,7 +47,7 @@ export const TopBar: React.FC = () => {
   const {
     notifications, unreadCount, markAsRead, markAllAsRead,
     markGroupAsRead, removeNotification, clearRead, getGroupedNotifications,
-    preferences: notifPrefs,
+    preferences: notifPrefs, hydrateFromDb: refreshNotifications,
   } = useNotificationStore();
   const { user, viewAs, clearViewAs, isViewingOther, getViewingProfile, canManageTeam } = useUserStore();
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
@@ -59,6 +59,12 @@ export const TopBar: React.FC = () => {
   const teamMembersChat = useChatStore((s) => s.teamMembers);
   const assignableMembers = useUserStore((s) => s.assignableMembers);
   const [showNotifications, setShowNotifications] = React.useState(false);
+  // Refresh from DB each time the bell is opened in live mode
+  React.useEffect(() => {
+    if (showNotifications && !keepMockData && user?.id) {
+      refreshNotifications(user.id);
+    }
+  }, [showNotifications]);
   const [showRoleSwitcher, setShowRoleSwitcher] = React.useState(false);
   const [notifFilter, setNotifFilter] = React.useState<'all' | 'unread'>('all');
   const [searchQuery, setSearchQuery] = React.useState('');

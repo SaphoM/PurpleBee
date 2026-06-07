@@ -478,6 +478,8 @@ export const useUserStore = create<UserStore>((set, get) => ({
     if (isDbConnected()) {
       authDb.signOut().catch(() => {});
     }
+    // Clean up realtime subscription before clearing auth state
+    useNotificationStore.getState().unsubscribeRealtime();
     set({ user: null, isAuthenticated: false, viewingAsId: null, error: null, currentTeamId: null, currentTeamName: null });
   },
 

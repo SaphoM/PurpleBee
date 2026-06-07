@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Notification, NotificationType } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
 import { notificationDb } from '@/lib/dataService';
+import { supabase, isDbConnected } from '@/lib/supabase';
 import { useSettingsStore } from '@stores/settingsStore';
 
 /**
@@ -9,6 +10,9 @@ import { useSettingsStore } from '@stores/settingsStore';
  * When true, all DB reads and writes are skipped — data lives in-memory only.
  */
 const isMockMode = () => useSettingsStore.getState().keepMockData;
+
+// Module-level channel reference so we can clean it up on logout/mode-change
+let _realtimeChannel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
 
 // ─── Notification preferences ───────────────────────────────────────────
 export interface NotificationPreferences {
@@ -130,6 +134,10 @@ interface NotificationStore {
   clearMockData: () => void;
   restoreMockData: (userId: string, userName: string) => void;
   hydrateFromDb: (userId: string) => Promise<void>;
+
+  // Real-time subscription — keeps bell live when DB changes
+  subscribeRealtime: (userId: string) => void;
+  unsubscribeRealtime: () => void;
 
   // Computed helpers
   getGroupedNotifications: () => Record<string, Notification[]>;
@@ -418,10 +426,12 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   clearMockData: () => {
+    get().unsubscribeRealtime();
     set({ notifications: [], unreadCount: 0 });
   },
 
   restoreMockData: (userId, userName) => {
+    get().unsubscribeRealtime();
     const notifications = generateNotificationsForUser(userId, userName);
     set({
       notifications,
@@ -436,6 +446,9 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
    * Always completes — even when the DB returns 0 rows, we set the
    * notifications array (empty) so the UI shows the correct empty state
    * and addNotification can create new ones.
+   *
+   * Also starts a Realtime subscription so new notifications pushed by
+   * other users (task assignments, chat messages) appear live in the bell.
    */
   hydrateFromDb: async (userId: string) => {
     if (isMockMode()) return;
@@ -457,6 +470,59 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       notifications: mapped,
       unreadCount: mapped.filter((n) => !n.read).length,
     });
+    // Start Realtime so the bell updates without a page refresh
+    get().subscribeRealtime(userId);
+  },
+
+  subscribeRealtime: (userId: string) => {
+    if (isMockMode() || !isDbConnected() || !supabase) return;
+
+    // Clean up any previous subscription
+    get().unsubscribeRealtime();
+
+    _realtimeChannel = supabase
+      .channel(`notifications:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const r = payload.new as Record<string, any>;
+          const incoming: Notification = {
+            id: r.id,
+            userId: r.user_id,
+            type: r.type as NotificationType,
+            title: r.title,
+            message: r.message,
+            read: !!r.read,
+            createdAt: new Date(r.created_at),
+            taskId: r.task_id || undefined,
+            conversationId: r.conversation_id || undefined,
+            actionUrl: r.action_url || undefined,
+          };
+          // Deduplicate — INSERT can fire twice if the row was already
+          // added optimistically (same-user actions)
+          set((state) => {
+            if (state.notifications.some((n) => n.id === incoming.id)) return state;
+            return {
+              notifications: [incoming, ...state.notifications],
+              unreadCount: state.unreadCount + (incoming.read ? 0 : 1),
+            };
+          });
+        }
+      )
+      .subscribe();
+  },
+
+  unsubscribeRealtime: () => {
+    if (_realtimeChannel && supabase) {
+      supabase.removeChannel(_realtimeChannel);
+      _realtimeChannel = null;
+    }
   },
 
   getGroupedNotifications: () => {
