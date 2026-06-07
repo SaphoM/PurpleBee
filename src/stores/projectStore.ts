@@ -544,7 +544,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
             id: uuidv4(),
             userId,
             type: 'task-assigned',
-            title: 'You've been assigned a task',
+            title: "You've been assigned a task",
             message: `${project.name}: ${task.title}`,
             read: false,
             actionUrl: '#projects',
