@@ -13,6 +13,9 @@ interface UIStore extends UIState {
   closeModal: () => void;
   setViewMode: (mode: UIState['viewMode']) => void;
   setSelectedTask: (taskId: string | undefined) => void;
+  /** Shared search query — TopBar writes, all pages read to filter their content */
+  globalSearchQuery: string;
+  setGlobalSearchQuery: (q: string) => void;
 }
 
 // Load collapsed preference
@@ -61,4 +64,7 @@ export const useUIStore = create<UIStore>((set) => ({
   setViewMode: (mode) => set({ viewMode: mode }),
 
   setSelectedTask: (taskId) => set({ selectedTaskId: taskId }),
+
+  globalSearchQuery: '',
+  setGlobalSearchQuery: (q) => set({ globalSearchQuery: q }),
 }));

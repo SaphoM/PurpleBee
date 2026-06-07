@@ -35,6 +35,7 @@ import { useChatStore } from '@stores/chatStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useUserStore } from '@stores/userStore';
 import { useSettingsStore } from '@stores/settingsStore';
+import { useUIStore } from '@stores/uiStore';
 import { ChatParticipant, Task, TaskStatus } from '@/types/index';
 import { format, formatDistanceToNow, isPast, isToday } from 'date-fns';
 import { authDb, inviteDb } from '@/lib/dataService';
@@ -473,8 +474,8 @@ export const Team: React.FC = () => {
   const { tasks } = useTaskStore();
   const { canInviteMembers, canManageTeam, assignableMembers } = useUserStore();
   const keepMockData = useSettingsStore((s) => s.keepMockData);
-
-  const [search, setSearch] = useState('');
+  const search = useUIStore((s) => s.globalSearchQuery);
+  const setSearch = useUIStore((s) => s.setGlobalSearchQuery);
   const [showInvite, setShowInvite] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [deptFilter, setDeptFilter] = useState<string>('all');

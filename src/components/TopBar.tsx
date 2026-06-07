@@ -51,12 +51,12 @@ export const TopBar: React.FC = () => {
   } = useNotificationStore();
   const { user, viewAs, clearViewAs, isViewingOther, getViewingProfile, canManageTeam } = useUserStore();
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
+  const setGlobalSearchQuery = useUIStore((s) => s.setGlobalSearchQuery);
   const keepMockData = useSettingsStore((s) => s.keepMockData);
   const showTips = useSettingsStore((s) => s.showTips);
   const dockChat = useChatStore((s) => s.dockChat);
   const tasks = useTaskStore((s) => s.tasks);
   const projects = useProjectStore((s) => s.projects);
-  const setProjectSearchQuery = useProjectStore((s) => s.setProjectSearchQuery);
   const teamMembersChat = useChatStore((s) => s.teamMembers);
   const assignableMembers = useUserStore((s) => s.assignableMembers);
   const [showNotifications, setShowNotifications] = React.useState(false);
@@ -139,13 +139,8 @@ export const TopBar: React.FC = () => {
   }, [searchQuery, tasks, projects, teamMembersChat]);
 
   const handleSearchSelect = (result: SearchResult) => {
-    if (result.category === 'project') {
-      // Push the project name into the shared store so the Projects grid filters to it
-      setProjectSearchQuery(result.label);
-    } else {
-      // Clear any active project filter when navigating away
-      setProjectSearchQuery('');
-    }
+    // Set global search so the destination page pre-filters to this result
+    setGlobalSearchQuery(result.label);
     window.location.hash = result.page;
     setSearchQuery('');
     setShowSearchResults(false);
@@ -221,8 +216,8 @@ export const TopBar: React.FC = () => {
                 const val = e.target.value;
                 setSearchQuery(val);
                 setShowSearchResults(true);
-                // Mirror into project store so the Projects grid filters in real-time
-                setProjectSearchQuery(val);
+                // Mirror into global UI store so every page filters in real-time
+                setGlobalSearchQuery(val);
               }}
               onFocus={() => { if (searchQuery.trim().length >= 2) setShowSearchResults(true); }}
               placeholder="Search tasks, projects, people..."
@@ -237,7 +232,7 @@ export const TopBar: React.FC = () => {
             />
             {searchQuery && (
               <button
-                onClick={() => { setSearchQuery(''); setShowSearchResults(false); setProjectSearchQuery(''); }}
+                onClick={() => { setSearchQuery(''); setShowSearchResults(false); setGlobalSearchQuery(''); }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300"
               >
                 <X size={16} />

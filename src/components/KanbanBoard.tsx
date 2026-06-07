@@ -6,6 +6,7 @@ import { TaskCard } from './TaskCard';
 import { Plus, MoreVertical, ChevronDown } from 'lucide-react';
 import { useTaskStore } from '@stores/taskStore';
 import { useUserStore } from '@stores/userStore';
+import { useUIStore } from '@stores/uiStore';
 
 const statusConfig: Record<TaskStatus, { label: string; color: string }> = {
   'todo': { label: 'To Do', color: 'slate' },
@@ -181,10 +182,24 @@ interface KanbanBoardProps {
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick }) => {
   const { getTasksByStatus, getTasksForUser, moveTask } = useTaskStore();
   const { canViewAllTasks, getEffectiveUserId } = useUserStore();
+  const globalSearchQuery = useUIStore((s) => s.globalSearchQuery);
 
   const getColumnTasks = (status: TaskStatus) => {
-    if (canViewAllTasks()) return getTasksByStatus(status);
-    return getTasksForUser(getEffectiveUserId()).filter((t) => t.status === status);
+    let tasks = canViewAllTasks()
+      ? getTasksByStatus(status)
+      : getTasksForUser(getEffectiveUserId()).filter((t) => t.status === status);
+
+    if (globalSearchQuery.trim()) {
+      const q = globalSearchQuery.toLowerCase();
+      tasks = tasks.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          t.description?.toLowerCase().includes(q) ||
+          t.tags?.some((tag) => tag.toLowerCase().includes(q))
+      );
+    }
+
+    return tasks;
   };
 
   const handleAddTask = (status: TaskStatus) => {

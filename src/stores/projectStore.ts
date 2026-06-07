@@ -262,10 +262,6 @@ interface ProjectStore {
   assignProjectTask: (projectId: string, taskId: string, userId: string) => void;
   linkProjectTask: (projectId: string, projectTaskId: string, linkedTaskId: string) => void;
 
-  // Global search query — shared between TopBar and the Projects page grid
-  projectSearchQuery: string;
-  setProjectSearchQuery: (q: string) => void;
-
   // Queries
   getProjectById: (id: string) => Project | undefined;
   getProjectTasks: (projectId: string) => ProjectTask[];
@@ -395,9 +391,6 @@ const getInitialProjects = (): Project[] => {
 export const useProjectStore = create<ProjectStore>((set, get) => ({
   projects: getInitialProjects(),
   selectedProjectId: null,
-  projectSearchQuery: '',
-  setProjectSearchQuery: (q) => set({ projectSearchQuery: q }),
-
   createProject: (data) => {
     const id = uuidv4();
     const project: Project = {
