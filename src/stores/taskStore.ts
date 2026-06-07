@@ -17,8 +17,28 @@ const getTeamContext = () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { useUserStore } = require('@stores/userStore') as typeof import('@stores/userStore');
   const s = useUserStore.getState();
-  return { teamId: s.currentTeamId, userId: s.user?.id || null };
+  return { teamId: s.currentTeamId, userId: s.user?.id || null, userName: s.user?.name || 'Someone' };
 };
+
+/**
+ * Fire a notification for the given recipient via notificationStore.
+ * Lazy import breaks the circular dep: taskStore → notificationStore.
+ */
+function notify(notification: {
+  userId: string;
+  type: import('@/types/index').NotificationType;
+  title: string;
+  message: string;
+  actionUrl?: string;
+}) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { useNotificationStore } = require('@stores/notificationStore') as typeof import('@stores/notificationStore');
+    useNotificationStore.getState().addNotification({ ...notification, read: false });
+  } catch {
+    // Non-critical — never let notification errors break task actions
+  }
+}
 
 interface TaskStore {
   tasks: Task[];
@@ -233,13 +253,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   sortBy: 'dueDate',
 
   addTask: (taskData) => {
-    const { teamId, userId } = getTeamContext();
+    const { teamId, userId, userName } = getTeamContext();
     const newTask: Task = {
       ...taskData,
       id: uuidv4(),
-      // Stamp team_id so the task rolls up to the right company.
-      // Falls back to whatever the caller provided.
       teamId: taskData.teamId || teamId || undefined,
+      createdBy: userId || undefined,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -247,9 +266,21 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     // Persist to DB only when mock mode is OFF (fire-and-forget).
     // Use the real user's id as the creator so RLS sees a valid author.
     taskDb.insert(newTask, userId || taskData.assignedTo, isMockMode());
+
+    // Notify the assignee if they're someone other than the creator
+    if (newTask.assignedTo && newTask.assignedTo !== userId) {
+      notify({
+        userId: newTask.assignedTo,
+        type: 'task-assigned',
+        title: 'New task assigned to you',
+        message: `${userName} assigned you "${newTask.title}"`,
+        actionUrl: '#tasks',
+      });
+    }
   },
 
   updateTask: (id, updates) => {
+    const prevTask = get().tasks.find((t) => t.id === id);
     set((state) => ({
       tasks: state.tasks.map((task) =>
         task.id === id
@@ -258,6 +289,43 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       ),
     }));
     taskDb.update(id, updates, isMockMode());
+
+    const { userId, userName } = getTeamContext();
+
+    // ── Notify assignee when the task is (re)assigned ──
+    if (
+      updates.assignedTo !== undefined &&
+      updates.assignedTo !== prevTask?.assignedTo &&
+      updates.assignedTo &&
+      updates.assignedTo !== userId
+    ) {
+      const taskTitle = updates.title || prevTask?.title || 'a task';
+      notify({
+        userId: updates.assignedTo,
+        type: 'task-assigned',
+        title: 'Task assigned to you',
+        message: `${userName} assigned you "${taskTitle}"`,
+        actionUrl: '#tasks',
+      });
+    }
+
+    // ── Notify creator when their task is marked complete ──
+    if (
+      updates.status === 'completed' &&
+      prevTask?.status !== 'completed' &&
+      prevTask?.createdBy &&
+      prevTask.createdBy !== userId
+    ) {
+      const taskTitle = prevTask.title;
+      const completerName = userName;
+      notify({
+        userId: prevTask.createdBy,
+        type: 'task-completed',
+        title: 'Task completed',
+        message: `${completerName} completed "${taskTitle}"`,
+        actionUrl: '#tasks',
+      });
+    }
   },
 
   deleteTask: (id) => {

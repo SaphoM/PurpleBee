@@ -27,6 +27,7 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   assignedTo?: string;
+  createdBy?: string; // user id of the person who created the task
   dueDate?: Date;
   createdAt: Date;
   updatedAt: Date;

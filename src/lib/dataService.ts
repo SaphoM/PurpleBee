@@ -64,6 +64,7 @@ const toTask = (row: DbTask): Task => ({
   status: row.status,
   priority: row.priority,
   assignedTo: row.assigned_to || undefined,
+  createdBy: row.created_by || undefined,
   dueDate: row.due_date ? new Date(row.due_date) : undefined,
   tags: row.tags || [],
   progress: row.progress,
@@ -92,7 +93,7 @@ const toDbInsert = (task: Task, createdBy?: string) => ({
   actual_hours: task.actualHours || null,
   project_id: task.projectId || null,
   team_id: task.teamId || null,
-  created_by: createdBy || null,
+  created_by: createdBy || task.createdBy || null,
 });
 
 export const taskDb = {

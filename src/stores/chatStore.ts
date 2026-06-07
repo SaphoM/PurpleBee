@@ -420,6 +420,32 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (attachments && attachments.length > 0) {
       chatDb.insertAttachments(newMessage.id, attachments, currentUserId, mock);
     }
+
+    // ── Notify other participants of new message ──
+    // Each participant who isn't the sender and isn't currently viewing
+    // this conversation gets an in-app update notification.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { useNotificationStore } = require('@stores/notificationStore') as typeof import('@stores/notificationStore');
+      const conv = get().conversations.find((c) => c.id === conversationId);
+      if (conv) {
+        const preview = trimmed.length > 60 ? trimmed.slice(0, 57) + '…' : trimmed;
+        const convLabel = conv.type === 'dm' ? currentUserName : `#${conv.name}`;
+        for (const participant of conv.participants) {
+          if (participant.userId === currentUserId) continue;
+          useNotificationStore.getState().addNotification({
+            userId: participant.userId,
+            type: 'mention',
+            title: `New message from ${currentUserName}`,
+            message: `${convLabel}: ${preview}`,
+            read: false,
+            actionUrl: '#chat',
+          });
+        }
+      }
+    } catch {
+      // Non-critical
+    }
   },
 
   toggleReaction: (conversationId, messageId, emoji) => {
