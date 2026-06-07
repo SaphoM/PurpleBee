@@ -675,9 +675,11 @@ export const authDb = {
    *  create a duplicate team. */
   async getTeamForUser(userId: string) {
     if (!isDbConnected()) return null;
+
+    // Step 1: get the user's team memberships (always readable — user_id = auth.uid())
     const { data: memberships, error: memErr } = await supabase!
       .from('team_members')
-      .select('team_id, role, teams!inner(id, name, created_by, created_at)')
+      .select('team_id, role')
       .eq('user_id', userId);
     if (memErr) {
       console.error('[dataService] getTeamForUser membership', memErr);
@@ -685,20 +687,37 @@ export const authDb = {
     }
     if (!memberships || memberships.length === 0) return null;
 
-    const sorted = [...memberships].sort((a: any, b: any) => {
-      // Prefer teams the user did not create (invited workspaces)
-      const aInvited = a.teams.created_by !== userId ? 0 : 1;
-      const bInvited = b.teams.created_by !== userId ? 0 : 1;
+    const teamIds = memberships.map((m: any) => m.team_id as string);
+
+    // Step 2: fetch team rows — now readable by members after the RLS fix.
+    // If for any reason the SELECT is denied, fall back gracefully using
+    // the membership data alone (team name will be unknown but hydration works).
+    const { data: teams } = await supabase!
+      .from('teams')
+      .select('id, name, created_by, created_at')
+      .in('id', teamIds)
+      .order('created_at', { ascending: true });
+
+    if (!teams || teams.length === 0) {
+      // RLS blocked team rows — return membership with unknown name
+      const m: any = memberships[0];
+      return { team_id: m.team_id, role: m.role, team: null };
+    }
+
+    // Prefer teams the user was invited to (didn't create); tiebreak: oldest
+    const sorted = [...teams].sort((a: any, b: any) => {
+      const aInvited = a.created_by !== userId ? 0 : 1;
+      const bInvited = b.created_by !== userId ? 0 : 1;
       if (aInvited !== bInvited) return aInvited - bInvited;
-      // Tiebreak: oldest team first
-      return new Date(a.teams.created_at).getTime() - new Date(b.teams.created_at).getTime();
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     });
 
-    const m: any = sorted[0];
+    const t: any = sorted[0];
+    const role = memberships.find((m: any) => m.team_id === t.id)?.role || 'user';
     return {
-      team_id: m.team_id,
-      role: m.role,
-      team: { id: m.teams.id, name: m.teams.name },
+      team_id: t.id,
+      role,
+      team: { id: t.id, name: t.name },
     };
   },
 

@@ -350,13 +350,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
       try {
         const team = await authDb.getOrCreateTeam(supaUser.id, name);
         set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
-        await get().loadAssignableMembers();
-        // Now hydrate chat + projects with team context (single call, no race)
-        await hydrateWithTeam(supaUser.id);
       } catch (err) {
         console.warn('[userStore] could not resolve team on login', err);
-        get().loadAssignableMembers();
       }
+      // Always hydrate chat/tasks/projects — they load by userId even without a team
+      await get().loadAssignableMembers();
+      await hydrateWithTeam(supaUser.id);
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Login failed';
@@ -438,13 +437,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
         try {
           const team = await authDb.getOrCreateTeam(supaUser.id, name);
           set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
-          await get().loadAssignableMembers();
-          // Now hydrate chat + projects with team context (single call, no race)
-          await hydrateWithTeam(supaUser.id);
         } catch (err) {
           console.warn('[userStore] could not resolve team on session restore', err);
-          get().loadAssignableMembers();
         }
+        // Always hydrate chat/tasks/projects — they load by userId even without a team
+        await get().loadAssignableMembers();
+        await hydrateWithTeam(supaUser.id);
 
         // Auto-accept pending invite if user just signed up via invite link
         const pendingToken = sessionStorage.getItem('purplebee-invite-token');
