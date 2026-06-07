@@ -369,11 +369,23 @@ const loadPersistedProjects = (): Project[] | null => {
   } catch { return null; }
 };
 
-/** Determine initial projects: persisted > seed (if mock) > empty */
+/** Determine initial projects:
+ * - Mock mode ON  → seed projects (sample data, in-memory only)
+ * - Mock mode OFF → empty array; DB hydration will populate after login
+ *
+ * We deliberately do NOT restore from the localStorage cache in live mode —
+ * that cache may contain stale mock project data from a previous session and
+ * would flash incorrect content before hydrateFromDb overwrites it.
+ */
 const getInitialProjects = (): Project[] => {
-  const persisted = loadPersistedProjects();
-  if (persisted && persisted.length > 0) return persisted;
-  return shouldStartWithMock ? seedProjects : [];
+  if (shouldStartWithMock) {
+    // Try persisted first (user may have created/edited mock projects in this session)
+    const persisted = loadPersistedProjects();
+    if (persisted && persisted.length > 0) return persisted;
+    return seedProjects;
+  }
+  // Live mode: always start empty; hydrateFromDb fills this from Supabase
+  return [];
 };
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -584,9 +596,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
 
     const rows = await projectDb.fetchAll(userId, false, teamId);
-    // rows is null on DB error — treat as empty so we can seed
-    const dbRows = rows || [];
-    const mapped: Project[] = (dbRows as Array<Record<string, any>>).map((r) => ({
+    if (rows === null) return; // DB error — keep current state, don't wipe projects
+    const mapped: Project[] = (rows as Array<Record<string, any>>).map((r) => ({
       id: r.id,
       name: r.name,
       description: r.description || '',
