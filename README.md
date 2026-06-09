@@ -28,17 +28,27 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Project task breakdown with suggested tasks per template
 - Team member assignment per project task — triggers instant `task-assigned` notification to the assignee (live mode)
 - Project status tracking (Planning, Active, On Hold, Completed)
+- **Edit projects** — Admin/Manager can update name, description, and status inline via edit modal
 - Delete projects with confirmation modal
 - Projects persist to Supabase for real users
 
 ### Team Collaboration
 - Team invite system (magic link email + shareable URL)
 - Role-based access control (Admin, Manager, User)
+- **Edit team members** — Admin/Manager can update name, job title, department, and role; persists to `profiles` + `team_members` in live mode
 - In-app team chat with docked chat windows
 - Admin "View As" to preview other members' dashboards
 - Smart notifications (assignments, due dates, mentions, AI insights)
 - Chat messages trigger `mention` notifications to all other conversation participants (live mode)
 - Task completion triggers `task-completed` notification to the task creator (live mode)
+
+### Global Search
+- TopBar search bar filters content across every page in real-time
+- **Tasks page** — Kanban columns filter cards by title, description, and tags
+- **Projects page** — project grid filters by name, description, status, and template type; inline page search bar is synced with the TopBar
+- **Team page** — member cards filter by name, title, department, and email
+- Clicking a dropdown result navigates to the matching page and pre-filters to that result
+- Shared via `globalSearchQuery` in `uiStore` — single source of truth, no prop drilling
 
 ### Notifications (Live Mode)
 All notifications are written directly to Supabase via `notificationDb.insert` and delivered in real-time to the recipient's bell via Supabase Realtime (`postgres_changes` on the `notifications` table filtered by `user_id`). Mock mode uses in-memory notifications only.
@@ -89,12 +99,13 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 
 | Store | Responsibility |
 |---|---|
-| `userStore` | Auth, session, team resolution, store hydration orchestration |
+| `userStore` | Auth, session, team resolution, store hydration orchestration, `updateMember` |
 | `taskStore` | Kanban tasks, notifications on assign/complete, `createdBy` stamping |
 | `projectStore` | Projects + project tasks, assignment notifications |
 | `chatStore` | Conversations, messages, chat message notifications |
 | `notificationStore` | Notification inbox, Realtime subscription, preferences |
 | `settingsStore` | App settings, sample data toggle, accent colour |
+| `uiStore` | Sidebar state, dark mode, view mode, `globalSearchQuery` (cross-page search) |
 
 ### Context injection (no circular deps)
 `userStore` injects `userId`/`teamId`/`userName` into `taskStore` and `projectStore` via exported setter functions (`setTaskUserContext`, `setProjectUserContext`) — avoids the `require()` pattern which is not available in Vite's ESM browser runtime.
@@ -164,6 +175,8 @@ When missing, the app runs in offline demo mode with mock data.
 | `notifications` | SELECT | `user_id = auth.uid()` — users see only their own notifications |
 | `tasks` | SELECT/INSERT/UPDATE/DELETE | scoped to `team_id` or `created_by` |
 | `projects` | SELECT/INSERT/UPDATE/DELETE | scoped to `team_id` or `created_by` |
+| `profiles` | UPDATE | `id = auth.uid()` — users update own profile; admins update any via service role |
+| `team_members` | UPDATE | scoped to `team_id` membership — role changes sync via `authDb.updateProfile` |
 | `teams` | SELECT | `id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())` |
 
 ## Deployment
