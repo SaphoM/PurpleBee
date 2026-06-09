@@ -124,15 +124,15 @@ export const ModernDashboard: React.FC = () => {
             <div className="flex gap-8 mt-auto">
               <div>
                 <p className="text-white/70 text-xs">Completed</p>
-                <p className="text-lg font-bold">%{completedPct}</p>
+                <p className="text-lg font-bold">{completedPct}%</p>
               </div>
               <div>
                 <p className="text-white/70 text-xs">In Progress</p>
-                <p className="text-lg font-bold">%{inProgressPct}</p>
+                <p className="text-lg font-bold">{inProgressPct}%</p>
               </div>
               <div>
                 <p className="text-white/70 text-xs">To Do</p>
-                <p className="text-lg font-bold">%{todoPct}</p>
+                <p className="text-lg font-bold">{todoPct}%</p>
               </div>
             </div>
           </div>
@@ -155,12 +155,12 @@ export const ModernDashboard: React.FC = () => {
                 <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'rgb(var(--accent-400))' }} />
                 <span className="text-gray-600 dark:text-slate-300">Completed</span>
               </div>
-              <p className="font-bold text-gray-900 dark:text-white text-base ml-4">%{completedPct}</p>
+              <p className="font-bold text-gray-900 dark:text-white text-base ml-4">{completedPct}%</p>
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
                 <span className="text-gray-600 dark:text-slate-300">To Do</span>
               </div>
-              <p className="font-bold text-gray-900 dark:text-white text-base ml-4">%{todoPct}</p>
+              <p className="font-bold text-gray-900 dark:text-white text-base ml-4">{todoPct}%</p>
             </div>
             {/* Donut */}
             <div className="flex-1">
