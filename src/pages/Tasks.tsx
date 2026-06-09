@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import clsx from 'clsx';
 import { Card } from '@components/Card';
 import { Button } from '@components/Button';
 import { KanbanBoard } from '@components/KanbanBoard';
 import { TaskCard } from '@components/TaskCard';
 import { CreateTaskModal } from '@components/CreateTaskModal';
 import { TaskDetailModal } from '@components/TaskDetailModal';
-import { Plus, Filter, Layout, List as ListIcon, Shield, Eye } from 'lucide-react';
+import { Plus, Filter, Layout, List as ListIcon, Eye, Users, User } from 'lucide-react';
 import { useTaskStore } from '@stores/taskStore';
 import { useUIStore } from '@stores/uiStore';
 import { useUserStore } from '@stores/userStore';
@@ -14,8 +15,15 @@ import { Tip } from '@components/Tip';
 
 export const Tasks: React.FC = () => {
   const { getSortedTasks, getTasksForUser } = useTaskStore();
-  const { viewMode, setViewMode } = useUIStore();
-  const { user, canViewAllTasks, canDeleteTasks, getEffectiveUserId } = useUserStore();
+  const { viewMode, setViewMode, taskOwnerFilter, setTaskOwnerFilter } = useUIStore();
+  const {
+    user,
+    canViewAllTasks,
+    canDeleteTasks,
+    getEffectiveUserId,
+    assignableMembers,
+  } = useUserStore();
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [defaultStatus, setDefaultStatus] = useState<TaskStatus>('todo');
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(() => {
@@ -24,6 +32,16 @@ export const Tasks: React.FC = () => {
     return match ? decodeURIComponent(match[1]) : null;
   });
   const allTasks = useTaskStore((s) => s.tasks);
+
+  // Default admin/manager to 'mine' on mount so their own tasks load first
+  useEffect(() => {
+    if (canViewAllTasks() && !['mine', 'all'].includes(taskOwnerFilter) === false) {
+      // Already set — leave as-is
+    }
+    if (canViewAllTasks() && taskOwnerFilter === '') {
+      setTaskOwnerFilter('mine');
+    }
+  }, []);
 
   useEffect(() => {
     const handle = () => {
@@ -36,15 +54,44 @@ export const Tasks: React.FC = () => {
     window.addEventListener('hashchange', handle);
     return () => window.removeEventListener('hashchange', handle);
   }, []);
-  const selectedTask = selectedTaskId ? allTasks.find((t) => t.id === selectedTaskId) ?? null : null;
 
-  // Scope tasks — when "viewing as" another user, show their tasks
-  const tasks = canViewAllTasks() ? getSortedTasks() : getTasksForUser(getEffectiveUserId());
+  const selectedTask = selectedTaskId ? allTasks.find((t) => t.id === selectedTaskId) ?? null : null;
+  const effectiveId = getEffectiveUserId();
+
+  // Derive task list for list view (Kanban applies its own filter internally)
+  const tasks: Task[] = (() => {
+    if (!canViewAllTasks()) {
+      return getTasksForUser(effectiveId);
+    }
+    if (taskOwnerFilter === 'mine') {
+      return getTasksForUser(effectiveId);
+    }
+    if (taskOwnerFilter === 'all') {
+      const all = getSortedTasks();
+      // Own tasks first
+      return [
+        ...all.filter((t) => t.assignedTo === effectiveId),
+        ...all.filter((t) => t.assignedTo !== effectiveId),
+      ];
+    }
+    // Specific member
+    return getTasksForUser(taskOwnerFilter);
+  })();
 
   const handleNewTask = (status: TaskStatus = 'todo') => {
     setDefaultStatus(status);
     setShowCreateModal(true);
   };
+
+  const isAdminOrManager = canViewAllTasks();
+
+  // Label for the current filter
+  const filterLabel = (() => {
+    if (taskOwnerFilter === 'mine') return 'My Tasks';
+    if (taskOwnerFilter === 'all') return 'All Tasks';
+    const member = assignableMembers.find((m) => m.id === taskOwnerFilter);
+    return member ? member.name.split(' ')[0] + "'s Tasks" : 'Tasks';
+  })();
 
   return (
     <div className="space-y-6">
@@ -54,11 +101,10 @@ export const Tasks: React.FC = () => {
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-slate-100">Tasks</h1>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-gray-500 dark:text-slate-400">
-              {tasks.length} tasks • {tasks.filter((t) => t.status === 'in-progress').length}{' '}
-              in progress • {tasks.filter((t) => t.status === 'completed').length}{' '}
-              completed
+              {tasks.length} tasks &bull; {tasks.filter((t) => t.status === 'in-progress').length}{' '}
+              in progress &bull; {tasks.filter((t) => t.status === 'completed').length} completed
             </p>
-            {!canViewAllTasks() && (
+            {!isAdminOrManager && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
                 <Eye size={10} /> My tasks only
               </span>
@@ -66,9 +112,6 @@ export const Tasks: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          <Button variant="secondary" icon={<Filter size={18} />}>
-            Filters
-          </Button>
           <Tip content="Switch between Kanban board and list view" position="bottom">
             <div className="flex items-center gap-2 bg-gray-100 border border-gray-200 dark:bg-slate-800/50 dark:border-slate-700 rounded-lg p-1">
               <button
@@ -105,6 +148,67 @@ export const Tasks: React.FC = () => {
         </div>
       </div>
 
+      {/* ── Task Owner Filter — admin/manager only ── */}
+      {isAdminOrManager && (
+        <div className="flex flex-wrap items-center gap-2">
+          {/* My Tasks */}
+          <button
+            onClick={() => setTaskOwnerFilter('mine')}
+            className={clsx(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+              taskOwnerFilter === 'mine'
+                ? 'bg-purple-600 border-purple-600 text-white shadow-sm shadow-purple-500/30'
+                : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-purple-400 dark:hover:border-purple-500'
+            )}
+          >
+            <User size={12} />
+            My Tasks
+          </button>
+
+          {/* All Tasks */}
+          <button
+            onClick={() => setTaskOwnerFilter('all')}
+            className={clsx(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+              taskOwnerFilter === 'all'
+                ? 'bg-purple-600 border-purple-600 text-white shadow-sm shadow-purple-500/30'
+                : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-purple-400 dark:hover:border-purple-500'
+            )}
+          >
+            <Users size={12} />
+            All Tasks
+          </button>
+
+          {/* Divider */}
+          {assignableMembers.filter((m) => m.id !== effectiveId).length > 0 && (
+            <span className="text-gray-300 dark:text-slate-600 select-none">|</span>
+          )}
+
+          {/* Per-member pills */}
+          {assignableMembers
+            .filter((m) => m.id !== effectiveId)
+            .map((member) => (
+              <button
+                key={member.id}
+                onClick={() => setTaskOwnerFilter(member.id)}
+                className={clsx(
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+                  taskOwnerFilter === member.id
+                    ? 'bg-purple-600 border-purple-600 text-white shadow-sm shadow-purple-500/30'
+                    : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:border-purple-400 dark:hover:border-purple-500'
+                )}
+              >
+                <img
+                  src={member.avatar}
+                  alt={member.name}
+                  className="w-4 h-4 rounded-full flex-shrink-0"
+                />
+                {member.name.split(' ')[0]}
+              </button>
+            ))}
+        </div>
+      )}
+
       {/* View */}
       {viewMode === 'kanban' ? (
         <div className="overflow-x-auto">
@@ -116,7 +220,9 @@ export const Tasks: React.FC = () => {
             {tasks.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-gray-400 dark:text-slate-500 text-lg">No tasks found</p>
-                <p className="text-gray-300 dark:text-slate-600 text-sm">Create a new task to get started</p>
+                <p className="text-gray-300 dark:text-slate-600 text-sm">
+                  {taskOwnerFilter === 'mine' ? 'You have no tasks yet' : 'No tasks match this filter'}
+                </p>
               </div>
             ) : (
               tasks.map((task) => (

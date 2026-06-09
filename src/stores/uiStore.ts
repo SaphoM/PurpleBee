@@ -16,6 +16,14 @@ interface UIStore extends UIState {
   /** Shared search query — TopBar writes, all pages read to filter their content */
   globalSearchQuery: string;
   setGlobalSearchQuery: (q: string) => void;
+  /**
+   * Task owner filter for the Tasks page.
+   * 'mine'  — show only the current user's tasks (default for admin/manager)
+   * 'all'   — show every task on the team
+   * <uuid>  — show tasks assigned to a specific team member
+   */
+  taskOwnerFilter: string;
+  setTaskOwnerFilter: (f: string) => void;
 }
 
 // Load collapsed preference
@@ -67,4 +75,7 @@ export const useUIStore = create<UIStore>((set) => ({
 
   globalSearchQuery: '',
   setGlobalSearchQuery: (q) => set({ globalSearchQuery: q }),
+
+  taskOwnerFilter: 'mine',
+  setTaskOwnerFilter: (f) => set({ taskOwnerFilter: f }),
 }));

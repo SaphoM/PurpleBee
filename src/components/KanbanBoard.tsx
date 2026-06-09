@@ -183,12 +183,33 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick
   const { getTasksByStatus, getTasksForUser, moveTask } = useTaskStore();
   const { canViewAllTasks, getEffectiveUserId } = useUserStore();
   const globalSearchQuery = useUIStore((s) => s.globalSearchQuery);
+  const taskOwnerFilter = useUIStore((s) => s.taskOwnerFilter);
 
   const getColumnTasks = (status: TaskStatus) => {
-    let tasks = canViewAllTasks()
-      ? getTasksByStatus(status)
-      : getTasksForUser(getEffectiveUserId()).filter((t) => t.status === status);
+    const effectiveId = getEffectiveUserId();
 
+    // Start with the correct task pool
+    let tasks: ReturnType<typeof getTasksByStatus>;
+
+    if (!canViewAllTasks()) {
+      // Regular members always see only their own tasks
+      tasks = getTasksForUser(effectiveId).filter((t) => t.status === status);
+    } else if (taskOwnerFilter === 'all') {
+      // Admin/manager chose "All Tasks" — show everything, own tasks first
+      const all = getTasksByStatus(status);
+      tasks = [
+        ...all.filter((t) => t.assignedTo === effectiveId),
+        ...all.filter((t) => t.assignedTo !== effectiveId),
+      ];
+    } else if (taskOwnerFilter === 'mine') {
+      // Admin/manager default — only their own tasks
+      tasks = getTasksForUser(effectiveId).filter((t) => t.status === status);
+    } else {
+      // Specific team member selected
+      tasks = getTasksForUser(taskOwnerFilter).filter((t) => t.status === status);
+    }
+
+    // Apply global search on top
     if (globalSearchQuery.trim()) {
       const q = globalSearchQuery.toLowerCase();
       tasks = tasks.filter(
