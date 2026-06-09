@@ -180,13 +180,17 @@ export const Tasks: React.FC = () => {
           </button>
 
           {/* Divider */}
-          {assignableMembers.filter((m) => m.id !== effectiveId).length > 0 && (
+          {assignableMembers
+            .filter((m) => m.id !== effectiveId && (user?.role === 'admin' || m.role !== 'admin'))
+            .length > 0 && (
             <span className="text-gray-300 dark:text-slate-600 select-none">|</span>
           )}
 
-          {/* Per-member pills */}
+          {/* Per-member pills
+              Admin  → sees all other members (including managers)
+              Manager → sees non-admin members only */}
           {assignableMembers
-            .filter((m) => m.id !== effectiveId)
+            .filter((m) => m.id !== effectiveId && (user?.role === 'admin' || m.role !== 'admin'))
             .map((member) => (
               <button
                 key={member.id}
