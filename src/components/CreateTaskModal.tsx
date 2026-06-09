@@ -463,7 +463,12 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
               <button
                 type="button"
                 onClick={addSubtask}
-                className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-300 transition-colors"
+                className={clsx(
+                  'px-3 py-2 rounded-lg transition-colors',
+                  subtaskInput.trim()
+                    ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-sm shadow-purple-500/30'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-400 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-500'
+                )}
               >
                 <Plus size={16} />
               </button>
