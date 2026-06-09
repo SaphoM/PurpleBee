@@ -102,7 +102,7 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 | Store | Responsibility |
 |---|---|
 | `userStore` | Auth, session, team resolution, store hydration orchestration, `updateMember` |
-| `taskStore` | Kanban tasks, notifications on assign/complete, `createdBy` stamping |
+| `taskStore` | Kanban tasks, drag-persist via `moveTask`, notifications on assign/complete, `createdBy` stamping |
 | `projectStore` | Projects + project tasks, assignment notifications |
 | `chatStore` | Conversations, messages, chat message notifications |
 | `notificationStore` | Notification inbox, Realtime subscription, preferences |
