@@ -12,7 +12,8 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Status tracking (To Do, In Progress, Review, Completed)
 - Progress visualization (0-100%)
 - Recurring tasks with customizable patterns
-- Subtasks and file attachments
+- Subtasks with inline add — the `+` button highlights purple as soon as text is entered, providing clear visual feedback before confirming
+- File attachments
 - Time estimation and tracking
 - Task assignment to team members
 - `createdBy` stamped on every new task; hydrated from `created_by` DB column on load
