@@ -10,7 +10,8 @@ A modern, enterprise-grade productivity management platform with advanced task m
 ### Task Management
 - Multi-level priorities (Low, Medium, High, Urgent)
 - Status tracking (To Do, In Progress, Review, Completed)
-- Progress visualization (0-100%)
+- Progress visualization (0-100%) — auto-updates when a task is dragged between Kanban columns (completed → 100%, review → 75%, in-progress → 10%, todo → 0%)
+- Drag-and-drop Kanban — column changes persist to Supabase immediately in live mode; mock mode updates Zustand in-memory state
 - Recurring tasks with customizable patterns
 - Subtasks with inline add — the `+` button highlights purple as soon as text is entered, providing clear visual feedback before confirming
 - File attachments
