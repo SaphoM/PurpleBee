@@ -89,6 +89,8 @@ interface UserStore {
   // Team members who can be assigned tasks (scoped to currentTeamId)
   assignableMembers: TeamProfile[];
   loadAssignableMembers: () => Promise<void>;
+  /** Update a team member's profile (name, title, department, role). Persists to DB in live mode. */
+  updateMember: (userId: string, updates: Partial<Pick<TeamProfile, 'name' | 'title' | 'department' | 'role'>>) => Promise<void>;
 
   // Ensure the user has a team and stash its id. Auto-creates one if missing.
   ensureTeam: () => Promise<string | null>;
@@ -281,6 +283,21 @@ export const useUserStore = create<UserStore>((set, get) => ({
       set({ assignableMembers: members });
     } catch (err) {
       console.error('[userStore] loadAssignableMembers error', err);
+    }
+  },
+
+  updateMember: async (userId, updates) => {
+    // Optimistic local update
+    set((state) => ({
+      assignableMembers: state.assignableMembers.map((m) =>
+        m.id === userId ? { ...m, ...updates } : m
+      ),
+    }));
+    // Persist to DB in live mode
+    const { keepMockData } = useSettingsStore.getState();
+    if (!keepMockData) {
+      const teamId = get().currentTeamId;
+      await authDb.updateProfile(userId, teamId, updates as Record<string, string>);
     }
   },
 

@@ -666,6 +666,34 @@ export const authDb = {
     return data;
   },
 
+  /** Update a team member's profile fields and optionally their team role */
+  async updateProfile(
+    userId: string,
+    teamId: string | null,
+    updates: { name?: string; title?: string; department?: string; role?: string }
+  ) {
+    if (!isDbConnected()) return false;
+    const profilePayload: Record<string, unknown> = {};
+    if (updates.name !== undefined) profilePayload.name = updates.name;
+    if (updates.title !== undefined) profilePayload.title = updates.title;
+    if (updates.department !== undefined) profilePayload.department = updates.department;
+    if (updates.role !== undefined) profilePayload.role = updates.role;
+    if (Object.keys(profilePayload).length > 0) {
+      const { error } = await supabase!.from('profiles').update(profilePayload).eq('id', userId);
+      if (error) { console.error('[dataService] auth.updateProfile profiles', error); return false; }
+    }
+    // Keep team_members.role in sync
+    if (updates.role !== undefined && teamId) {
+      const { error } = await supabase!
+        .from('team_members')
+        .update({ role: updates.role })
+        .eq('user_id', userId)
+        .eq('team_id', teamId);
+      if (error) { console.error('[dataService] auth.updateProfile team_members', error); }
+    }
+    return true;
+  },
+
   /** Get the team a user belongs to.
    *  Deterministic selection: a user may belong to several teams (their own
    *  auto-created one plus any they were invited to). We prefer a team the

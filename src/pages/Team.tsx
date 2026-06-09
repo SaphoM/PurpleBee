@@ -29,6 +29,7 @@ import {
   UserMinus,
   ShieldCheck,
   ShieldOff,
+  Pencil,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@components/Card';
 import { useChatStore } from '@stores/chatStore';
@@ -469,15 +470,149 @@ const MemberDetailModal: React.FC<{
   );
 };
 
+// ── Edit Member Modal ──────────────────────────────────────────────────
+const ROLES = [
+  { value: 'admin',   label: 'Admin',   desc: 'Full access — manage team, settings, and all data' },
+  { value: 'manager', label: 'Manager', desc: 'Can assign tasks, manage projects, and invite members' },
+  { value: 'user',    label: 'Member',  desc: 'Standard access — tasks, chat, and personal data' },
+] as const;
+
+interface EditMemberModalProps {
+  member: { id: string; name: string; title: string; department: string; role: string };
+  onClose: () => void;
+  onSave: (id: string, updates: { name: string; title: string; department: string; role: string }) => void;
+}
+const EditMemberModal: React.FC<EditMemberModalProps> = ({ member, onClose, onSave }) => {
+  const [name, setName] = useState(member.name);
+  const [title, setTitle] = useState(member.title);
+  const [department, setDepartment] = useState(member.department);
+  const [role, setRole] = useState(member.role);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSave(member.id, { name: name.trim(), title: title.trim(), department: department.trim(), role });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className={clsx(
+        'relative w-full max-w-md rounded-2xl shadow-2xl p-6 z-10',
+        'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700'
+      )}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">Edit Member</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className={clsx(
+                'w-full px-3 py-2.5 rounded-xl text-sm border',
+                'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                'border-gray-200 dark:border-slate-600 placeholder-gray-400 dark:placeholder-slate-500',
+                'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400'
+              )}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Job Title</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. UI Designer"
+                className={clsx(
+                  'w-full px-3 py-2.5 rounded-xl text-sm border',
+                  'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                  'border-gray-200 dark:border-slate-600 placeholder-gray-400 dark:placeholder-slate-500',
+                  'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400'
+                )}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Department</label>
+              <input
+                type="text"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                placeholder="e.g. Engineering"
+                className={clsx(
+                  'w-full px-3 py-2.5 rounded-xl text-sm border',
+                  'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                  'border-gray-200 dark:border-slate-600 placeholder-gray-400 dark:placeholder-slate-500',
+                  'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400'
+                )}
+              />
+            </div>
+          </div>
+          {/* Role selector */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-2">Role / Access Level</label>
+            <div className="space-y-2">
+              {ROLES.map((r) => (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => setRole(r.value)}
+                  className={clsx(
+                    'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all',
+                    role === r.value
+                      ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 dark:border-purple-500'
+                      : 'border-gray-200 dark:border-slate-600 hover:border-gray-300 dark:hover:border-slate-500 bg-white dark:bg-slate-700/30'
+                  )}
+                >
+                  <div className={clsx(
+                    'w-4 h-4 rounded-full border-2 flex-shrink-0 transition-all',
+                    role === r.value ? 'border-purple-500 bg-purple-500' : 'border-gray-300 dark:border-slate-500'
+                  )}>
+                    {role === r.value && <div className="w-full h-full rounded-full bg-white scale-50 block" />}
+                  </div>
+                  <div>
+                    <p className={clsx('text-xs font-semibold', role === r.value ? 'text-purple-700 dark:text-purple-300' : 'text-gray-800 dark:text-slate-200')}>{r.label}</p>
+                    <p className="text-[10px] text-gray-400 dark:text-slate-500">{r.desc}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className={clsx(
+              'flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors',
+              'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+            )}>Cancel</button>
+            <button type="submit" disabled={!name.trim()} className={clsx(
+              'flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all',
+              'bg-gradient-to-r from-purple-600 to-blue-600 text-white',
+              'hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+            )}>Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 export const Team: React.FC = () => {
   const { teamMembers, createDM, conversations, currentUserId } = useChatStore();
   const { tasks } = useTaskStore();
-  const { canInviteMembers, canManageTeam, assignableMembers } = useUserStore();
+  const { canInviteMembers, canManageTeam, assignableMembers, updateMember } = useUserStore();
   const keepMockData = useSettingsStore((s) => s.keepMockData);
   const search = useUIStore((s) => s.globalSearchQuery);
   const setSearch = useUIStore((s) => s.setGlobalSearchQuery);
   const [showInvite, setShowInvite] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [editMemberId, setEditMemberId] = useState<string | null>(null);
   const [deptFilter, setDeptFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name' | 'tasks' | 'completion'>('name');
 
@@ -808,6 +943,16 @@ export const Team: React.FC = () => {
                       </span>
                     )}
                   </button>
+                  {/* Edit button — admin only */}
+                  {canManageTeam() && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditMemberId(m.member.userId); }}
+                      className="p-2 rounded-lg text-gray-400 hover:bg-blue-50 hover:text-blue-600 dark:text-slate-500 dark:hover:bg-blue-900/20 dark:hover:text-blue-400 transition-colors lg:opacity-0 lg:group-hover:opacity-100"
+                      title="Edit member"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  )}
                 </div>
 
                 {/* Progress bar */}
@@ -924,6 +1069,24 @@ export const Team: React.FC = () => {
         onClose={() => setSelectedMemberId(null)}
         onMessage={handleMessage}
       />
+
+      {/* Edit Member Modal */}
+      {editMemberId && (() => {
+        const md = membersData.find((m) => m.member.userId === editMemberId);
+        return md ? (
+          <EditMemberModal
+            member={{
+              id: md.member.userId,
+              name: md.member.name,
+              title: md.title,
+              department: md.department,
+              role: md.member.role === 'admin' ? 'admin' : (assignableMembers.find((a) => a.id === md.member.userId)?.role ?? 'user'),
+            }}
+            onClose={() => setEditMemberId(null)}
+            onSave={(id, updates) => updateMember(id, updates as any)}
+          />
+        ) : null;
+      })()}
     </div>
   );
 };
