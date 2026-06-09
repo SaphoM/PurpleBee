@@ -72,6 +72,19 @@ export const ModernDashboard: React.FC = () => {
     ? Math.min(100, Math.round((completedTasks / totalTasks) * 100 + inProgressTasks * 3))
     : 0;
 
+  // Weekly activity bars — live: count task updates per day; mock: hardcoded values
+  // Day order: Mon(1) Tue(2) Wed(3) Thu(4) Fri(5) Sat(6) Sun(0)
+  const weeklyActivityData = keepMockData
+    ? weeklyActivity
+    : ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, i) => {
+        const targetDay = [1, 2, 3, 4, 5, 6, 0][i];
+        const value = tasks.filter((t) => {
+          const d = new Date(t.updatedAt || t.createdAt);
+          return d.getDay() === targetDay;
+        }).length;
+        return { day, value };
+      });
+
   // Recent tasks for activity table
   const recentTasks = [...tasks]
     .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
@@ -216,9 +229,9 @@ export const ModernDashboard: React.FC = () => {
               </button>
             </div>
             <ResponsiveContainer width="100%" height={80}>
-              <BarChart data={weeklyActivity} barSize={12}>
+              <BarChart data={weeklyActivityData} barSize={12}>
                 <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                  {weeklyActivity.map((_, i) => (
+                  {weeklyActivityData.map((_, i) => (
                     <Cell
                       key={i}
                       fill={i === 3 ? 'rgb(var(--accent-500))' : (darkMode ? '#475569' : '#e5e7eb')}

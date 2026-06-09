@@ -85,8 +85,39 @@ export const Dashboard: React.FC = () => {
       ].filter((d) => d.value > 0)
     : [];
 
-  const completionTrendData = hasTasks ? mockCompletionTrendData : emptyCompletionTrendData;
-  const focusSessionsData = hasTasks ? mockFocusSessionsData : emptyFocusSessionsData;
+  // ── Live-mode chart data derived from real tasks ─────────────────────
+  const completionTrendData = (() => {
+    if (keepMockData) return hasTasks ? mockCompletionTrendData : emptyCompletionTrendData;
+    // Last 7 days: count completed tasks per day based on updatedAt
+    const today = new Date();
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (6 - i));
+      const label = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+      const completed = tasks.filter((t) => {
+        if (t.status !== 'completed') return false;
+        const updated = new Date(t.updatedAt || t.createdAt);
+        return updated.toDateString() === d.toDateString();
+      }).length;
+      return { date: label, completed, target: 5 };
+    });
+  })();
+
+  const focusSessionsData = (() => {
+    if (keepMockData) return hasTasks ? mockFocusSessionsData : emptyFocusSessionsData;
+    // Group any task activity (updatedAt) into hour blocks
+    const blocks: Array<{ time: string; hour: number }> = [
+      { time: '9am', hour: 9 }, { time: '10am', hour: 10 }, { time: '11am', hour: 11 },
+      { time: '2pm', hour: 14 }, { time: '3pm', hour: 15 }, { time: '4pm', hour: 16 },
+    ];
+    return blocks.map(({ time, hour }) => {
+      const active = tasks.filter((t) => {
+        const h = new Date(t.updatedAt || t.createdAt).getHours();
+        return h === hour;
+      }).length;
+      return { time, sessions: active, hours: Math.round(active * 0.5 * 10) / 10 };
+    });
+  })();
 
   // Productivity score — derived from actual tasks when available
   const productivityScore = hasTasks
