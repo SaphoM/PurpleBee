@@ -418,21 +418,30 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     get().updateTask(id, { status, progress });
   },
 
-  moveTask: (taskId, newStatus, newIndex) =>
+  moveTask: (taskId, newStatus, newIndex) => {
+    const task = get().tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    // Mirror the same progress mapping as updateTaskStatus
+    let progress = task.progress;
+    if (newStatus === 'completed') progress = 100;
+    else if (newStatus === 'todo') progress = 0;
+    else if (newStatus === 'review' && task.progress < 75) progress = 75;
+    else if (newStatus === 'in-progress' && task.progress === 0) progress = 10;
+
+    // Reorder within the destination column (optimistic UI)
     set((state) => {
-      const task = state.tasks.find((t) => t.id === taskId);
-      if (!task) return state;
-
       const otherTasks = state.tasks.filter((t) => t.id !== taskId);
-      const updatedTask = { ...task, status: newStatus, updatedAt: new Date() };
-
+      const updatedTask = { ...task, status: newStatus, progress, updatedAt: new Date() };
       const columnTasks = otherTasks.filter((t) => t.status === newStatus);
       const nonColumnTasks = otherTasks.filter((t) => t.status !== newStatus);
-
       columnTasks.splice(newIndex, 0, updatedTask);
-
       return { tasks: [...nonColumnTasks, ...columnTasks] };
-    }),
+    });
+
+    // Persist to DB and fire assignment/completion notifications
+    get().updateTask(taskId, { status: newStatus, progress });
+  },
 
   getTasksForUser: (userId) => {
     return get().tasks.filter((t) => t.assignedTo === userId);
