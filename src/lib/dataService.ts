@@ -17,7 +17,7 @@
  */
 
 import { supabase, isDbConnected } from './supabase';
-import type { Task, TaskStatus, TaskPriority } from '@/types/index';
+import type { Task, TaskStatus, TaskPriority, Subtask } from '@/types/index';
 
 // ── Central gate ──────────────────────────────────────────────────────
 // We can't import useSettingsStore here (circular), so every public
@@ -96,9 +96,51 @@ const toDbInsert = (task: Task, createdBy?: string) => ({
   created_by: createdBy || task.createdBy || null,
 });
 
+// ── Subtask persistence ────────────────────────────────────────────────────────
+export const subtaskDb = {
+  /** Fetch all subtasks for the given task IDs, returns a map keyed by task_id */
+  async fetchForTasks(taskIds: string[], mockMode?: boolean): Promise<Map<string, Subtask[]>> {
+    if (!shouldPersist(mockMode) || taskIds.length === 0) return new Map();
+    const { data, error } = await supabase!
+      .from('subtasks')
+      .select('*')
+      .in('task_id', taskIds)
+      .order('order', { ascending: true });
+    if (error) { console.error('[dataService] subtasks.fetchForTasks', error); return new Map(); }
+    const map = new Map<string, Subtask[]>();
+    for (const row of (data as { id: string; task_id: string; title: string; completed: boolean; created_at: string }[])) {
+      const arr = map.get(row.task_id) ?? [];
+      arr.push({ id: row.id, title: row.title, completed: row.completed, createdAt: new Date(row.created_at) });
+      map.set(row.task_id, arr);
+    }
+    return map;
+  },
+
+  /**
+   * Replace all subtasks for a task with the given array.
+   * Deletes existing rows then inserts fresh ones, preserving order.
+   */
+  async replaceForTask(taskId: string, subtasks: Subtask[], mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error: delErr } = await supabase!.from('subtasks').delete().eq('task_id', taskId);
+    if (delErr) { console.error('[dataService] subtasks.replaceForTask delete', delErr); return false; }
+    if (subtasks.length === 0) return true;
+    const rows = subtasks.map((s, i) => ({
+      id: s.id,
+      task_id: taskId,
+      title: s.title,
+      completed: s.completed,
+      order: i,
+    }));
+    const { error: insErr } = await supabase!.from('subtasks').insert(rows);
+    if (insErr) { console.error('[dataService] subtasks.replaceForTask insert', insErr); return false; }
+    return true;
+  },
+};
+
 export const taskDb = {
   /**
-   * Fetch all tasks for the current user from Supabase.
+   * Fetch all tasks for the current user from Supabase, including their subtasks.
    * Only called when mockMode is OFF and DB is connected.
    * Returns null when DB should not be used → caller keeps in-memory state.
    */
@@ -114,7 +156,10 @@ export const taskDb = {
     }
     const { data, error } = await q;
     if (error) { console.error('[dataService] tasks.fetchAll', error); return null; }
-    return (data as DbTask[]).map(toTask);
+    const tasks = (data as DbTask[]).map(toTask);
+    // Attach subtasks from the subtasks table
+    const subtaskMap = await subtaskDb.fetchForTasks(tasks.map((t) => t.id), mockMode);
+    return tasks.map((t) => ({ ...t, subtasks: subtaskMap.get(t.id) ?? [] }));
   },
 
   /** Insert a task — skipped when mock mode is ON */
@@ -124,6 +169,9 @@ export const taskDb = {
       .from('tasks')
       .insert(toDbInsert(task, createdBy));
     if (error) { console.error('[dataService] tasks.insert', error); return false; }
+    if (task.subtasks && task.subtasks.length > 0) {
+      subtaskDb.replaceForTask(task.id, task.subtasks, mockMode);
+    }
     return true;
   },
 
@@ -142,6 +190,11 @@ export const taskDb = {
     if (updates.estimatedHours !== undefined) payload.estimated_hours = updates.estimatedHours;
     if (updates.actualHours !== undefined) payload.actual_hours = updates.actualHours;
     if (updates.projectId !== undefined) payload.project_id = updates.projectId || null;
+
+    // Sync subtasks to their own table (fire-and-forget alongside the main update)
+    if (updates.subtasks !== undefined) {
+      subtaskDb.replaceForTask(id, updates.subtasks, mockMode);
+    }
 
     if (Object.keys(payload).length === 0) return true;
 
