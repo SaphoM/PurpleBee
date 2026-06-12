@@ -810,7 +810,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }];
     }
 
-    // ── 2. Load conversations from DB ──────────────────────────────
+    // ── 2. Ensure user is participant in all team/announcement channels ──
+    // New team members won't be in conversation_participants for channels
+    // created before they joined — auto-join them now so fetchConversations
+    // returns those channels on this and all future logins.
+    if (teamId) {
+      await chatDb.joinTeamChannels(userId, teamId, false);
+    }
+
+    // ── 3. Load conversations from DB ──────────────────────────────
     const dbConversations = await chatDb.fetchConversations(userId, false);
 
     let convs: Conversation[] = [];
@@ -882,7 +890,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     }
 
-    // ── 3. Seed default channels if user has none ───────────────────
+    // ── 4. Seed default channels if user has none ───────────────────
     // Guard: only seed when this user truly has zero conversations for
     // this team. This prevents duplicates on concurrent calls.
     if (convs.length === 0 && teamId) {
@@ -932,7 +940,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
     }
 
-    // ── 4. Always set user context + team members ──────────────────
+    // ── 5. Always set user context + team members ──────────────────
     // Auto-select the first pinned conversation (or just the first one)
     // so the chat panel shows messages immediately after hydration.
     // Prefer to keep the previously active conversation if it still exists.

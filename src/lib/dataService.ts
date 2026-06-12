@@ -575,6 +575,39 @@ export const chatDb = {
     return true;
   },
 
+  /**
+   * Auto-join a user to any announcement/team channels for their team that they
+   * are not yet a participant of. Called on every live-mode hydration so new
+   * team members always see shared channels, even if they joined after the
+   * channel was originally created.
+   */
+  async joinTeamChannels(userId: string, teamId: string, mockMode?: boolean): Promise<void> {
+    if (!shouldPersist(mockMode)) return;
+
+    // Find all announcement/team channels for this team (RLS now allows this)
+    const { data: teamChannels, error: chErr } = await supabase!
+      .from('conversations')
+      .select('id')
+      .eq('team_id', teamId)
+      .in('type', ['announcement', 'team']);
+    if (chErr || !teamChannels || teamChannels.length === 0) return;
+
+    // Find which ones the user is already in
+    const { data: existing } = await supabase!
+      .from('conversation_participants')
+      .select('conversation_id')
+      .eq('user_id', userId)
+      .in('conversation_id', teamChannels.map((c: any) => c.id));
+
+    const joinedIds = new Set(((existing as any[]) || []).map((r: any) => r.conversation_id));
+    const toJoin = teamChannels.filter((c: any) => !joinedIds.has(c.id));
+    if (toJoin.length === 0) return;
+
+    const rows = toJoin.map((c: any) => ({ conversation_id: c.id, user_id: userId }));
+    const { error: insErr } = await supabase!.from('conversation_participants').insert(rows);
+    if (insErr) console.error('[dataService] chat.joinTeamChannels', insErr);
+  },
+
   /** Update conversation pin status */
   async updatePin(conversationId: string, pinned: boolean, mockMode?: boolean): Promise<boolean> {
     if (!shouldPersist(mockMode)) return true;
