@@ -279,7 +279,7 @@ interface ChatStore {
   setActiveConversation: (id: string | null) => void;
   setFilterCategory: (category: ConversationType | 'all') => void;
   setSearchQuery: (query: string) => void;
-  sendMessage: (conversationId: string, text: string, attachments?: import('@/types/index').Attachment[]) => void;
+  sendMessage: (conversationId: string, text: string, attachments?: import('@/types/index').Attachment[], taskRef?: import('@/types/index').TaskRef) => void;
   toggleReaction: (conversationId: string, messageId: string, emoji: string) => void;
   getConversationMessages: (conversationId: string) => ChatMessage[];
   getFilteredConversations: () => Conversation[];
@@ -366,9 +366,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setSearchQuery: (query) => set({ searchQuery: query }),
 
-  sendMessage: (conversationId, text, attachments) => {
+  sendMessage: (conversationId, text, attachments, taskRef) => {
     const trimmed = text.trim();
-    if (!trimmed && (!attachments || attachments.length === 0)) return;
+    if (!trimmed && (!attachments || attachments.length === 0) && !taskRef) return;
 
     const { currentUserId, currentUserName, currentUserAvatar } = get();
 
@@ -382,6 +382,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       timestamp: new Date(),
       readBy: [currentUserId],
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
+      ...(taskRef ? { taskRef } : {}),
     };
 
     // Persist to the shared seed data so other users see it on login (in-memory)

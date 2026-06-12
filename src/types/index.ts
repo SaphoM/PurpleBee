@@ -306,6 +306,18 @@ export interface UIState {
 // Chat Types
 export type ConversationType = 'task' | 'dm' | 'team' | 'announcement';
 
+export interface TaskRef {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  priority: string;
+  progress: number;
+  projectName?: string;
+  subtasksCompleted: number;
+  subtasksTotal: number;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
@@ -318,6 +330,7 @@ export interface ChatMessage {
   replyTo?: string;
   attachments?: Attachment[];
   reactions?: MessageReaction[];
+  taskRef?: TaskRef;
 }
 
 export interface MessageReaction {

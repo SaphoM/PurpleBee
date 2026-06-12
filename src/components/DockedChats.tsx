@@ -17,7 +17,9 @@ import {
   SmilePlus,
 } from 'lucide-react';
 import { useChatStore } from '@stores/chatStore';
-import { ConversationType, Attachment } from '@/types/index';
+import { useTaskStore } from '@stores/taskStore';
+import { useProjectStore } from '@stores/projectStore';
+import { ConversationType, Attachment, TaskRef } from '@/types/index';
 import { format, isToday, isYesterday } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -79,11 +81,14 @@ const formatTime = (date: Date) => {
 // Single docked mini chat window
 const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId }) => {
   const { conversations, getConversationMessages, sendMessage, toggleReaction, undockChat, currentUserId } = useChatStore();
+  const tasks = useTaskStore((s) => s.tasks);
+  const { getProjectById } = useProjectStore();
   const [isExpanded, setIsExpanded] = useState(true);
   const [input, setInput] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isDragOverWindow, setIsDragOverWindow] = useState(false);
   const [isDragOverBubble, setIsDragOverBubble] = useState(false);
+  const [pendingTaskRef, setPendingTaskRef] = useState<TaskRef | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -118,6 +123,32 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
     e.target.value = '';
   }, []);
 
+  const buildTaskRef = (taskId: string): TaskRef | null => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return null;
+    const project = task.projectId ? getProjectById(task.projectId) : null;
+    const completed = (task.subtasks || []).filter((s) => s.completed).length;
+    return {
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      priority: task.priority,
+      progress: task.progress,
+      projectName: project?.name,
+      subtasksCompleted: completed,
+      subtasksTotal: (task.subtasks || []).length,
+    };
+  };
+
+  const attachTask = (taskId: string) => {
+    const ref = buildTaskRef(taskId);
+    if (!ref) return;
+    setPendingTaskRef(ref);
+    setIsExpanded(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
   const handleTaskDragOver = (e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes('text/task-ref')) return;
     e.preventDefault();
@@ -129,11 +160,8 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
     e.preventDefault();
     e.stopPropagation();
     setIsDragOverWindow(false);
-    const ref = e.dataTransfer.getData('text/task-ref');
-    if (!ref) return;
-    setInput((prev) => prev ? `${ref}\n${prev}` : ref);
-    setIsExpanded(true);
-    setTimeout(() => inputRef.current?.focus(), 50);
+    const taskId = e.dataTransfer.getData('text/task-id');
+    if (taskId) attachTask(taskId);
   };
 
   const handleBubbleDragOver = (e: React.DragEvent) => {
@@ -147,11 +175,8 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
     e.preventDefault();
     e.stopPropagation();
     setIsDragOverBubble(false);
-    const ref = e.dataTransfer.getData('text/task-ref');
-    if (!ref) return;
-    setInput((prev) => prev ? `${ref}\n${prev}` : ref);
-    setIsExpanded(true);
-    setTimeout(() => inputRef.current?.focus(), 50);
+    const taskId = e.dataTransfer.getData('text/task-id');
+    if (taskId) attachTask(taskId);
   };
 
   if (!conv) return null;
@@ -165,10 +190,16 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
   const isOnline = otherParticipant?.online ?? false;
 
   const handleSend = () => {
-    if (!input.trim() && pendingAttachments.length === 0) return;
-    sendMessage(conversationId, input, pendingAttachments.length > 0 ? pendingAttachments : undefined);
+    if (!input.trim() && pendingAttachments.length === 0 && !pendingTaskRef) return;
+    sendMessage(
+      conversationId,
+      input,
+      pendingAttachments.length > 0 ? pendingAttachments : undefined,
+      pendingTaskRef ?? undefined,
+    );
     setInput('');
     setPendingAttachments([]);
+    setPendingTaskRef(null);
   };
 
   return (
@@ -253,11 +284,59 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                     <img src={msg.senderAvatar} alt="" className="w-5 h-5 rounded-full flex-shrink-0 mt-0.5" />
                     <div className={clsx('max-w-[75%] relative')}>
                       <div className={clsx(
-                        'px-2.5 py-1.5 rounded-xl text-xs leading-relaxed',
+                        'rounded-xl text-xs leading-relaxed overflow-hidden',
                         isMe
                           ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-tr-sm'
                           : 'bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-slate-200 rounded-tl-sm'
                       )}>
+                        {/* Task card attachment */}
+                        {msg.taskRef && (
+                          <div className={clsx(
+                            'px-2.5 pt-2 pb-1.5 border-b',
+                            isMe ? 'border-white/20 bg-white/10' : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900'
+                          )}>
+                            <div className={clsx('text-[9px] font-semibold uppercase tracking-wide flex items-center gap-1 mb-1', isMe ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400')}>
+                              <CheckSquare size={9} /> Task
+                            </div>
+                            <p className={clsx('text-[11px] font-bold truncate leading-snug', isMe ? 'text-white' : 'text-gray-900 dark:text-slate-100')}>{msg.taskRef.title}</p>
+                            {msg.taskRef.projectName && (
+                              <p className={clsx('text-[9px] truncate mt-0.5', isMe ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400')}>{msg.taskRef.projectName}</p>
+                            )}
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              <span className={clsx('text-[9px] font-medium px-1.5 py-0.5 rounded-full', isMe
+                                ? 'bg-white/20 text-white'
+                                : {
+                                    'bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300': msg.taskRef.status === 'todo',
+                                    'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300': msg.taskRef.status === 'in-progress',
+                                    'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300': msg.taskRef.status === 'review',
+                                    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300': msg.taskRef.status === 'completed',
+                                  }[msg.taskRef.status] ?? 'bg-gray-200 text-gray-600'
+                              )}>
+                                {{ todo: 'To Do', 'in-progress': 'In Progress', review: 'Review', completed: 'Completed' }[msg.taskRef.status] ?? msg.taskRef.status}
+                              </span>
+                              <span className={clsx('text-[9px] font-medium px-1.5 py-0.5 rounded-full', isMe
+                                ? 'bg-white/20 text-white'
+                                : {
+                                    'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400': msg.taskRef.priority === 'low',
+                                    'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300': msg.taskRef.priority === 'medium',
+                                    'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300': msg.taskRef.priority === 'high',
+                                    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300': msg.taskRef.priority === 'urgent',
+                                  }[msg.taskRef.priority] ?? 'bg-gray-100 text-gray-500'
+                              )}>
+                                {msg.taskRef.priority.charAt(0).toUpperCase() + msg.taskRef.priority.slice(1)}
+                              </span>
+                              {msg.taskRef.subtasksTotal > 0 && (
+                                <span className={clsx('text-[9px]', isMe ? 'text-purple-200' : 'text-gray-400 dark:text-slate-500')}>{msg.taskRef.subtasksCompleted}/{msg.taskRef.subtasksTotal}</span>
+                              )}
+                            </div>
+                            {msg.taskRef.progress > 0 && (
+                              <div className="mt-1.5 h-1 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
+                                <div className={clsx('h-full rounded-full', isMe ? 'bg-white/70' : (msg.taskRef.progress >= 100 ? 'bg-emerald-500' : 'bg-purple-500'))} style={{ width: `${msg.taskRef.progress}%` }} />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="px-2.5 py-1.5">
                         {msg.text}
                         {msg.attachments && msg.attachments.length > 0 && (
                           <div className="space-y-1">
@@ -287,6 +366,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                             })}
                           </div>
                         )}
+                        </div>{/* closes px-2.5 py-1.5 text content wrapper */}
                       </div>
                       {/* Reaction button */}
                       <button
@@ -327,7 +407,50 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
 
           {/* Input */}
           <div className="px-2.5 py-2 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex-shrink-0">
-            {/* Pending attachments */}
+            {/* Pending task attachment preview */}
+            {pendingTaskRef && (
+              <div className="mb-1.5 rounded-xl border border-purple-200 dark:border-purple-700/50 bg-purple-50 dark:bg-purple-900/20 overflow-hidden">
+                <div className="flex items-center justify-between px-2 pt-1.5 pb-0.5">
+                  <span className="text-[9px] font-semibold text-purple-500 dark:text-purple-400 uppercase tracking-wide flex items-center gap-1">
+                    <CheckSquare size={9} /> Attaching task
+                  </span>
+                  <button onClick={() => setPendingTaskRef(null)} className="text-purple-400 hover:text-purple-600"><X size={10} /></button>
+                </div>
+                <div className="px-2 pb-1.5">
+                  <p className="text-[11px] font-semibold text-gray-800 dark:text-slate-100 truncate leading-tight">{pendingTaskRef.title}</p>
+                  {pendingTaskRef.projectName && (
+                    <p className="text-[9px] text-purple-500 dark:text-purple-400 truncate mt-0.5">{pendingTaskRef.projectName}</p>
+                  )}
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className={clsx('text-[9px] font-medium px-1.5 py-0.5 rounded-full', {
+                      'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300': pendingTaskRef.status === 'todo',
+                      'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300': pendingTaskRef.status === 'in-progress',
+                      'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300': pendingTaskRef.status === 'review',
+                      'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300': pendingTaskRef.status === 'completed',
+                    })}>
+                      {{ todo: 'To Do', 'in-progress': 'In Progress', review: 'Review', completed: 'Completed' }[pendingTaskRef.status] ?? pendingTaskRef.status}
+                    </span>
+                    <span className={clsx('text-[9px] font-medium px-1.5 py-0.5 rounded-full', {
+                      'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400': pendingTaskRef.priority === 'low',
+                      'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300': pendingTaskRef.priority === 'medium',
+                      'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300': pendingTaskRef.priority === 'high',
+                      'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300': pendingTaskRef.priority === 'urgent',
+                    })}>
+                      {pendingTaskRef.priority.charAt(0).toUpperCase() + pendingTaskRef.priority.slice(1)}
+                    </span>
+                    {pendingTaskRef.subtasksTotal > 0 && (
+                      <span className="text-[9px] text-gray-400 dark:text-slate-500">{pendingTaskRef.subtasksCompleted}/{pendingTaskRef.subtasksTotal} subtasks</span>
+                    )}
+                  </div>
+                  {pendingTaskRef.progress > 0 && (
+                    <div className="mt-1 h-1 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                      <div className={clsx('h-full rounded-full', pendingTaskRef.progress >= 100 ? 'bg-emerald-500' : 'bg-purple-500')} style={{ width: `${pendingTaskRef.progress}%` }} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Pending file attachments */}
             {pendingAttachments.length > 0 && (
               <div className="flex flex-wrap gap-1 mb-1.5">
                 {pendingAttachments.map((att) => (
