@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { Task, TaskStatus } from '@/types/index';
 import { PriorityBadge } from './Badge';
-import { Clock, Users, FileText, GripVertical, ChevronDown, FolderKanban, MessageCircle } from 'lucide-react';
+import { Clock, Users, FileText, GripVertical, ChevronDown, FolderKanban } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
@@ -84,7 +84,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const hasAssignee = !!task.assignedTo;
 
   const handleChatDragStart = (e: React.DragEvent) => {
-    e.stopPropagation();
     const priorityLabel = task.priority.charAt(0).toUpperCase() + task.priority.slice(1);
     const statusLabel = currentStatus?.label ?? task.status;
     const ref = `📋 Task: "${task.title}" [${priorityLabel} · ${statusLabel}]`;
@@ -95,6 +94,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   return (
     <div
+      draggable
+      onDragStart={handleChatDragStart}
       onClick={onClick}
       className={clsx(
         'rounded-lg p-4 transition-all duration-200 cursor-pointer group relative',
@@ -124,17 +125,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             </div>
           )}
         </div>
-
-        {/* Chat drag handle — visible on hover */}
-        <button
-          draggable
-          onDragStart={handleChatDragStart}
-          onClick={(e) => e.stopPropagation()}
-          className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 p-1 rounded text-gray-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 cursor-grab active:cursor-grabbing"
-          title="Drag to a chat window to share this task"
-        >
-          <MessageCircle size={13} />
-        </button>
 
         {/* Status Dropdown */}
         <div ref={menuRef} className="relative flex-shrink-0">
