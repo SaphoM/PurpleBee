@@ -28,7 +28,7 @@ import {
   SmilePlus,
 } from 'lucide-react';
 import { useChatStore } from '@stores/chatStore';
-import { ConversationType, Conversation, ChatParticipant, Attachment } from '@/types/index';
+import { ConversationType, Conversation, ChatParticipant, Attachment, TaskRef } from '@/types/index';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -769,11 +769,59 @@ export const Chat: React.FC = () => {
                             )}
                             <div className="relative">
                               <div className={clsx(
-                                'px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed',
+                                'rounded-2xl text-sm leading-relaxed overflow-hidden',
                                 isMe
                                   ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-tr-md'
                                   : 'bg-gray-100 dark:bg-slate-700/50 text-gray-800 dark:text-slate-200 rounded-tl-md'
                               )}>
+                                {/* Task card attachment */}
+                                {msg.taskRef && (
+                                  <div className={clsx(
+                                    'px-2.5 pt-2 pb-1.5 border-b',
+                                    isMe ? 'border-white/20 bg-white/10' : 'border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-900'
+                                  )}>
+                                    <div className={clsx('text-[9px] font-semibold uppercase tracking-wide flex items-center gap-1 mb-1', isMe ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400')}>
+                                      <CheckSquare size={9} /> Task
+                                    </div>
+                                    <p className={clsx('text-[11px] font-bold truncate leading-snug', isMe ? 'text-white' : 'text-gray-900 dark:text-slate-100')}>{msg.taskRef.title}</p>
+                                    {msg.taskRef.projectName && (
+                                      <p className={clsx('text-[9px] truncate mt-0.5', isMe ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400')}>{msg.taskRef.projectName}</p>
+                                    )}
+                                    <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                      <span className={clsx('text-[9px] font-medium px-1.5 py-0.5 rounded-full', isMe
+                                        ? 'bg-white/20 text-white'
+                                        : ({
+                                            'todo': 'bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300',
+                                            'in-progress': 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+                                            'review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+                                            'completed': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+                                          } as Record<string, string>)[msg.taskRef.status] ?? 'bg-gray-200 text-gray-600'
+                                      )}>
+                                        {{ todo: 'To Do', 'in-progress': 'In Progress', review: 'Review', completed: 'Completed' }[msg.taskRef.status] ?? msg.taskRef.status}
+                                      </span>
+                                      <span className={clsx('text-[9px] font-medium px-1.5 py-0.5 rounded-full', isMe
+                                        ? 'bg-white/20 text-white'
+                                        : ({
+                                            'low': 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400',
+                                            'medium': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+                                            'high': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+                                            'urgent': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+                                          } as Record<string, string>)[msg.taskRef.priority] ?? 'bg-gray-100 text-gray-500'
+                                      )}>
+                                        {msg.taskRef.priority.charAt(0).toUpperCase() + msg.taskRef.priority.slice(1)}
+                                      </span>
+                                      {msg.taskRef.subtasksTotal > 0 && (
+                                        <span className={clsx('text-[9px]', isMe ? 'text-purple-200' : 'text-gray-400 dark:text-slate-500')}>{msg.taskRef.subtasksCompleted}/{msg.taskRef.subtasksTotal}</span>
+                                      )}
+                                    </div>
+                                    {msg.taskRef.progress > 0 && (
+                                      <div className="mt-1.5 h-1 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
+                                        <div className={clsx('h-full rounded-full', isMe ? 'bg-white/70' : (msg.taskRef.progress >= 100 ? 'bg-emerald-500' : 'bg-purple-500'))} style={{ width: `${msg.taskRef.progress}%` }} />
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="px-3.5 py-2.5">
                                 {msg.text}
                                 {/* Attachments */}
                                 {msg.attachments && msg.attachments.length > 0 && (
@@ -783,6 +831,7 @@ export const Chat: React.FC = () => {
                                     ))}
                                   </div>
                                 )}
+                                </div>
                               </div>
                               {/* Reaction add button — hover only */}
                               <button
@@ -1085,11 +1134,59 @@ export const Chat: React.FC = () => {
                             </p>
                           )}
                           <div className={clsx(
-                            'px-3 py-2 rounded-2xl text-sm leading-relaxed',
+                            'rounded-2xl text-sm leading-relaxed overflow-hidden',
                             isMe
                               ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-tr-md'
                               : 'bg-gray-100 dark:bg-slate-700/50 text-gray-800 dark:text-slate-200 rounded-tl-md'
                           )}>
+                            {/* Task card attachment */}
+                            {msg.taskRef && (
+                              <div className={clsx(
+                                'px-2.5 pt-2 pb-1.5 border-b',
+                                isMe ? 'border-white/20 bg-white/10' : 'border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-900'
+                              )}>
+                                <div className={clsx('text-[9px] font-semibold uppercase tracking-wide flex items-center gap-1 mb-1', isMe ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400')}>
+                                  <CheckSquare size={9} /> Task
+                                </div>
+                                <p className={clsx('text-[11px] font-bold truncate leading-snug', isMe ? 'text-white' : 'text-gray-900 dark:text-slate-100')}>{msg.taskRef.title}</p>
+                                {msg.taskRef.projectName && (
+                                  <p className={clsx('text-[9px] truncate mt-0.5', isMe ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400')}>{msg.taskRef.projectName}</p>
+                                )}
+                                <div className="flex items-center gap-1 mt-1 flex-wrap">
+                                  <span className={clsx('text-[9px] font-medium px-1.5 py-0.5 rounded-full', isMe
+                                    ? 'bg-white/20 text-white'
+                                    : ({
+                                        'todo': 'bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300',
+                                        'in-progress': 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+                                        'review': 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+                                        'completed': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+                                      } as Record<string, string>)[msg.taskRef.status] ?? 'bg-gray-200 text-gray-600'
+                                  )}>
+                                    {{ todo: 'To Do', 'in-progress': 'In Progress', review: 'Review', completed: 'Completed' }[msg.taskRef.status] ?? msg.taskRef.status}
+                                  </span>
+                                  <span className={clsx('text-[9px] font-medium px-1.5 py-0.5 rounded-full', isMe
+                                    ? 'bg-white/20 text-white'
+                                    : ({
+                                        'low': 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400',
+                                        'medium': 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
+                                        'high': 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+                                        'urgent': 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+                                      } as Record<string, string>)[msg.taskRef.priority] ?? 'bg-gray-100 text-gray-500'
+                                  )}>
+                                    {msg.taskRef.priority.charAt(0).toUpperCase() + msg.taskRef.priority.slice(1)}
+                                  </span>
+                                  {msg.taskRef.subtasksTotal > 0 && (
+                                    <span className={clsx('text-[9px]', isMe ? 'text-purple-200' : 'text-gray-400 dark:text-slate-500')}>{msg.taskRef.subtasksCompleted}/{msg.taskRef.subtasksTotal}</span>
+                                  )}
+                                </div>
+                                {msg.taskRef.progress > 0 && (
+                                  <div className="mt-1.5 h-1 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
+                                    <div className={clsx('h-full rounded-full', isMe ? 'bg-white/70' : (msg.taskRef.progress >= 100 ? 'bg-emerald-500' : 'bg-purple-500'))} style={{ width: `${msg.taskRef.progress}%` }} />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <div className="px-3 py-2">
                             {msg.text}
                             {msg.attachments && msg.attachments.length > 0 && (
                               <div className="space-y-1">
@@ -1098,6 +1195,7 @@ export const Chat: React.FC = () => {
                                 ))}
                               </div>
                             )}
+                            </div>
                           </div>
                           <ReactionBar
                             reactions={msg.reactions || []}
