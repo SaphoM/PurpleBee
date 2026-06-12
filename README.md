@@ -13,10 +13,11 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Progress visualization (0-100%) — auto-updates when a task is dragged between Kanban columns (completed → 100%, review → 75%, in-progress → 10%, todo → 0%)
 - Drag-and-drop Kanban — column changes persist to Supabase immediately in live mode; mock mode updates Zustand in-memory state
 - Recurring tasks with customizable patterns
-- Subtasks with inline add — the `+` button highlights purple as soon as text is entered, providing clear visual feedback before confirming
+- Subtasks (Mini Tasks) with inline add — the `+` button highlights purple as soon as text is entered, providing clear visual feedback before confirming
+- Mini tasks persist to Supabase `subtasks` table in live mode; loaded alongside parent tasks on hydration; completion ratio drives the task progress bar (completed ÷ total × 100)
 - File attachments
 - Time estimation and tracking
-- Task assignment to team members
+- Task assignment to team members — Assigned To card in the task detail modal resolves the UUID to the member's name and avatar from `assignableMembers`
 - `createdBy` stamped on every new task; hydrated from `created_by` DB column on load
 
 ### Multiple View Modes
@@ -43,6 +44,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Smart notifications (assignments, due dates, mentions, AI insights)
 - Chat messages trigger `mention` notifications to all other conversation participants (live mode)
 - Task completion triggers `task-completed` notification to the task creator (live mode)
+- **Announcement & team channels visible to all team members** — new members are auto-joined to all `announcement` and `team` type channels on login, so they immediately see all historical messages regardless of when the channel was created
 
 ### Global Search
 - TopBar search bar filters content across every page in real-time
@@ -68,8 +70,12 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 - Toggling OFF calls `clearMockData` + `hydrateFromDb` on all stores
 - DB tables start empty for new accounts — no auto-seeding in live mode
 
-### Analytics & AI Insights
-- Completion trends and productivity score
+### Dashboard & Analytics
+- **Classic and Modern dashboard layouts** — both pull live data from Supabase when sample data is OFF
+- Completion trend chart — last 7 days, grouped by `updatedAt` date
+- Focus sessions chart — task activity grouped by hour of day
+- Weekly activity bar chart — task updates grouped by day of week
+- Card percentage stats (Completed %, In Progress %, To Do %) rendered correctly as `{value}%`
 - Priority distribution analysis
 - Focus session tracking
 - AI-generated recommendations
@@ -176,10 +182,12 @@ When missing, the app runs in offline demo mode with mock data.
 | `notifications` | INSERT | `WITH CHECK: true` — any authenticated user can insert for any `user_id` (enables cross-user notifications) |
 | `notifications` | SELECT | `user_id = auth.uid()` — users see only their own notifications |
 | `tasks` | SELECT/INSERT/UPDATE/DELETE | scoped to `team_id` or `created_by` |
+| `subtasks` | ALL | follows parent task access — `task_id IN (tasks where assigned_to or created_by = auth.uid())` or admin/manager |
 | `projects` | SELECT/INSERT/UPDATE/DELETE | scoped to `team_id` or `created_by` |
 | `profiles` | UPDATE | `id = auth.uid()` — users update own profile; admins update any via service role |
 | `team_members` | UPDATE | scoped to `team_id` membership — role changes sync via `authDb.updateProfile` |
 | `teams` | SELECT | `id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())` |
+| `conversations` | SELECT | participant OR admin/manager OR (`type IN ('announcement','team') AND team_id matches user's team`) — ensures all team members see shared channels |
 
 ## Deployment
 
