@@ -45,6 +45,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Chat messages trigger `mention` notifications to all other conversation participants (live mode)
 - Task completion triggers `task-completed` notification to the task creator (live mode)
 - **Announcement & team channels visible to all team members** — new members are auto-joined to all `announcement` and `team` type channels on login, so they immediately see all historical messages regardless of when the channel was created
+- **Drag task to chat** — drag any task card from the Kanban board onto a docked chat window or bubble to attach it; a rich task card preview (title, status, priority, progress bar, subtask count, project name) appears in the input area; type an optional comment anchored to the card and send — the task card renders inline at the top of the message bubble with the comment below it, identical in style to the Kanban card
 
 ### Global Search
 - TopBar search bar filters content across every page in real-time
