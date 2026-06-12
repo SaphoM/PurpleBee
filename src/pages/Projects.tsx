@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import {
   Plus,
@@ -24,6 +24,7 @@ import {
   Wrench,
   GraduationCap,
   Briefcase,
+  GripVertical,
 } from 'lucide-react';
 import { useProjectStore, projectTemplates, ProjectTask } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
@@ -1201,6 +1202,7 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
 export const Projects: React.FC = () => {
   const { projects, deleteProject, updateProject } = useProjectStore();
   const { isAdmin, isManager } = useUserStore();
+  const currentUserId = useUserStore((s) => s.user?.id ?? 'guest');
   const assignableMembers = useUserStore((s) => s.assignableMembers);
   const canManage = isAdmin() || isManager();
   const globalSearchQuery = useUIStore((s) => s.globalSearchQuery);
@@ -1210,6 +1212,65 @@ export const Projects: React.FC = () => {
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteConfirmInfo, setDeleteConfirmInfo] = useState<{ name: string; taskCount: number } | null>(null);
+
+  // ── Drag-to-reorder state ──────────────────────────────────────────────
+  const storageKey = `project-order-${currentUserId}`;
+  const [projectOrder, setProjectOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? JSON.parse(saved) : projects.map((p) => p.id);
+    } catch {
+      return projects.map((p) => p.id);
+    }
+  });
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const dragIdRef = useRef<string | null>(null);
+
+  // Sync order when projects list changes (add/delete)
+  useEffect(() => {
+    setProjectOrder((prev) => {
+      const existingIds = new Set(projects.map((p) => p.id));
+      const newIds = projects.map((p) => p.id).filter((id) => !prev.includes(id));
+      const merged = [...prev.filter((id) => existingIds.has(id)), ...newIds];
+      localStorage.setItem(storageKey, JSON.stringify(merged));
+      return merged;
+    });
+  }, [projects, storageKey]);
+
+  const handleDragStart = (e: React.DragEvent, projectId: string) => {
+    dragIdRef.current = projectId;
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, projectId: string) => {
+    e.preventDefault();
+    if (dragIdRef.current && dragIdRef.current !== projectId) {
+      setDragOverId(projectId);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, toId: string) => {
+    e.preventDefault();
+    const fromId = dragIdRef.current;
+    setDragOverId(null);
+    dragIdRef.current = null;
+    if (!fromId || fromId === toId) return;
+    setProjectOrder((prev) => {
+      const next = [...prev];
+      const fromIdx = next.indexOf(fromId);
+      const toIdx = next.indexOf(toId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, fromId);
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleDragEnd = () => {
+    setDragOverId(null);
+    dragIdRef.current = null;
+  };
 
   // globalSearchQuery is shared with TopBar — typing in either filters the grid
   const filteredProjects = globalSearchQuery.trim()
@@ -1223,6 +1284,13 @@ export const Projects: React.FC = () => {
         );
       })
     : projects;
+
+  // Apply user's custom order to the (possibly filtered) list
+  const orderedProjects = [...filteredProjects].sort((a, b) => {
+    const ai = projectOrder.indexOf(a.id);
+    const bi = projectOrder.indexOf(b.id);
+    return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+  });
 
   if (selectedProjectId) {
     return <ProjectDetail projectId={selectedProjectId} onBack={() => setSelectedProjectId(null)} />;
@@ -1311,21 +1379,39 @@ export const Projects: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredProjects.map((project) => {
+          {orderedProjects.map((project) => {
             const sc = statusConfig[project.status];
             const assignedCount = project.tasks.filter((t) => t.assignedTo).length;
             const totalHours = project.tasks.reduce((sum, t) => sum + t.estimatedHours, 0);
             const members = [...new Set(project.tasks.map((t) => t.assignedTo).filter(Boolean))] as string[];
+            const isDraggingThis = dragIdRef.current === project.id;
+            const isDropTarget = dragOverId === project.id;
 
             return (
-              <button
+              <div
                 key={project.id}
-                onClick={() => setSelectedProjectId(project.id)}
+                draggable
+                onDragStart={(e) => handleDragStart(e, project.id)}
+                onDragOver={(e) => handleDragOver(e, project.id)}
+                onDrop={(e) => handleDrop(e, project.id)}
+                onDragEnd={handleDragEnd}
+                onDragLeave={() => setDragOverId(null)}
                 className={clsx(
-                  'p-5 rounded-2xl border text-left transition-all hover:shadow-lg group',
+                  'relative rounded-2xl border text-left transition-all group',
                   'bg-white dark:bg-slate-800/50',
-                  'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
+                  isDropTarget
+                    ? 'border-purple-400 dark:border-purple-500 ring-2 ring-purple-400/40 shadow-lg shadow-purple-500/20'
+                    : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 hover:shadow-lg',
+                  isDraggingThis && 'opacity-40 scale-95',
                 )}
+              >
+                {/* Grip handle */}
+                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-gray-300 dark:text-slate-600 z-10">
+                  <GripVertical size={16} />
+                </div>
+              <button
+                onClick={() => setSelectedProjectId(project.id)}
+                className="w-full p-5 text-left"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
@@ -1430,6 +1516,7 @@ export const Projects: React.FC = () => {
                   })()}
                 </div>
               </button>
+              </div>
             );
           })}
 
