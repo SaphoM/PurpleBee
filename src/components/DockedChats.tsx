@@ -82,6 +82,8 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
   const [isExpanded, setIsExpanded] = useState(true);
   const [input, setInput] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isDragOverWindow, setIsDragOverWindow] = useState(false);
+  const [isDragOverBubble, setIsDragOverBubble] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -116,6 +118,42 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
     e.target.value = '';
   }, []);
 
+  const handleTaskDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('text/task-ref')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverWindow(true);
+  };
+
+  const handleTaskDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverWindow(false);
+    const ref = e.dataTransfer.getData('text/task-ref');
+    if (!ref) return;
+    setInput((prev) => prev ? `${ref}\n${prev}` : ref);
+    setIsExpanded(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const handleBubbleDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('text/task-ref')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverBubble(true);
+  };
+
+  const handleBubbleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverBubble(false);
+    const ref = e.dataTransfer.getData('text/task-ref');
+    if (!ref) return;
+    setInput((prev) => prev ? `${ref}\n${prev}` : ref);
+    setIsExpanded(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
   if (!conv) return null;
 
   const otherParticipant = conv.type === 'dm'
@@ -137,15 +175,32 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
     <div className="flex flex-col items-center flex-1 min-h-0 md:flex-initial md:flex-shrink-0">
       {/* Expanded chat window */}
       {isExpanded && (
-        <div className={clsx(
-          'flex flex-col flex-1 min-h-0',
-          'bg-white dark:bg-slate-900',
-          'md:border md:border-gray-200 md:dark:border-slate-700',
-          'md:shadow-2xl md:overflow-hidden',
-          'animate-in slide-in-from-bottom-2',
-          // Mobile: fill parent bottom sheet; Desktop: small docked window
-          'w-full rounded-none md:mb-2 md:w-80 md:h-96 md:flex-initial md:rounded-2xl',
-        )} style={{ isolation: 'isolate', transform: 'translateZ(0)', zIndex: 60 }}>
+        <div
+          className={clsx(
+            'flex flex-col flex-1 min-h-0',
+            'bg-white dark:bg-slate-900',
+            'md:border md:dark:border-slate-700',
+            isDragOverWindow
+              ? 'md:border-purple-400 md:ring-2 md:ring-purple-400/40'
+              : 'md:border-gray-200',
+            'md:shadow-2xl md:overflow-hidden',
+            'animate-in slide-in-from-bottom-2',
+            'w-full rounded-none md:mb-2 md:w-80 md:h-96 md:flex-initial md:rounded-2xl',
+          )}
+          style={{ isolation: 'isolate', transform: 'translateZ(0)', zIndex: 60 }}
+          onDragOver={handleTaskDragOver}
+          onDragLeave={() => setIsDragOverWindow(false)}
+          onDrop={handleTaskDrop}
+        >
+          {/* Task drop overlay */}
+          {isDragOverWindow && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-purple-500/10 pointer-events-none">
+              <div className="px-3 py-1.5 rounded-full bg-purple-600 text-white text-xs font-semibold shadow-lg">
+                Drop to attach task
+              </div>
+            </div>
+          )}
+
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white flex-shrink-0">
             <div className="flex items-center gap-2 min-w-0">
@@ -342,11 +397,16 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
       {/* Bubble — hidden on mobile (full-screen overlay used instead) */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
+        onDragOver={handleBubbleDragOver}
+        onDragLeave={() => setIsDragOverBubble(false)}
+        onDrop={handleBubbleDrop}
         className={clsx(
           'relative w-12 h-12 rounded-full',
           'shadow-lg hover:shadow-xl hover:scale-110',
           'transition-all duration-200',
-          'ring-2 ring-white dark:ring-slate-900',
+          isDragOverBubble
+            ? 'ring-4 ring-purple-400 scale-110'
+            : 'ring-2 ring-white dark:ring-slate-900',
           'group',
           'hidden md:block'
         )}
@@ -396,7 +456,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
 };
 
 // Drop zone indicator
-const DropZone: React.FC<{ isDragOver: boolean }> = ({ isDragOver }) => (
+const DropZone: React.FC<{ isDragOver: boolean; isTaskDrag?: boolean }> = ({ isDragOver, isTaskDrag }) => (
   <div className={clsx(
     'fixed bottom-0 left-0 right-0 h-20 z-40 flex items-center justify-center transition-all duration-300 pointer-events-none',
     isDragOver
@@ -409,7 +469,7 @@ const DropZone: React.FC<{ isDragOver: boolean }> = ({ isDragOver }) => (
         ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/40 scale-100'
         : 'bg-purple-600/50 text-white/70 scale-90'
     )}>
-      Drop here to dock chat
+      {isTaskDrag ? 'Drop on a chat bubble to share task' : 'Drop here to dock chat'}
     </div>
   </div>
 );
@@ -483,14 +543,16 @@ export const DockedChats: React.FC = () => {
   const dockedChatIds = useChatStore((s) => s.dockedChatIds);
   const chatBotOpen = useChatStore((s) => s.chatBotOpen);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isTaskDrag, setIsTaskDrag] = useState(false);
   const { dockChat, undockChat } = useChatStore();
 
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
-      const data = e.dataTransfer?.types.includes('text/chat-conversation-id');
-      if (!data) return;
+      const isConvDrag = e.dataTransfer?.types.includes('text/chat-conversation-id');
+      const isTaskDragEvent = e.dataTransfer?.types.includes('text/task-ref');
+      if (!isConvDrag && !isTaskDragEvent) return;
       e.preventDefault();
-      // Check if near bottom of screen
+      setIsTaskDrag(!!isTaskDragEvent);
       if (e.clientY > window.innerHeight - 100) {
         setIsDragOver(true);
       } else {
@@ -501,13 +563,14 @@ export const DockedChats: React.FC = () => {
     const handleDrop = (e: DragEvent) => {
       e.preventDefault();
       setIsDragOver(false);
+      setIsTaskDrag(false);
       const convId = e.dataTransfer?.getData('text/chat-conversation-id');
       if (convId && e.clientY > window.innerHeight - 100) {
         dockChat(convId);
       }
     };
 
-    const handleDragLeave = () => setIsDragOver(false);
+    const handleDragLeave = () => { setIsDragOver(false); setIsTaskDrag(false); };
 
     window.addEventListener('dragover', handleDragOver);
     window.addEventListener('drop', handleDrop);
@@ -520,11 +583,11 @@ export const DockedChats: React.FC = () => {
     };
   }, [dockChat]);
 
-  if (dockedChatIds.length === 0 && !isDragOver) return null;
+  if (dockedChatIds.length === 0 && !isDragOver && !isTaskDrag) return null;
 
   return (
     <>
-      <DropZone isDragOver={isDragOver} />
+      <DropZone isDragOver={isDragOver} isTaskDrag={isTaskDrag} />
 
       {/* Mobile: bottom-sheet chat panel with swipe-to-dismiss */}
       {dockedChatIds.length > 0 && (
