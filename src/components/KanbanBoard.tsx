@@ -139,13 +139,17 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
                   <div
                     ref={provided.innerRef}
                     {...provided.draggableProps}
-                    {...provided.dragHandleProps}
                     style={provided.draggableProps.style}
                     className={clsx(
                       snapshot.isDragging && 'rotate-2 shadow-2xl'
                     )}
                   >
-                    <TaskCard task={task} isDragging={snapshot.isDragging} onClick={() => onTaskClick?.(task)} />
+                    <TaskCard
+                      task={task}
+                      isDragging={snapshot.isDragging}
+                      onClick={() => onTaskClick?.(task)}
+                      dragHandleProps={provided.dragHandleProps as Record<string, any> ?? undefined}
+                    />
                   </div>
                 )}
               </Draggable>

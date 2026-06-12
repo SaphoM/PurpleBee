@@ -187,7 +187,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
             'animate-in slide-in-from-bottom-2',
             'w-full rounded-none md:mb-2 md:w-80 md:h-96 md:flex-initial md:rounded-2xl',
           )}
-          style={{ isolation: 'isolate', transform: 'translateZ(0)', zIndex: 60 }}
+          style={{ isolation: 'isolate', transform: 'translateZ(0)', zIndex: 60, position: 'relative' }}
           onDragOver={handleTaskDragOver}
           onDragLeave={() => setIsDragOverWindow(false)}
           onDrop={handleTaskDrop}

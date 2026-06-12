@@ -13,6 +13,8 @@ interface TaskCardProps {
   task: Task;
   onClick?: () => void;
   isDragging?: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dragHandleProps?: Record<string, any>;
 }
 
 const statusOptions: { value: TaskStatus; label: string; color: string }[] = [
@@ -26,6 +28,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   task,
   onClick,
   isDragging,
+  dragHandleProps,
 }) => {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -188,8 +191,11 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           )}
         </div>
 
-        {/* Drag Handle */}
-        <div className="flex-shrink-0 mt-0.5 text-gray-300 dark:text-slate-600 group-hover:text-gray-400 dark:group-hover:text-slate-500 cursor-grab active:cursor-grabbing transition-colors">
+        {/* Drag Handle — RBD dragHandleProps scoped here so native drags elsewhere still work */}
+        <div
+          {...(dragHandleProps as React.HTMLAttributes<HTMLDivElement>)}
+          className="flex-shrink-0 mt-0.5 text-gray-300 dark:text-slate-600 group-hover:text-gray-400 dark:group-hover:text-slate-500 cursor-grab active:cursor-grabbing transition-colors"
+        >
           <GripVertical size={16} />
         </div>
       </div>
