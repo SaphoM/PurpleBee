@@ -415,7 +415,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId);
     const mock = isMockMode() || !isUuid;
     chatDb.sendMessage(
-      { id: newMessage.id, conversationId, senderId: currentUserId, text: trimmed },
+      { id: newMessage.id, conversationId, senderId: currentUserId, text: trimmed, taskRef: taskRef ?? undefined },
       mock
     );
     if (attachments && attachments.length > 0) {
@@ -862,6 +862,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             uploadedAt: new Date(a.uploaded_at),
           })),
           reactions: aggregateReactions(m.reactions || []),
+          ...(m.task_ref ? { taskRef: m.task_ref } : {}),
         }));
 
         msgs[dbConv.id] = chatMessages;

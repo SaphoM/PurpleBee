@@ -466,7 +466,7 @@ export const chatDb = {
 
   /** Send a message — returns the inserted row's id */
   async sendMessage(
-    msg: { id: string; conversationId: string; senderId: string; text: string },
+    msg: { id: string; conversationId: string; senderId: string; text: string; taskRef?: import('@/types/index').TaskRef },
     mockMode?: boolean
   ): Promise<boolean> {
     if (!shouldPersist(mockMode)) return true;
@@ -475,6 +475,7 @@ export const chatDb = {
       conversation_id: msg.conversationId,
       sender_id: msg.senderId,
       text: msg.text,
+      ...(msg.taskRef ? { task_ref: msg.taskRef } : {}),
     });
     if (error) { console.error('[dataService] chat.sendMessage', error); return false; }
 

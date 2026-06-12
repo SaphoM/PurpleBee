@@ -46,6 +46,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Task completion triggers `task-completed` notification to the task creator (live mode)
 - **Announcement & team channels visible to all team members** — new members are auto-joined to all `announcement` and `team` type channels on login, so they immediately see all historical messages regardless of when the channel was created
 - **Drag task to chat** — drag any task card from the Kanban board onto a docked chat window or bubble to attach it; a rich task card preview (title, status, priority, progress bar, subtask count, project name) appears in the input area; type an optional comment anchored to the card and send — the task card renders inline at the top of the message bubble with the comment below it, identical in style to the Kanban card
+- Task card attachments persist to Supabase via `task_ref JSONB` column on the `messages` table; hydrated on load so the card renders correctly after a page refresh in live mode
 
 ### Global Search
 - TopBar search bar filters content across every page in real-time
@@ -189,6 +190,7 @@ When missing, the app runs in offline demo mode with mock data.
 | `team_members` | UPDATE | scoped to `team_id` membership — role changes sync via `authDb.updateProfile` |
 | `teams` | SELECT | `id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())` |
 | `conversations` | SELECT | participant OR admin/manager OR (`type IN ('announcement','team') AND team_id matches user's team`) — ensures all team members see shared channels |
+| `messages` | ALL | scoped to `conversation_id` membership via `conversation_participants`; `task_ref JSONB` column stores task card snapshots that survive page reload |
 
 ## Deployment
 
