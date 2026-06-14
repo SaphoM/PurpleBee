@@ -97,7 +97,7 @@ const StatPill: React.FC<{ icon: React.ReactNode; value: number | string; label:
 const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'user' | 'admin'>('user');
-  const [departments, setDepartments] = useState<string[]>(['General']);
+  const [department, setDepartment] = useState('General');
   const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -105,16 +105,6 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState(false);
   const { user } = useUserStore();
-
-  const toggleDepartment = (dept: string) => {
-    setDepartments((prev) =>
-      prev.includes(dept)
-        ? prev.length === 1 ? prev : prev.filter((d) => d !== dept) // keep at least one
-        : [...prev, dept]
-    );
-  };
-
-  const departmentValue = departments.join(', ');
 
   // Dynamic invite link
   const inviteLink = linkToken
@@ -147,7 +137,7 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
 
     try {
       const team = await ensureTeam();
-      const invite = await inviteDb.create(team.team_id, user.id, role, email, departmentValue);
+      const invite = await inviteDb.create(team.team_id, user.id, role, email, department);
       if (!invite) {
         setError('Failed to create invite. Please try again.');
         setSending(false);
@@ -181,7 +171,7 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
 
     try {
       const team = await ensureTeam();
-      const invite = await inviteDb.create(team.team_id, user.id, role, undefined, departmentValue);
+      const invite = await inviteDb.create(team.team_id, user.id, role, undefined, department);
       if (!invite) {
         setError('Failed to generate link.');
         setGeneratingLink(false);
@@ -256,38 +246,25 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
             </div>
           </div>
 
-          {/* Department selector */}
+          {/* Department */}
           <div className="mb-5">
             <label className="block text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">
               Department
             </label>
-            <div className="flex flex-wrap gap-1.5">
-              {DEPARTMENTS.map((dept) => {
-                const active = departments.includes(dept);
-                const style = departmentConfig[dept];
-                return (
-                  <button
-                    key={dept}
-                    type="button"
-                    onClick={() => toggleDepartment(dept)}
-                    className={clsx(
-                      'px-2.5 py-1 rounded-full text-xs font-medium transition-all border',
-                      active
-                        ? clsx(style?.bg, style?.color, 'border-current shadow-sm')
-                        : 'bg-gray-50 text-gray-400 border-gray-200 hover:border-gray-300 dark:bg-slate-700/30 dark:text-slate-500 dark:border-slate-600 dark:hover:border-slate-500'
-                    )}
-                  >
-                    {active && <span className="mr-1">✓</span>}
-                    {dept}
-                  </button>
-                );
-              })}
-            </div>
-            {departments.length > 0 && (
-              <p className="mt-1.5 text-[10px] text-gray-400 dark:text-slate-500">
-                Assigned to: <span className="font-medium text-gray-600 dark:text-slate-300">{departmentValue}</span>
-              </p>
-            )}
+            <select
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              className={clsx(
+                'w-full rounded-lg px-4 py-2.5 text-sm',
+                'bg-gray-50 border border-gray-200 text-gray-800',
+                'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 cursor-pointer'
+              )}
+            >
+              {DEPARTMENTS.map((dept) => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
           </div>
 
           <button
