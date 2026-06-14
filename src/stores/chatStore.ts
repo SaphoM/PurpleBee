@@ -101,6 +101,7 @@ function ensureSeedData() {
     { id: uuidv4(), conversationId: taskConvId1, senderId: u1.id, senderName: u1.name, senderAvatar: u1.avatar, text: `Yes, leadership specifically asked for regional splits. I'll share the template I used last quarter.`, timestamp: new Date(now - 2.5 * hr), readBy: [u1.id, u2.id] },
     { id: uuidv4(), conversationId: taskConvId1, senderId: u4.id, senderName: u4.name, senderAvatar: u4.avatar, text: `I can help with the revenue figures. Finance sent me the updated spreadsheet yesterday.`, timestamp: new Date(now - 2 * hr), readBy: [u1.id, u4.id] },
     { id: uuidv4(), conversationId: taskConvId1, senderId: u2.id, senderName: u2.name, senderAvatar: u2.avatar, text: `Perfect — let's aim to have all sections in by Thursday. Progress is at about 65%.`, timestamp: new Date(now - 1 * hr), readBy: [u1.id, u2.id, u4.id] },
+    { id: uuidv4(), conversationId: taskConvId1, senderId: u1.id, senderName: u1.name, senderAvatar: u1.avatar, text: `Tracking this here so we don't lose it.`, timestamp: new Date(now - 0.5 * hr), readBy: [u1.id, u2.id], taskRef: { id: 'task-demo-ref', title: 'Prepare quarterly report', status: 'in-progress', priority: 'high', progress: 65, projectName: 'Ops & Compliance', subtasksCompleted: 3, subtasksTotal: 5 } },
   ];
 
   seedMessages[taskConvId2] = [
