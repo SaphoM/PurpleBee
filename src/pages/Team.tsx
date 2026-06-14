@@ -97,7 +97,36 @@ const StatPill: React.FC<{ icon: React.ReactNode; value: number | string; label:
 const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'user' | 'admin'>('user');
-  const [department, setDepartment] = useState('General');
+  const [selectedDepts, setSelectedDepts] = useState<string[]>(['General']);
+  const [customDepts, setCustomDepts] = useState<string[]>([]);
+  const [addingCustom, setAddingCustom] = useState(false);
+  const [customInput, setCustomInput] = useState('');
+
+  const allDepts = [...DEPARTMENTS, ...customDepts];
+  const department = selectedDepts.join(', ');
+
+  const toggleDept = (dept: string) => {
+    setSelectedDepts((prev) =>
+      prev.includes(dept)
+        ? prev.length === 1 ? prev : prev.filter((d) => d !== dept)
+        : [...prev, dept]
+    );
+  };
+  const removeDept = (dept: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const isCustom = customDepts.includes(dept);
+    if (isCustom) setCustomDepts((prev) => prev.filter((d) => d !== dept));
+    setSelectedDepts((prev) => prev.length === 1 && prev[0] === dept ? prev : prev.filter((d) => d !== dept));
+  };
+  const commitCustom = () => {
+    const name = customInput.trim();
+    if (name && !allDepts.includes(name)) {
+      setCustomDepts((prev) => [...prev, name]);
+      setSelectedDepts((prev) => [...prev, name]);
+    }
+    setCustomInput('');
+    setAddingCustom(false);
+  };
   const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -251,20 +280,60 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
             <label className="block text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">
               Department
             </label>
-            <select
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              className={clsx(
-                'w-full rounded-lg px-4 py-2.5 text-sm',
-                'bg-gray-50 border border-gray-200 text-gray-800',
-                'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
-                'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 cursor-pointer'
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {allDepts.map((dept) => {
+                const active = selectedDepts.includes(dept);
+                return (
+                  <button
+                    key={dept}
+                    type="button"
+                    onClick={() => toggleDept(dept)}
+                    className={clsx(
+                      'flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all',
+                      active
+                        ? 'bg-gray-900 text-white border-gray-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                        : 'bg-white text-gray-500 border-gray-300 hover:border-gray-400 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600'
+                    )}
+                  >
+                    {active && <span className="text-[10px]">✓</span>}
+                    {dept}
+                    {active && (
+                      <span
+                        role="button"
+                        onClick={(e) => removeDept(dept, e)}
+                        className="ml-0.5 opacity-60 hover:opacity-100 leading-none"
+                      >
+                        ×
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+
+              {/* Add custom department */}
+              {addingCustom ? (
+                <input
+                  autoFocus
+                  value={customInput}
+                  onChange={(e) => setCustomInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitCustom();
+                    if (e.key === 'Escape') { setAddingCustom(false); setCustomInput(''); }
+                  }}
+                  onBlur={commitCustom}
+                  placeholder="Department name"
+                  className="px-2.5 py-1 rounded-full text-xs border border-purple-400 focus:outline-none focus:border-purple-500 w-32 bg-white dark:bg-slate-800 dark:text-slate-100"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAddingCustom(true)}
+                  className="flex items-center gap-0.5 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-500 dark:border-slate-600 dark:text-slate-500 transition-all"
+                >
+                  <span className="text-sm leading-none">+</span>
+                </button>
               )}
-            >
-              {DEPARTMENTS.map((dept) => (
-                <option key={dept} value={dept}>{dept}</option>
-              ))}
-            </select>
+            </div>
           </div>
 
           <button
