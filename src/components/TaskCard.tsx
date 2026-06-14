@@ -34,7 +34,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const { updateTaskStatus, addCollaborator, removeCollaborator } = useTaskStore();
   const { getProjectById } = useProjectStore();
-  const assignableMembers = useUserStore((s) => s.assignableMembers);
+  const { assignableMembers, canViewAllTasks } = useUserStore();
+  const canComplete = canViewAllTasks();
   const project = task.projectId ? getProjectById(task.projectId) : null;
 
   // Resolve the assigned user name from assignableMembers
@@ -154,29 +155,40 @@ export const TaskCard: React.FC<TaskCardProps> = ({
               'border border-gray-200 dark:border-slate-700',
               'rounded-lg shadow-xl overflow-hidden'
             )}>
-              {statusOptions.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    updateTaskStatus(task.id, option.value);
-                    setShowStatusMenu(false);
-                  }}
-                  className={clsx(
-                    'w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2',
-                    'transition-colors',
-                    task.status === option.value
-                      ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300'
-                      : 'text-gray-600 hover:bg-gray-50 dark:text-slate-300 dark:hover:bg-slate-700/50'
-                  )}
-                >
-                  <span className={clsx('w-2 h-2 rounded-full', option.color)} />
-                  {option.label}
-                  {task.status === option.value && (
-                    <span className="ml-auto text-purple-500">&check;</span>
-                  )}
-                </button>
-              ))}
+              {statusOptions.map((option) => {
+                const locked = option.value === 'completed' && !canComplete;
+                return (
+                  <button
+                    key={option.value}
+                    disabled={locked}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (locked) return;
+                      updateTaskStatus(task.id, option.value);
+                      setShowStatusMenu(false);
+                    }}
+                    title={locked ? 'Requires manager or admin approval' : undefined}
+                    className={clsx(
+                      'w-full px-3 py-2 text-left text-xs font-medium flex items-center gap-2',
+                      'transition-colors',
+                      locked
+                        ? 'text-gray-300 dark:text-slate-600 cursor-not-allowed'
+                        : task.status === option.value
+                          ? 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300'
+                          : 'text-gray-600 hover:bg-gray-50 dark:text-slate-300 dark:hover:bg-slate-700/50'
+                    )}
+                  >
+                    <span className={clsx('w-2 h-2 rounded-full', locked ? 'bg-gray-200 dark:bg-slate-600' : option.color)} />
+                    {option.label}
+                    {locked
+                      ? <span className="ml-auto text-[9px] text-gray-300 dark:text-slate-600">manager only</span>
+                      : task.status === option.value
+                        ? <span className="ml-auto text-purple-500">&check;</span>
+                        : null
+                    }
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
