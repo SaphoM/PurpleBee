@@ -46,7 +46,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Task completion triggers `task-completed` notification to the task creator (live mode)
 - **Announcement & team channels visible to all team members** — new members are auto-joined to all `announcement` and `team` type channels on login, so they immediately see all historical messages regardless of when the channel was created
 - **Drag task to chat** — drag any task card from the Kanban board onto a docked chat window or bubble to attach it; a rich task card preview (title, status, priority, progress bar, subtask count, project name) appears in the input area; type an optional comment anchored to the card and send — the task card renders inline at the top of the message bubble with the comment below it, identical in style to the Kanban card
-- Task card attachments persist to Supabase via `task_ref JSONB` column on the `messages` table; hydrated on load so the card renders correctly after a page refresh in live mode
+- Task card attachments persist to Supabase via `task_ref JSONB` column on the `messages` table; hydrated on load so the card renders correctly after a page refresh — both in docked chat windows and in the full Chat page conversation view
 
 ### Global Search
 - TopBar search bar filters content across every page in real-time
