@@ -1008,7 +1008,7 @@ export const inviteDb = {
     }
 
     // Apply the pre-assigned department from the invite to the new member's profile
-    if (invite.department && invite.department !== 'General') {
+    if (invite.department) {
       await supabase!
         .from('profiles')
         .update({ department: invite.department })

@@ -9,6 +9,7 @@ interface InviteData {
   token: string;
   email: string | null;
   role: string;
+  department: string | null;
   status: string;
   expires_at: string;
   teams: { name: string } | null;
@@ -145,9 +146,14 @@ export const InviteAcceptPage: React.FC<{ token: string }> = ({ token }) => {
         <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-2">
           You're invited to {teamName}
         </h2>
-        <p className="text-gray-500 dark:text-slate-400 mb-6">
+        <p className="text-gray-500 dark:text-slate-400 mb-2">
           {inviterName} invited you to join as a <span className="font-semibold capitalize">{invite?.role}</span>.
         </p>
+        {invite?.department && (
+          <p className="text-sm text-gray-400 dark:text-slate-500 mb-6">
+            Department: <span className="font-medium text-gray-600 dark:text-slate-300">{invite.department}</span>
+          </p>
+        )}
 
         {accepting ? (
           <div className="flex items-center justify-center gap-2 py-3 text-purple-600 dark:text-purple-400">
