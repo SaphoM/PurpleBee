@@ -63,7 +63,16 @@ const departmentConfig: Record<string, { color: string; bg: string }> = {
   'Design': { color: 'text-purple-700 dark:text-purple-300', bg: 'bg-purple-50 dark:bg-purple-900/20' },
   'Product': { color: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
   'QA': { color: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-50 dark:bg-amber-900/20' },
+  'DevOps': { color: 'text-cyan-700 dark:text-cyan-300', bg: 'bg-cyan-50 dark:bg-cyan-900/20' },
+  'Marketing': { color: 'text-pink-700 dark:text-pink-300', bg: 'bg-pink-50 dark:bg-pink-900/20' },
+  'Operations': { color: 'text-orange-700 dark:text-orange-300', bg: 'bg-orange-50 dark:bg-orange-900/20' },
+  'General': { color: 'text-gray-700 dark:text-slate-300', bg: 'bg-gray-50 dark:bg-slate-700/30' },
 };
+
+const DEPARTMENTS = [
+  'General', 'Engineering', 'Design', 'Product', 'QA',
+  'DevOps', 'Marketing', 'Operations',
+];
 
 const mockExtendedData: Record<string, { department: string; title: string; joinedDate: Date; email: string }> = {
   'user-1': { department: 'Product', title: 'Product Lead', joinedDate: new Date('2024-01-15'), email: 'sapho@xspark.co.za' },
@@ -88,6 +97,7 @@ const StatPill: React.FC<{ icon: React.ReactNode; value: number | string; label:
 const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'user' | 'admin'>('user');
+  const [departments, setDepartments] = useState<string[]>(['General']);
   const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -95,6 +105,16 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState(false);
   const { user } = useUserStore();
+
+  const toggleDepartment = (dept: string) => {
+    setDepartments((prev) =>
+      prev.includes(dept)
+        ? prev.length === 1 ? prev : prev.filter((d) => d !== dept) // keep at least one
+        : [...prev, dept]
+    );
+  };
+
+  const departmentValue = departments.join(', ');
 
   // Dynamic invite link
   const inviteLink = linkToken
@@ -127,7 +147,7 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
 
     try {
       const team = await ensureTeam();
-      const invite = await inviteDb.create(team.team_id, user.id, role, email);
+      const invite = await inviteDb.create(team.team_id, user.id, role, email, departmentValue);
       if (!invite) {
         setError('Failed to create invite. Please try again.');
         setSending(false);
@@ -161,7 +181,7 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
 
     try {
       const team = await ensureTeam();
-      const invite = await inviteDb.create(team.team_id, user.id, role);
+      const invite = await inviteDb.create(team.team_id, user.id, role, undefined, departmentValue);
       if (!invite) {
         setError('Failed to generate link.');
         setGeneratingLink(false);
@@ -201,8 +221,8 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
             </div>
           )}
 
-          {/* Email invite */}
-          <div className="mb-5">
+          {/* Email + role row */}
+          <div className="mb-4">
             <label className="block text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">
               Email Address
             </label>
@@ -234,6 +254,40 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
                 <option value="admin">Admin</option>
               </select>
             </div>
+          </div>
+
+          {/* Department selector */}
+          <div className="mb-5">
+            <label className="block text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+              Department
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {DEPARTMENTS.map((dept) => {
+                const active = departments.includes(dept);
+                const style = departmentConfig[dept];
+                return (
+                  <button
+                    key={dept}
+                    type="button"
+                    onClick={() => toggleDepartment(dept)}
+                    className={clsx(
+                      'px-2.5 py-1 rounded-full text-xs font-medium transition-all border',
+                      active
+                        ? clsx(style?.bg, style?.color, 'border-current shadow-sm')
+                        : 'bg-gray-50 text-gray-400 border-gray-200 hover:border-gray-300 dark:bg-slate-700/30 dark:text-slate-500 dark:border-slate-600 dark:hover:border-slate-500'
+                    )}
+                  >
+                    {active && <span className="mr-1">✓</span>}
+                    {dept}
+                  </button>
+                );
+              })}
+            </div>
+            {departments.length > 0 && (
+              <p className="mt-1.5 text-[10px] text-gray-400 dark:text-slate-500">
+                Assigned to: <span className="font-medium text-gray-600 dark:text-slate-300">{departmentValue}</span>
+              </p>
+            )}
           </div>
 
           <button

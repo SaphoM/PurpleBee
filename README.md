@@ -48,7 +48,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Projects persist to Supabase for real users
 
 ### Team Collaboration
-- Team invite system (magic link email + shareable URL)
+- Team invite system (magic link email + shareable URL) — when inviting a member, the Admin selects one or more departments (General, Engineering, Design, Product, QA, DevOps, Marketing, Operations); the selection is stored on the invite record and applied to the new member's profile when they accept; multiple departments are stored as a comma-separated string (e.g. `"General, DevOps"`)
 - Role-based access control (Admin, Manager, User)
 - **Edit team members** — Admin/Manager can update name, job title, department, and role; persists to `profiles` + `team_members` in live mode
 - In-app team chat with docked chat windows
