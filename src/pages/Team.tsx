@@ -30,6 +30,7 @@ import {
   ShieldCheck,
   ShieldOff,
   Pencil,
+  Plus,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@components/Card';
 import { useChatStore } from '@stores/chatStore';
@@ -330,7 +331,7 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
                   onClick={() => setAddingCustom(true)}
                   className="flex items-center gap-0.5 px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-500 dark:border-slate-600 dark:text-slate-500 transition-all"
                 >
-                  <span className="text-sm leading-none">+</span>
+                  <Plus size={12} />
                 </button>
               )}
             </div>
