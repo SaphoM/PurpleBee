@@ -377,9 +377,15 @@ export const Chat: React.FC = () => {
   const activeConversation = useChatStore((s) => s.conversations.find((c) => c.id === s.activeConversationId));
   const activeMessages = activeConversationId ? getConversationMessages(activeConversationId) : [];
 
+  // Scroll to bottom whenever new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeMessages.length]);
+
+  // Jump to bottom instantly when switching conversations
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+  }, [activeConversationId]);
 
   // Close reaction picker on click outside
   useEffect(() => {
