@@ -144,6 +144,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const { updateTask, deleteTask } = useTaskStore();
   const { getProjectById } = useProjectStore();
   const { assignableMembers, user } = useUserStore();
+  const canComplete = user?.role === 'admin' || user?.role === 'manager';
   const project = task?.projectId ? getProjectById(task.projectId) : null;
 
   // Resolve assignee: check assignableMembers first, fall back to current user if id matches
@@ -181,10 +182,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const subtasksCompleted = task.subtasks?.filter((s) => s.completed).length ?? 0;
   const subtasksTotal = task.subtasks?.length ?? 0;
 
-  // Derive task status from progress percentage
+  // Derive task status from progress percentage.
+  // Regular members cap at 'review' — only admin/manager can mark completed.
   const getStatusFromProgress = (progress: number): TaskStatus => {
     if (progress === 0) return 'todo';
-    if (progress >= 100) return 'completed';
+    if (progress >= 100) return canComplete ? 'completed' : 'review';
     if (progress >= 75) return 'review';
     return 'in-progress';
   };
@@ -228,7 +230,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   };
 
   const handleStatusChange = (newStatus: TaskStatus) => {
-    // When manually changing status, set progress to match
+    // Regular members cannot mark a task completed — requires manager/admin approval
+    if (newStatus === 'completed' && !canComplete) return;
     let progress = task.progress;
     if (newStatus === 'completed') progress = 100;
     else if (newStatus === 'todo') progress = 0;
@@ -1175,7 +1178,13 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 )}
               >
                 {statusConfig.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
+                  <option
+                    key={s.value}
+                    value={s.value}
+                    disabled={s.value === 'completed' && !canComplete}
+                  >
+                    {s.value === 'completed' && !canComplete ? `${s.label} (manager approval required)` : s.label}
+                  </option>
                 ))}
               </select>
             </div>

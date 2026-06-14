@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 import { TaskStatus, Task } from '@/types/index';
 import { TaskCard } from './TaskCard';
-import { Plus, MoreVertical, ChevronDown } from 'lucide-react';
+import { Plus, MoreVertical, ChevronDown, Lock } from 'lucide-react';
 import { useTaskStore } from '@stores/taskStore';
 import { useUserStore } from '@stores/userStore';
 import { useUIStore } from '@stores/uiStore';
@@ -32,6 +32,8 @@ interface KanbanColumnProps {
   /** When true, renders a collapsible mobile-style column */
   mobile?: boolean;
   defaultOpen?: boolean;
+  /** When true, dropping into this column is disabled (e.g. Completed column for regular members) */
+  isDropDisabled?: boolean;
 }
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({
@@ -41,6 +43,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   onTaskClick,
   mobile = false,
   defaultOpen = false,
+  isDropDisabled = false,
 }) => {
   const config = statusConfig[status];
   const [open, setOpen] = useState(defaultOpen);
@@ -107,6 +110,12 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300">
             {tasks.length}
           </span>
+          {isDropDisabled && (
+            <span className="flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full">
+              <Lock size={9} />
+              Manager approval required
+            </span>
+          )}
         </div>
         <button className="p-1 hover:bg-gray-100 dark:hover:bg-slate-800 rounded transition-colors text-gray-400 dark:text-slate-400">
           <MoreVertical size={16} />
@@ -114,16 +123,18 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       </div>
 
       {/* Droppable Column */}
-      <Droppable droppableId={status}>
+      <Droppable droppableId={status} isDropDisabled={isDropDisabled}>
         {(provided, snapshot) => (
           <div
             ref={provided.innerRef}
             {...provided.droppableProps}
             className={clsx(
               'flex-1 space-y-3 pb-4 min-h-[500px] rounded-lg p-3 transition-colors duration-200',
-              snapshot.isDraggingOver
+              snapshot.isDraggingOver && !isDropDisabled
                 ? 'bg-purple-50/50 dark:bg-purple-900/10 ring-2 ring-purple-300 dark:ring-purple-700 ring-dashed'
-                : 'bg-gray-100/50 dark:bg-slate-800/20'
+                : isDropDisabled
+                  ? 'bg-gray-100/50 dark:bg-slate-800/20 opacity-60'
+                  : 'bg-gray-100/50 dark:bg-slate-800/20'
             )}
           >
             {tasks.length === 0 && !snapshot.isDraggingOver ? (
@@ -186,6 +197,7 @@ interface KanbanBoardProps {
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick }) => {
   const { getTasksByStatus, getTasksForUser, moveTask } = useTaskStore();
   const { canViewAllTasks, getEffectiveUserId } = useUserStore();
+  const canComplete = canViewAllTasks();
   const globalSearchQuery = useUIStore((s) => s.globalSearchQuery);
   const taskOwnerFilter = useUIStore((s) => s.taskOwnerFilter);
 
@@ -245,6 +257,9 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick
       return;
     }
 
+    // Regular members cannot move tasks to Completed — requires manager/admin approval
+    if (destination.droppableId === 'completed' && !canComplete) return;
+
     moveTask(
       draggableId,
       destination.droppableId as TaskStatus,
@@ -265,6 +280,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick
             onTaskClick={onTaskClick}
             mobile
             defaultOpen={i === 0}
+            isDropDisabled={status === 'completed' && !canComplete}
           />
         ))}
       </div>
@@ -278,6 +294,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick
             tasks={getColumnTasks(status)}
             onAddTask={() => handleAddTask(status)}
             onTaskClick={onTaskClick}
+            isDropDisabled={status === 'completed' && !canComplete}
           />
         ))}
       </div>

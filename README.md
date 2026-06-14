@@ -10,8 +10,9 @@ A modern, enterprise-grade productivity management platform with advanced task m
 ### Task Management
 - Multi-level priorities (Low, Medium, High, Urgent)
 - Status tracking (To Do, In Progress, Review, Completed)
-- Progress visualization (0-100%) — auto-updates when a task is dragged between Kanban columns (completed → 100%, review → 75%, in-progress → 10%, todo → 0%)
+- Progress visualization (0-100%) — auto-updates when a task is dragged between Kanban columns (completed → 100%, review → 75%, in-progress → 10%, todo → 0%); regular members cap at 75% / Review status until a manager or admin approves completion
 - Drag-and-drop Kanban — column changes persist to Supabase immediately in live mode; mock mode updates Zustand in-memory state
+- **Completion approval gate** — regular members (`role: 'user'`) cannot drag tasks to the Completed column, change status to Completed in the task detail modal, or reach Completed status via the progress slider/subtask completion; the Completed column shows a "Manager approval required" lock badge for restricted users; only Admin and Manager roles can mark tasks as completed
 - Recurring tasks with customizable patterns
 - Subtasks (Mini Tasks) with inline add — the `+` button highlights purple as soon as text is entered, providing clear visual feedback before confirming
 - Mini tasks persist to Supabase `subtasks` table in live mode; loaded alongside parent tasks on hydration; completion ratio drives the task progress bar (completed ÷ total × 100)
