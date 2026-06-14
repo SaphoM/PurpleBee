@@ -10,11 +10,22 @@ A modern, enterprise-grade productivity management platform with advanced task m
 ### Task Management
 - Multi-level priorities (Low, Medium, High, Urgent)
 - Status tracking (To Do, In Progress, Review, Completed)
-- Progress visualization (0-100%) — auto-updates when a task is dragged between Kanban columns (completed → 100%, review → 75%, in-progress → 10%, todo → 0%); regular members cap at 75% / Review status until a manager or admin approves completion
+- Progress visualization (0–100%) — auto-updates when a task is dragged between Kanban columns: `completed → 100%`, `review → 75%`, `in-progress → 10%`, `todo → 0%`
 - Drag-and-drop Kanban — column changes persist to Supabase immediately in live mode; mock mode updates Zustand in-memory state
-- **Completion approval gate** — regular members (`role: 'user'`) cannot mark a task as completed through any path: drag-to-Completed column (blocked + `isDropDisabled` on the Droppable), the inline status dropdown on the task card (Completed option is `disabled` with a "manager only" label), the status picker in the task detail modal (Completed option disabled with explanation text), or via the progress slider/subtask completion (status caps at Review even at 100%); the Completed column header shows a lock badge ("Manager approval required") for restricted users; only Admin and Manager roles can mark tasks as completed; applies in both mock/sample data mode and live Supabase mode
+- **Completion approval gate** — regular members (`role: 'user'`) cannot mark a task as completed through any path. Every entry point is blocked:
+
+  | Path | Enforcement |
+  |---|---|
+  | Drag card to Completed column | `handleDragEnd` returns early; `isDropDisabled` on the Droppable |
+  | Inline status dropdown on task card | Completed option is `disabled` with a "manager only" label |
+  | Status picker in task detail modal | Completed option disabled with explanation text |
+  | Progress slider / subtask completion | `getStatusFromProgress` caps at Review even at 100% |
+
+  The Completed column header shows a lock badge ("Manager approval required") for restricted users. Only Admin and Manager roles can mark tasks as completed. Applies in both mock/sample data mode and live Supabase mode.
+
 - Recurring tasks with customizable patterns
 - Subtasks (Mini Tasks) with inline add — the `+` button highlights purple as soon as text is entered, providing clear visual feedback before confirming
+- **Completed subtask reveal** — completed subtasks show with a strikethrough in a green container row; hovering (or touch-holding on mobile) the entire green row temporarily reveals the unstruckthrough text so it can be read; the hover area covers the full container, not just the text
 - Mini tasks persist to Supabase `subtasks` table in live mode; loaded alongside parent tasks on hydration; completion ratio drives the task progress bar (completed ÷ total × 100)
 - File attachments
 - Time estimation and tracking
@@ -22,10 +33,10 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - `createdBy` stamped on every new task; hydrated from `created_by` DB column on load
 
 ### Multiple View Modes
-- **Kanban Board** - Drag-and-drop task management
-- **List View** - Traditional task list with filtering
-- **Calendar View** - Deadline visualization
-- **Timeline View** - Project timeline
+- **Kanban Board** — Drag-and-drop task management
+- **List View** — Traditional task list with filtering
+- **Calendar View** — Deadline visualization
+- **Timeline View** — Project timeline
 
 ### Project Management
 - Project templates (Web App, Mobile, Marketing, API, Design System, Training, Services, Custom)
@@ -46,7 +57,8 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Chat messages trigger `mention` notifications to all other conversation participants (live mode)
 - Task completion triggers `task-completed` notification to the task creator (live mode)
 - **Announcement & team channels visible to all team members** — new members are auto-joined to all `announcement` and `team` type channels on login, so they immediately see all historical messages regardless of when the channel was created
-- **Drag task to chat** — drag any task card from the Kanban board onto a docked chat window or bubble to attach it; a rich task card preview (title, status, priority, progress bar, subtask count, project name) appears in the input area; type an optional comment anchored to the card and send — the task card renders inline at the top of the message bubble with the comment below it, identical in style to the Kanban card
+- **Drag task to chat** — drag any task card from the Kanban board onto a docked chat window or bubble to attach it; a rich task card preview (title, status, priority, progress bar, subtask count, project name) appears in the input area; type an optional comment anchored to the card and send — the task card renders inline at the top of the message bubble with the comment below it
+- **Task card visual styling in chat** — received task card bubbles use a light fresh green gradient (`from-emerald-50 to-white`); sent (isMe) task cards use a solid emerald-700 green covering the left 55% fading to transparent so the card reads as green against the purple bubble with legible white text
 - Task card attachments persist to Supabase via `task_ref JSONB` column on the `messages` table; hydrated on load so the card renders correctly after a page refresh — both in docked chat windows and in the full Chat page conversation view
 - **Message actions (long-press or right-click)** — hold any message bubble to reveal the context menu: **Reply** (quoted reply banner above input; sent bubble shows original sender + preview with purple left-border), **Forward** (conversation picker), **Copy** (clipboard), **Edit** (inline text input, persisted to DB; "edited" label shown), **Info** (timestamp tooltip), **Star** (amber ★ marker), **Delete** (soft-delete — bubble shows "Message deleted"; `is_deleted` persisted to DB), **More…** (extensible)
 
@@ -121,6 +133,17 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 
 ### Context injection (no circular deps)
 `userStore` injects `userId`/`teamId`/`userName` into `taskStore` and `projectStore` via exported setter functions (`setTaskUserContext`, `setProjectUserContext`) — avoids the `require()` pattern which is not available in Vite's ESM browser runtime.
+
+## Role-Based Access Control
+
+| Capability | Admin | Manager | Member |
+|---|:---:|:---:|:---:|
+| View all tasks | ✅ | ✅ | Own only |
+| Mark task as Completed | ✅ | ✅ | ❌ |
+| Invite team members | ✅ | ❌ | ❌ |
+| Edit team member profiles | ✅ | ✅ | ❌ |
+| Edit / delete projects | ✅ | ✅ | ❌ |
+| View As another member | ✅ | ✅ | ❌ |
 
 ## Quick Start
 
