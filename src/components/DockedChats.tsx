@@ -15,12 +15,17 @@ import {
   File,
   Download,
   SmilePlus,
+  CornerUpLeft,
+  Star,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import { useChatStore } from '@stores/chatStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
-import { ConversationType, Attachment, TaskRef } from '@/types/index';
+import { ConversationType, Attachment, TaskRef, ReplyRef, ChatMessage } from '@/types/index';
 import TaskRefCard from '@components/TaskRefCard';
+import MessageContextMenu from '@components/MessageContextMenu';
 import { format, isToday, isYesterday } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -81,7 +86,11 @@ const formatTime = (date: Date) => {
 
 // Single docked mini chat window
 const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId }) => {
-  const { conversations, getConversationMessages, sendMessage, toggleReaction, undockChat, currentUserId } = useChatStore();
+  const {
+    conversations, getConversationMessages, sendMessage,
+    editMessage, deleteMessage, starMessage, forwardMessage,
+    toggleReaction, undockChat, currentUserId,
+  } = useChatStore();
   const tasks = useTaskStore((s) => s.tasks);
   const { getProjectById } = useProjectStore();
   const [isExpanded, setIsExpanded] = useState(true);
@@ -92,11 +101,18 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
   const [pendingTaskRef, setPendingTaskRef] = useState<TaskRef | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ msg: ChatMessage; x: number; y: number } | null>(null);
+  const [pendingReply, setPendingReply] = useState<ChatMessage | null>(null);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
+  const [infoMsgId, setInfoMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reactionBtnRef = useRef<HTMLButtonElement>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const conv = conversations.find((c) => c.id === conversationId);
   const messages = getConversationMessages(conversationId);
@@ -190,17 +206,41 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
   const displayName = conv.name;
   const isOnline = otherParticipant?.online ?? false;
 
+  const startLongPress = (msg: ChatMessage, e: React.MouseEvent | React.TouchEvent) => {
+    const x = 'clientX' in e ? e.clientX : e.touches[0].clientX;
+    const y = 'clientY' in e ? e.clientY : e.touches[0].clientY;
+    longPressTimer.current = setTimeout(() => setContextMenu({ msg, x, y }), 500);
+  };
+  const cancelLongPress = () => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  };
+  const handleMsgContextMenu = (msg: ChatMessage, e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ msg, x: e.clientX, y: e.clientY });
+  };
+
+  const confirmEdit = (msgId: string) => {
+    if (editingText.trim()) editMessage(conversationId, msgId, editingText);
+    setEditingMsgId(null);
+    setEditingText('');
+  };
+
   const handleSend = () => {
     if (!input.trim() && pendingAttachments.length === 0 && !pendingTaskRef) return;
+    const replyTo: ReplyRef | undefined = pendingReply
+      ? { id: pendingReply.id, text: pendingReply.text, senderName: pendingReply.senderName, taskRef: pendingReply.taskRef }
+      : undefined;
     sendMessage(
       conversationId,
       input,
       pendingAttachments.length > 0 ? pendingAttachments : undefined,
       pendingTaskRef ?? undefined,
+      replyTo,
     );
     setInput('');
     setPendingAttachments([]);
     setPendingTaskRef(null);
+    setPendingReply(null);
   };
 
   return (
@@ -280,20 +320,66 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
               messages.map((msg) => {
                 const isMe = msg.senderId === currentUserId;
                 const reactions = msg.reactions || [];
+                const isEditing = editingMsgId === msg.id;
                 return (
                   <div key={msg.id} className={clsx('flex gap-1.5 group/msg', isMe && 'flex-row-reverse')}>
                     <img src={msg.senderAvatar} alt="" className="w-5 h-5 rounded-full flex-shrink-0 mt-0.5" />
                     <div className={clsx('max-w-[75%] relative')}>
-                      <div className={clsx(
-                        'rounded-xl text-xs leading-relaxed overflow-hidden',
-                        isMe
-                          ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-tr-sm'
-                          : 'bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-slate-200 rounded-tl-sm'
-                      )}>
+                      <div
+                        className={clsx(
+                          'rounded-xl text-xs leading-relaxed overflow-hidden select-none',
+                          isMe
+                            ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-tr-sm'
+                            : 'bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-slate-200 rounded-tl-sm',
+                          msg.isDeleted && 'opacity-60'
+                        )}
+                        onMouseDown={(e) => !msg.isDeleted && startLongPress(msg, e)}
+                        onMouseUp={cancelLongPress}
+                        onMouseLeave={cancelLongPress}
+                        onContextMenu={(e) => !msg.isDeleted && handleMsgContextMenu(msg, e)}
+                        onTouchStart={(e) => !msg.isDeleted && startLongPress(msg, e)}
+                        onTouchEnd={cancelLongPress}
+                      >
+                        {/* Reply quote */}
+                        {msg.replyTo && !msg.isDeleted && (
+                          <div className={clsx(
+                            'px-2.5 pt-1.5 pb-1 border-b border-l-2',
+                            isMe
+                              ? 'border-white/30 border-l-white/50 bg-white/10'
+                              : 'border-gray-200 dark:border-slate-700 border-l-purple-400 bg-gray-50 dark:bg-slate-900/60'
+                          )}>
+                            <p className={clsx('text-[9px] font-semibold truncate', isMe ? 'text-purple-200' : 'text-purple-500 dark:text-purple-400')}>
+                              {msg.replyTo.senderName}
+                            </p>
+                            <p className={clsx('text-[9px] truncate mt-0.5 opacity-80', isMe ? 'text-white' : 'text-gray-600 dark:text-slate-400')}>
+                              {msg.replyTo.taskRef ? `📋 ${msg.replyTo.taskRef.title}` : msg.replyTo.text || '—'}
+                            </p>
+                          </div>
+                        )}
                         {/* Task card attachment */}
-                        {msg.taskRef && <TaskRefCard taskRef={msg.taskRef} isMe={isMe} />}
+                        {msg.taskRef && !msg.isDeleted && <TaskRefCard taskRef={msg.taskRef} isMe={isMe} />}
                         <div className="px-2.5 py-1.5">
-                        {msg.text}
+                        {msg.isDeleted ? (
+                          <span className="italic opacity-60 text-[10px]">Message deleted</span>
+                        ) : isEditing ? (
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              autoFocus
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') confirmEdit(msg.id); if (e.key === 'Escape') { setEditingMsgId(null); setEditingText(''); } }}
+                              className="flex-1 bg-transparent border-b border-white/50 outline-none text-xs"
+                            />
+                            <button onClick={() => confirmEdit(msg.id)} className="p-0.5 rounded-full bg-white/20 hover:bg-white/30">
+                              <Check size={10} />
+                            </button>
+                          </div>
+                        ) : (
+                          <span>
+                            {msg.text}
+                            {msg.starred && <Star size={8} className="inline ml-1 fill-amber-400 text-amber-400" />}
+                          </span>
+                        )}
                         {msg.attachments && msg.attachments.length > 0 && (
                           <div className="space-y-1">
                             {msg.attachments.map((att) => {
@@ -324,6 +410,22 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                         )}
                         </div>{/* closes px-2.5 py-1.5 text content wrapper */}
                       </div>
+                      {/* Edited label */}
+                      {msg.editedAt && !msg.isDeleted && (
+                        <p className={clsx('text-[8px] mt-0.5 opacity-50', isMe ? 'text-right' : 'text-left')}>edited</p>
+                      )}
+                      {/* Info overlay */}
+                      {infoMsgId === msg.id && (
+                        <div
+                          className={clsx(
+                            'absolute -top-7 px-2 py-1 rounded-lg text-[9px] shadow-lg bg-gray-800 dark:bg-slate-700 text-white whitespace-nowrap z-10',
+                            isMe ? 'right-0' : 'left-0'
+                          )}
+                          onClick={() => setInfoMsgId(null)}
+                        >
+                          {format(new Date(msg.timestamp), 'MMM d, yyyy · h:mm a')} · {msg.senderName}
+                        </div>
+                      )}
                       {/* Reaction button */}
                       <button
                         ref={reactionPickerMsgId === msg.id ? reactionBtnRef : undefined}
@@ -361,8 +463,65 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Context menu */}
+          {contextMenu && (
+            <MessageContextMenu
+              x={contextMenu.x}
+              y={contextMenu.y}
+              isMe={contextMenu.msg.senderId === currentUserId}
+              isDeleted={contextMenu.msg.isDeleted}
+              starred={contextMenu.msg.starred}
+              onReply={() => { setPendingReply(contextMenu.msg); setTimeout(() => inputRef.current?.focus(), 50); }}
+              onForward={() => setForwardMsg(contextMenu.msg)}
+              onCopy={() => navigator.clipboard.writeText(contextMenu.msg.text)}
+              onEdit={() => { setEditingMsgId(contextMenu.msg.id); setEditingText(contextMenu.msg.text); }}
+              onInfo={() => setInfoMsgId(infoMsgId === contextMenu.msg.id ? null : contextMenu.msg.id)}
+              onStar={() => starMessage(conversationId, contextMenu.msg.id)}
+              onDelete={() => deleteMessage(conversationId, contextMenu.msg.id)}
+              onMore={() => {}}
+              onClose={() => setContextMenu(null)}
+            />
+          )}
+
+          {/* Forward modal */}
+          {forwardMsg && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 rounded-2xl" onClick={() => setForwardMsg(null)}>
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-56 p-3" onClick={(e) => e.stopPropagation()}>
+                <p className="text-xs font-semibold text-gray-700 dark:text-slate-200 mb-2">Forward to…</p>
+                <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                  {conversations.filter((c) => c.id !== conversationId).map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => { forwardMessage(conversationId, forwardMsg.id, c.id); setForwardMsg(null); }}
+                      className="flex items-center gap-2 w-full px-2 py-1.5 rounded-lg text-xs text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700"
+                    >
+                      <span className="w-5 h-5 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-[9px] font-bold text-purple-600 flex-shrink-0">
+                        {c.name.charAt(0).toUpperCase()}
+                      </span>
+                      <span className="truncate">{c.name}</span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setForwardMsg(null)} className="mt-2 w-full text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">Cancel</button>
+              </div>
+            </div>
+          )}
+
           {/* Input */}
           <div className="px-2.5 py-2 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex-shrink-0">
+            {/* Reply banner */}
+            {pendingReply && (
+              <div className="mb-1.5 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-50 dark:bg-slate-800/80 border border-gray-200 dark:border-slate-700">
+                <CornerUpLeft size={9} className="text-purple-500 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[8px] font-semibold text-purple-500 dark:text-purple-400 truncate">{pendingReply.senderName}</p>
+                  <p className="text-[9px] text-gray-500 dark:text-slate-400 truncate">
+                    {pendingReply.taskRef ? `📋 ${pendingReply.taskRef.title}` : pendingReply.text}
+                  </p>
+                </div>
+                <button onClick={() => setPendingReply(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0"><X size={9} /></button>
+              </div>
+            )}
             {/* Pending task attachment preview */}
             {pendingTaskRef && (
               <div className="mb-1.5 rounded-xl border border-purple-200 dark:border-purple-700/50 bg-purple-50 dark:bg-purple-900/20 overflow-hidden">

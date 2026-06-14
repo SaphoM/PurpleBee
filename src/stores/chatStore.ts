@@ -279,7 +279,11 @@ interface ChatStore {
   setActiveConversation: (id: string | null) => void;
   setFilterCategory: (category: ConversationType | 'all') => void;
   setSearchQuery: (query: string) => void;
-  sendMessage: (conversationId: string, text: string, attachments?: import('@/types/index').Attachment[], taskRef?: import('@/types/index').TaskRef) => void;
+  sendMessage: (conversationId: string, text: string, attachments?: import('@/types/index').Attachment[], taskRef?: import('@/types/index').TaskRef, replyTo?: import('@/types/index').ReplyRef) => void;
+  editMessage: (conversationId: string, messageId: string, newText: string) => void;
+  deleteMessage: (conversationId: string, messageId: string) => void;
+  starMessage: (conversationId: string, messageId: string) => void;
+  forwardMessage: (fromConversationId: string, messageId: string, toConversationId: string) => void;
   toggleReaction: (conversationId: string, messageId: string, emoji: string) => void;
   getConversationMessages: (conversationId: string) => ChatMessage[];
   getFilteredConversations: () => Conversation[];
@@ -366,7 +370,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setSearchQuery: (query) => set({ searchQuery: query }),
 
-  sendMessage: (conversationId, text, attachments, taskRef) => {
+  sendMessage: (conversationId, text, attachments, taskRef, replyTo) => {
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0) && !taskRef) return;
 
@@ -383,6 +387,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       readBy: [currentUserId],
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
       ...(taskRef ? { taskRef } : {}),
+      ...(replyTo ? { replyTo } : {}),
     };
 
     // Persist to the shared seed data so other users see it on login (in-memory)
@@ -415,7 +420,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId);
     const mock = isMockMode() || !isUuid;
     chatDb.sendMessage(
-      { id: newMessage.id, conversationId, senderId: currentUserId, text: trimmed, taskRef: taskRef ?? undefined },
+      { id: newMessage.id, conversationId, senderId: currentUserId, text: trimmed, taskRef: taskRef ?? undefined, replyTo: replyTo ?? undefined },
       mock
     );
     if (attachments && attachments.length > 0) {
@@ -493,6 +498,55 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // DB persistence (fire-and-forget)
     const convIsUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId);
     chatDb.toggleReaction(messageId, currentUserId, emoji, !isRemoving, isMockMode() || !convIsUuid);
+  },
+
+  editMessage: (conversationId, messageId, newText) => {
+    const trimmed = newText.trim();
+    if (!trimmed) return;
+    const editedAt = new Date();
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [conversationId]: (state.messages[conversationId] || []).map((m) =>
+          m.id === messageId ? { ...m, text: trimmed, editedAt } : m
+        ),
+      },
+    }));
+    seedMessages[conversationId] = get().messages[conversationId] || [];
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(messageId);
+    chatDb.editMessage(messageId, trimmed, isMockMode() || !isUuid);
+  },
+
+  deleteMessage: (conversationId, messageId) => {
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [conversationId]: (state.messages[conversationId] || []).map((m) =>
+          m.id === messageId ? { ...m, isDeleted: true } : m
+        ),
+      },
+    }));
+    seedMessages[conversationId] = get().messages[conversationId] || [];
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(messageId);
+    chatDb.deleteMessage(messageId, isMockMode() || !isUuid);
+  },
+
+  starMessage: (conversationId, messageId) => {
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [conversationId]: (state.messages[conversationId] || []).map((m) =>
+          m.id === messageId ? { ...m, starred: !m.starred } : m
+        ),
+      },
+    }));
+    seedMessages[conversationId] = get().messages[conversationId] || [];
+  },
+
+  forwardMessage: (fromConversationId, messageId, toConversationId) => {
+    const msg = (get().messages[fromConversationId] || []).find((m) => m.id === messageId);
+    if (!msg || msg.isDeleted) return;
+    get().sendMessage(toConversationId, msg.text, msg.attachments, msg.taskRef);
   },
 
   getConversationMessages: (conversationId) => {
@@ -863,6 +917,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           })),
           reactions: aggregateReactions(m.reactions || []),
           ...(m.task_ref ? { taskRef: m.task_ref } : {}),
+          ...(m.reply_to ? { replyTo: m.reply_to } : {}),
+          ...(m.edited_at ? { editedAt: new Date(m.edited_at) } : {}),
+          ...(m.is_deleted ? { isDeleted: true } : {}),
         }));
 
         msgs[dbConv.id] = chatMessages;

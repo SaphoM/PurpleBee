@@ -466,7 +466,14 @@ export const chatDb = {
 
   /** Send a message — returns the inserted row's id */
   async sendMessage(
-    msg: { id: string; conversationId: string; senderId: string; text: string; taskRef?: import('@/types/index').TaskRef },
+    msg: {
+      id: string;
+      conversationId: string;
+      senderId: string;
+      text: string;
+      taskRef?: import('@/types/index').TaskRef;
+      replyTo?: import('@/types/index').ReplyRef;
+    },
     mockMode?: boolean
   ): Promise<boolean> {
     if (!shouldPersist(mockMode)) return true;
@@ -476,14 +483,36 @@ export const chatDb = {
       sender_id: msg.senderId,
       text: msg.text,
       ...(msg.taskRef ? { task_ref: msg.taskRef } : {}),
+      ...(msg.replyTo ? { reply_to: msg.replyTo } : {}),
     });
     if (error) { console.error('[dataService] chat.sendMessage', error); return false; }
 
-    // Update conversation's updated_at timestamp
     await supabase!.from('conversations')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', msg.conversationId);
 
+    return true;
+  },
+
+  /** Edit a message text */
+  async editMessage(messageId: string, newText: string, mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!
+      .from('messages')
+      .update({ text: newText, edited_at: new Date().toISOString() })
+      .eq('id', messageId);
+    if (error) { console.error('[dataService] chat.editMessage', error); return false; }
+    return true;
+  },
+
+  /** Soft-delete a message */
+  async deleteMessage(messageId: string, mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!
+      .from('messages')
+      .update({ is_deleted: true })
+      .eq('id', messageId);
+    if (error) { console.error('[dataService] chat.deleteMessage', error); return false; }
     return true;
   },
 

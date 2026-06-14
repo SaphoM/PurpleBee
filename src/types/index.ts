@@ -318,6 +318,13 @@ export interface TaskRef {
   subtasksTotal: number;
 }
 
+export interface ReplyRef {
+  id: string;
+  text: string;
+  senderName: string;
+  taskRef?: TaskRef;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
@@ -327,10 +334,13 @@ export interface ChatMessage {
   text: string;
   timestamp: Date;
   readBy: string[];
-  replyTo?: string;
+  replyTo?: ReplyRef;
   attachments?: Attachment[];
   reactions?: MessageReaction[];
   taskRef?: TaskRef;
+  editedAt?: Date;
+  isDeleted?: boolean;
+  starred?: boolean;
 }
 
 export interface MessageReaction {
