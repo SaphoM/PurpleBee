@@ -33,7 +33,7 @@ const TaskRefCard: React.FC<TaskRefCardProps> = ({ taskRef, isMe }) => (
   <div className={clsx(
     'px-2.5 pt-2 pb-1.5 border-b',
     isMe
-      ? 'border-white/20 bg-gradient-to-br from-emerald-400/20 to-white/10'
+      ? 'border-emerald-400/30 bg-gradient-to-br from-emerald-500/40 to-emerald-300/10'
       : 'border-emerald-100 dark:border-emerald-900/40 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/30 dark:to-slate-900'
   )}>
     {/* Header */}
