@@ -68,12 +68,32 @@ const priorityConfig: Record<TaskPriority, { label: string; color: string; icon:
   urgent: { label: 'Urgent', color: 'text-red-600 dark:text-red-400', icon: '' },
 };
 
-/** Hover/long-press a completed subtask to temporarily reveal the text without strikethrough. */
-const SubtaskText: React.FC<{ completed: boolean; title: string }> = ({ completed, title }) => {
+const SubtaskText: React.FC<{ completed: boolean; title: string; reveal?: boolean }> = ({ completed, title, reveal }) => {
+  if (!completed) {
+    return <span className="text-sm flex-1 text-gray-700 dark:text-slate-300">{title}</span>;
+  }
+  return (
+    <span
+      className={clsx(
+        'text-sm flex-1 transition-all duration-150 select-none',
+        reveal ? 'text-gray-700 dark:text-slate-300' : 'line-through text-gray-400 dark:text-slate-500'
+      )}
+    >
+      {title}
+    </span>
+  );
+};
+
+const SubtaskItem: React.FC<{
+  subtask: { id: string; title: string; completed: boolean };
+  onToggle: () => void;
+  onRemove: (e: React.MouseEvent) => void;
+}> = ({ subtask, onToggle, onRemove }) => {
   const [reveal, setReveal] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startReveal = () => {
+    if (!subtask.completed) return;
     timerRef.current = setTimeout(() => setReveal(true), 400);
   };
   const endReveal = () => {
@@ -81,26 +101,38 @@ const SubtaskText: React.FC<{ completed: boolean; title: string }> = ({ complete
     setReveal(false);
   };
 
-  if (!completed) {
-    return <span className="text-sm flex-1 text-gray-700 dark:text-slate-300">{title}</span>;
-  }
-
   return (
-    <span
-      className={clsx(
-        'text-sm flex-1 transition-all duration-150 cursor-default select-none',
-        reveal
-          ? 'text-gray-700 dark:text-slate-300'
-          : 'line-through text-gray-400 dark:text-slate-500'
-      )}
-      onMouseEnter={() => setReveal(true)}
+    <button
+      onClick={onToggle}
+      onMouseEnter={() => subtask.completed && setReveal(true)}
       onMouseLeave={endReveal}
       onTouchStart={startReveal}
       onTouchEnd={endReveal}
-      title="Hover or hold to read"
+      title={subtask.completed ? 'Hover or hold to read' : undefined}
+      className={clsx(
+        'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left',
+        'transition-all duration-200',
+        subtask.completed
+          ? 'bg-emerald-50 dark:bg-emerald-900/10'
+          : 'bg-white hover:bg-gray-100 dark:bg-slate-800/50 dark:hover:bg-slate-700/50'
+      )}
     >
-      {title}
-    </span>
+      {subtask.completed ? (
+        <CheckCircle2 size={16} className="text-emerald-500 dark:text-emerald-400 flex-shrink-0" />
+      ) : (
+        <Circle size={16} className="text-gray-300 dark:text-slate-600 flex-shrink-0" />
+      )}
+      <SubtaskText completed={subtask.completed} title={subtask.title} reveal={reveal} />
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={onRemove}
+        onKeyDown={(e) => e.key === 'Enter' && onRemove(e as unknown as React.MouseEvent)}
+        className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-all cursor-pointer"
+      >
+        <X size={12} />
+      </span>
+    </button>
   );
 };
 
@@ -680,32 +712,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   <ul className="space-y-1.5 mb-3">
                     {task.subtasks.map((subtask) => (
                       <li key={subtask.id}>
-                        <button
-                          onClick={() => handleToggleSubtask(subtask.id)}
-                          className={clsx(
-                            'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left',
-                            'transition-all duration-200',
-                            subtask.completed
-                              ? 'bg-emerald-50 dark:bg-emerald-900/10'
-                              : 'bg-white hover:bg-gray-100 dark:bg-slate-800/50 dark:hover:bg-slate-700/50'
-                          )}
-                        >
-                          {subtask.completed ? (
-                            <CheckCircle2 size={16} className="text-emerald-500 dark:text-emerald-400 flex-shrink-0" />
-                          ) : (
-                            <Circle size={16} className="text-gray-300 dark:text-slate-600 flex-shrink-0" />
-                          )}
-                          <SubtaskText completed={subtask.completed} title={subtask.title} />
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveSubtask(subtask.id);
-                            }}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-all"
-                          >
-                            <X size={12} />
-                          </button>
-                        </button>
+                        <SubtaskItem
+                          subtask={subtask}
+                          onToggle={() => handleToggleSubtask(subtask.id)}
+                          onRemove={(e) => { e.stopPropagation(); handleRemoveSubtask(subtask.id); }}
+                        />
                       </li>
                     ))}
                   </ul>
