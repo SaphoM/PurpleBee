@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import clsx from 'clsx';
 import { Task, TaskStatus, TaskPriority, Subtask, Attachment, TaskLink, ProgressNote } from '@/types/index';
 import { PriorityBadge } from './Badge';
@@ -66,6 +66,42 @@ const priorityConfig: Record<TaskPriority, { label: string; color: string; icon:
   medium: { label: 'Medium', color: 'text-yellow-600 dark:text-yellow-400', icon: '' },
   high: { label: 'High', color: 'text-orange-600 dark:text-orange-400', icon: '' },
   urgent: { label: 'Urgent', color: 'text-red-600 dark:text-red-400', icon: '' },
+};
+
+/** Hover/long-press a completed subtask to temporarily reveal the text without strikethrough. */
+const SubtaskText: React.FC<{ completed: boolean; title: string }> = ({ completed, title }) => {
+  const [reveal, setReveal] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const startReveal = () => {
+    timerRef.current = setTimeout(() => setReveal(true), 400);
+  };
+  const endReveal = () => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    setReveal(false);
+  };
+
+  if (!completed) {
+    return <span className="text-sm flex-1 text-gray-700 dark:text-slate-300">{title}</span>;
+  }
+
+  return (
+    <span
+      className={clsx(
+        'text-sm flex-1 transition-all duration-150 cursor-default select-none',
+        reveal
+          ? 'text-gray-700 dark:text-slate-300'
+          : 'line-through text-gray-400 dark:text-slate-500'
+      )}
+      onMouseEnter={() => setReveal(true)}
+      onMouseLeave={endReveal}
+      onTouchStart={startReveal}
+      onTouchEnd={endReveal}
+      title="Hover or hold to read"
+    >
+      {title}
+    </span>
+  );
 };
 
 export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
@@ -659,16 +695,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                           ) : (
                             <Circle size={16} className="text-gray-300 dark:text-slate-600 flex-shrink-0" />
                           )}
-                          <span
-                            className={clsx(
-                              'text-sm flex-1',
-                              subtask.completed
-                                ? 'line-through text-gray-400 dark:text-slate-500'
-                                : 'text-gray-700 dark:text-slate-300'
-                            )}
-                          >
-                            {subtask.title}
-                          </span>
+                          <SubtaskText completed={subtask.completed} title={subtask.title} />
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
