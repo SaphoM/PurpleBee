@@ -31,10 +31,10 @@ const PRIORITY_CLASS: Record<string, string> = {
 
 const TaskRefCard: React.FC<TaskRefCardProps> = ({ taskRef, isMe }) => (
   <div className={clsx(
-    'px-2.5 pt-2 pb-1.5 border-b',
+    'px-2.5 pt-2 pb-1.5',
     isMe
-      ? 'border-emerald-400/50 bg-gradient-to-br from-emerald-400/70 to-emerald-600/30'
-      : 'border-emerald-100 dark:border-emerald-900/40 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/30 dark:to-slate-900'
+      ? 'border-2 border-emerald-400 rounded-lg mb-1.5 bg-white/10'
+      : 'border-b border-emerald-100 dark:border-emerald-900/40 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/30 dark:to-slate-900'
   )}>
     {/* Header */}
     <div className={clsx(
