@@ -108,9 +108,9 @@ export const subtaskDb = {
       .order('order', { ascending: true });
     if (error) { console.error('[dataService] subtasks.fetchForTasks', error); return new Map(); }
     const map = new Map<string, Subtask[]>();
-    for (const row of (data as { id: string; task_id: string; title: string; completed: boolean; created_at: string }[])) {
+    for (const row of (data as { id: string; task_id: string; title: string; description: string | null; completed: boolean; created_at: string }[])) {
       const arr = map.get(row.task_id) ?? [];
-      arr.push({ id: row.id, title: row.title, completed: row.completed, createdAt: new Date(row.created_at) });
+      arr.push({ id: row.id, title: row.title, description: row.description ?? undefined, completed: row.completed, createdAt: new Date(row.created_at) });
       map.set(row.task_id, arr);
     }
     return map;
@@ -129,6 +129,7 @@ export const subtaskDb = {
       id: s.id,
       task_id: taskId,
       title: s.title,
+      description: s.description ?? null,
       completed: s.completed,
       order: i,
     }));

@@ -1223,6 +1223,7 @@ export const Projects: React.FC = () => {
       return projects.map((p) => p.id);
     }
   });
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragIdRef = useRef<string | null>(null);
 
@@ -1239,13 +1240,28 @@ export const Projects: React.FC = () => {
 
   const handleDragStart = (e: React.DragEvent, projectId: string) => {
     dragIdRef.current = projectId;
+    setDraggingId(projectId);
     e.dataTransfer.effectAllowed = 'move';
+    // Use a transparent ghost image so the card doesn't snap to cursor
+    const ghost = document.createElement('div');
+    ghost.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;';
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, 0, 0);
+    requestAnimationFrame(() => document.body.removeChild(ghost));
   };
 
   const handleDragOver = (e: React.DragEvent, projectId: string) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
     if (dragIdRef.current && dragIdRef.current !== projectId) {
       setDragOverId(projectId);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent, projectId: string) => {
+    // Only clear when leaving the card entirely (not crossing into a child element)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      if (dragOverId === projectId) setDragOverId(null);
     }
   };
 
@@ -1253,6 +1269,7 @@ export const Projects: React.FC = () => {
     e.preventDefault();
     const fromId = dragIdRef.current;
     setDragOverId(null);
+    setDraggingId(null);
     dragIdRef.current = null;
     if (!fromId || fromId === toId) return;
     setProjectOrder((prev) => {
@@ -1269,6 +1286,7 @@ export const Projects: React.FC = () => {
 
   const handleDragEnd = () => {
     setDragOverId(null);
+    setDraggingId(null);
     dragIdRef.current = null;
   };
 
@@ -1384,7 +1402,7 @@ export const Projects: React.FC = () => {
             const assignedCount = project.tasks.filter((t) => t.assignedTo).length;
             const totalHours = project.tasks.reduce((sum, t) => sum + t.estimatedHours, 0);
             const members = [...new Set(project.tasks.map((t) => t.assignedTo).filter(Boolean))] as string[];
-            const isDraggingThis = dragIdRef.current === project.id;
+            const isDraggingThis = draggingId === project.id;
             const isDropTarget = dragOverId === project.id;
 
             return (
@@ -1395,23 +1413,23 @@ export const Projects: React.FC = () => {
                 onDragOver={(e) => handleDragOver(e, project.id)}
                 onDrop={(e) => handleDrop(e, project.id)}
                 onDragEnd={handleDragEnd}
-                onDragLeave={() => setDragOverId(null)}
+                onDragLeave={(e) => handleDragLeave(e, project.id)}
                 className={clsx(
-                  'relative rounded-2xl border text-left transition-all group',
+                  'relative rounded-2xl border text-left transition-all duration-150 group',
                   'bg-white dark:bg-slate-800/50',
                   isDropTarget
-                    ? 'border-purple-400 dark:border-purple-500 ring-2 ring-purple-400/40 shadow-lg shadow-purple-500/20'
+                    ? 'border-purple-400 dark:border-purple-500 ring-2 ring-purple-400/40 shadow-lg shadow-purple-500/20 scale-[1.02]'
                     : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 hover:shadow-lg',
-                  isDraggingThis && 'opacity-40 scale-95',
+                  isDraggingThis && 'opacity-30 scale-95 shadow-none',
                 )}
               >
-                {/* Grip handle */}
-                <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-gray-300 dark:text-slate-600 z-10">
+                {/* Grip handle — left edge, away from edit/delete buttons at top-right */}
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-gray-300 dark:text-slate-600 z-10 select-none">
                   <GripVertical size={16} />
                 </div>
               <button
                 onClick={() => setSelectedProjectId(project.id)}
-                className="w-full p-5 text-left"
+                className="w-full p-5 pl-7 text-left"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">

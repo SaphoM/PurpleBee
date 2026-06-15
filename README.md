@@ -24,7 +24,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
   The Completed column header shows a lock badge ("Manager approval required") for restricted users. Only Admin and Manager roles can mark tasks as completed. Applies in both mock/sample data mode and live Supabase mode.
 
 - Recurring tasks with customizable patterns
-- Subtasks (Mini Tasks) with inline add — the `+` button highlights purple as soon as text is entered, providing clear visual feedback before confirming
+- Subtasks (Mini Tasks) with inline add — the add form shows a **Title** field (required) and a **Description** field (optional, "Brief explanation"); both in the task detail modal (Mini Tasks section) and the Create Task modal (Subtasks section); pressing Enter on the title field also submits; added subtasks show their title and description in the list; the `+` / "Add subtask" button activates once a title is entered
 - **Completed subtask reveal** — completed subtasks show with a strikethrough in a green container row; hovering (or touch-holding on mobile) the entire green row temporarily reveals the unstruckthrough text so it can be read; the hover area covers the full container, not just the text
 - Mini tasks persist to Supabase `subtasks` table in live mode; loaded alongside parent tasks on hydration; completion ratio drives the task progress bar (completed ÷ total × 100)
 - File attachments
@@ -46,6 +46,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - **Edit projects** — Admin/Manager can update name, description, and status inline via edit modal
 - Delete projects with confirmation modal
 - Projects persist to Supabase for real users
+- **Drag-to-reorder project grid** — hover any project card to reveal the grip handle (⠿) on the left edge; drag the card over another to reorder; the dragged card dims and shrinks, the drop target highlights with a purple ring and lifts slightly; order is persisted to `localStorage` keyed by user ID and survives page refresh; new projects append to the end; deleted projects are pruned automatically
 
 ### Team Collaboration
 - Team invite system (magic link email + shareable URL) — when inviting a member, the Admin selects one or more departments via pill toggles (General, Engineering, Design, Product, QA, DevOps, Marketing, Operations); selected pills show a ✓ and an × to deselect; a **⊕** pill at the end opens an inline input to add any custom department not in the list; multiple selections stored as a comma-separated string (e.g. `"General, DevOps"`) in the `invites.department` column; on invite acceptance (`inviteDb.accept`) the department is written to the new member's `profiles.department`; the invite accept page shows the assigned department to the invitee before they join

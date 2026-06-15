@@ -85,7 +85,7 @@ const SubtaskText: React.FC<{ completed: boolean; title: string; reveal?: boolea
 };
 
 const SubtaskItem: React.FC<{
-  subtask: { id: string; title: string; completed: boolean };
+  subtask: { id: string; title: string; description?: string; completed: boolean };
   onToggle: () => void;
   onRemove: (e: React.MouseEvent) => void;
 }> = ({ subtask, onToggle, onRemove }) => {
@@ -118,11 +118,23 @@ const SubtaskItem: React.FC<{
       )}
     >
       {subtask.completed ? (
-        <CheckCircle2 size={16} className="text-emerald-500 dark:text-emerald-400 flex-shrink-0" />
+        <CheckCircle2 size={16} className="text-emerald-500 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
       ) : (
-        <Circle size={16} className="text-gray-300 dark:text-slate-600 flex-shrink-0" />
+        <Circle size={16} className="text-gray-300 dark:text-slate-600 flex-shrink-0 mt-0.5" />
       )}
-      <SubtaskText completed={subtask.completed} title={subtask.title} reveal={reveal} />
+      <div className="flex-1 min-w-0">
+        <SubtaskText completed={subtask.completed} title={subtask.title} reveal={reveal} />
+        {subtask.description && (
+          <p className={clsx(
+            'text-xs mt-0.5 truncate',
+            subtask.completed
+              ? 'text-emerald-500/70 dark:text-emerald-400/60'
+              : 'text-gray-400 dark:text-slate-500'
+          )}>
+            {subtask.description}
+          </p>
+        )}
+      </div>
       <span
         role="button"
         tabIndex={0}
@@ -164,6 +176,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [showProgressSettings, setShowProgressSettings] = useState(false);
   const [showInfoGuide, setShowInfoGuide] = useState(false);
   const [newMiniTaskInput, setNewMiniTaskInput] = useState('');
+  const [newMiniTaskDescription, setNewMiniTaskDescription] = useState('');
   const [showAddLink, setShowAddLink] = useState(false);
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
@@ -265,6 +278,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     const newSubtask: Subtask = {
       id: uuidv4(),
       title,
+      description: newMiniTaskDescription.trim() || undefined,
       completed: false,
       createdAt: new Date(),
     };
@@ -275,6 +289,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       ...progressUpdate,
     });
     setNewMiniTaskInput('');
+    setNewMiniTaskDescription('');
   };
 
   const handleRemoveSubtask = (subtaskId: string) => {
@@ -726,36 +741,59 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 )}
 
                 {/* Add new mini task */}
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newMiniTaskInput}
-                    onChange={(e) => setNewMiniTaskInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddMiniTask();
-                      }
-                    }}
-                    placeholder="Add a mini task..."
-                    className={clsx(
-                      'flex-1 rounded-lg px-3 py-2 text-sm',
-                      'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
-                      'dark:bg-slate-800/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
-                      'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
-                    )}
-                  />
+                <div className="space-y-2 rounded-lg border border-gray-200 dark:border-slate-700/50 p-3 bg-gray-50/50 dark:bg-slate-800/30">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-widest">
+                      Title
+                    </label>
+                    <input
+                      type="text"
+                      value={newMiniTaskInput}
+                      onChange={(e) => setNewMiniTaskInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddMiniTask();
+                        }
+                      }}
+                      placeholder="Mini task title..."
+                      className={clsx(
+                        'w-full rounded-lg px-3 py-2 text-sm',
+                        'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
+                        'dark:bg-slate-800/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                        'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                      )}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-widest">
+                      Description
+                    </label>
+                    <textarea
+                      value={newMiniTaskDescription}
+                      onChange={(e) => setNewMiniTaskDescription(e.target.value)}
+                      placeholder="Brief explanation (optional)..."
+                      rows={2}
+                      className={clsx(
+                        'w-full rounded-lg px-3 py-2 text-sm resize-none',
+                        'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
+                        'dark:bg-slate-800/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                        'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                      )}
+                    />
+                  </div>
                   <button
                     onClick={handleAddMiniTask}
                     disabled={!newMiniTaskInput.trim()}
                     className={clsx(
-                      'px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                      'w-full py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5',
                       newMiniTaskInput.trim()
                         ? 'bg-purple-100 text-purple-600 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-900/50'
                         : 'bg-gray-100 text-gray-300 dark:bg-slate-700/30 dark:text-slate-600 cursor-not-allowed'
                     )}
                   >
-                    <Plus size={16} />
+                    <Plus size={14} />
+                    Add mini task
                   </button>
                 </div>
               </div>

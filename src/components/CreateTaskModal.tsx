@@ -31,8 +31,9 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const [estimatedHours, setEstimatedHours] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
-  const [subtasks, setSubtasks] = useState<string[]>([]);
+  const [subtasks, setSubtasks] = useState<Array<{ title: string; description: string }>>([]);
   const [subtaskInput, setSubtaskInput] = useState('');
+  const [subtaskDescInput, setSubtaskDescInput] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurringFrequency, setRecurringFrequency] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly'>('weekly');
   const [selectedProjectId, setSelectedProjectId] = useState('');
@@ -93,6 +94,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     setTagInput('');
     setSubtasks([]);
     setSubtaskInput('');
+    setSubtaskDescInput('');
     setIsRecurring(false);
     setRecurringFrequency('weekly');
     setSelectedProjectId('');
@@ -117,7 +119,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       recurringPattern: isRecurring ? { frequency: recurringFrequency } : undefined,
       subtasks: subtasks.map((s, i) => ({
         id: `sub-${i}`,
-        title: s,
+        title: s.title,
+        description: s.description || undefined,
         completed: false,
         createdAt: new Date(),
       })),
@@ -142,8 +145,9 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
 
   const addSubtask = () => {
     if (subtaskInput.trim()) {
-      setSubtasks([...subtasks, subtaskInput.trim()]);
+      setSubtasks([...subtasks, { title: subtaskInput.trim(), description: subtaskDescInput.trim() }]);
       setSubtaskInput('');
+      setSubtaskDescInput('');
     }
   };
 
@@ -434,43 +438,67 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Subtasks</label>
             {subtasks.length > 0 && (
-              <ul className="space-y-2 mb-2">
+              <ul className="space-y-2 mb-3">
                 {subtasks.map((sub, i) => (
-                  <li key={i} className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0" />
-                    <span className="flex-1">{sub}</span>
-                    <button type="button" onClick={() => removeSubtask(i)} className="text-gray-400 hover:text-red-500">
+                  <li key={i} className="flex items-start gap-2 text-sm text-gray-700 dark:text-slate-300 bg-gray-50 dark:bg-slate-700/30 rounded-lg px-3 py-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0 mt-1.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{sub.title}</p>
+                      {sub.description && (
+                        <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5 truncate">{sub.description}</p>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => removeSubtask(i)} className="text-gray-400 hover:text-red-500 flex-shrink-0 mt-0.5">
                       <Trash2 size={14} />
                     </button>
                   </li>
                 ))}
               </ul>
             )}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={subtaskInput}
-                onChange={(e) => setSubtaskInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } }}
-                placeholder="Add a subtask"
-                className={clsx(
-                  'flex-1 rounded-lg px-4 py-2 text-sm',
-                  'bg-white border border-gray-300 text-gray-800 placeholder-gray-400',
-                  'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
-                  'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
-                )}
-              />
+            <div className="space-y-2 rounded-lg border border-gray-200 dark:border-slate-700/50 p-3 bg-gray-50/50 dark:bg-slate-800/20">
+              <div className="space-y-1">
+                <label className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-widest">Title</label>
+                <input
+                  type="text"
+                  value={subtaskInput}
+                  onChange={(e) => setSubtaskInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } }}
+                  placeholder="Subtask title..."
+                  className={clsx(
+                    'w-full rounded-lg px-3 py-2 text-sm',
+                    'bg-white border border-gray-300 text-gray-800 placeholder-gray-400',
+                    'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                  )}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-widest">Description</label>
+                <textarea
+                  value={subtaskDescInput}
+                  onChange={(e) => setSubtaskDescInput(e.target.value)}
+                  placeholder="Brief explanation (optional)..."
+                  rows={2}
+                  className={clsx(
+                    'w-full rounded-lg px-3 py-2 text-sm resize-none',
+                    'bg-white border border-gray-300 text-gray-800 placeholder-gray-400',
+                    'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                  )}
+                />
+              </div>
               <button
                 type="button"
                 onClick={addSubtask}
                 className={clsx(
-                  'px-3 py-2 rounded-lg transition-colors',
+                  'w-full py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5',
                   subtaskInput.trim()
                     ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-sm shadow-purple-500/30'
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-400 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-500'
+                    : 'bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-500 cursor-not-allowed'
                 )}
               >
-                <Plus size={16} />
+                <Plus size={14} />
+                Add subtask
               </button>
             </div>
           </div>

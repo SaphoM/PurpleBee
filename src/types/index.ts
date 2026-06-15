@@ -58,6 +58,7 @@ export interface TaskCollaborator {
 export interface Subtask {
   id: string;
   title: string;
+  description?: string;
   completed: boolean;
   createdAt: Date;
 }
