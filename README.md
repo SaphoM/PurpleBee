@@ -53,6 +53,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Role-based access control (Admin, Manager, User)
 - **Edit team members** — Admin/Manager can update name, job title, department, and role; persists to `profiles` + `team_members` in live mode
 - In-app team chat with docked chat windows
+- **Mobile wallet view for multiple docked chats** — on responsive/mobile layouts, docking a single conversation opens it directly in the bottom sheet as before; docking a second (or more) switches the default view to a stacked "wallet" overview (cards fanned like boarding passes), each showing the conversation's avatar, name, and unread count, with the frontmost card also showing a last-message preview; tapping a card **behind** the front one shuffles it forward — the tapped card and the current front card swap places with a card-shuffle animation (both flick left, then settle into their new stack position/height/z-index); tapping the **front** card opens it in the full bottom sheet, and swiping that sheet down returns to the wallet stack rather than undocking — only the header's × button actually undocks a conversation
 - Admin "View As" to preview other members' dashboards
 - Smart notifications (assignments, due dates, mentions, AI insights)
 - Chat messages trigger `mention` notifications to all other conversation participants (live mode)

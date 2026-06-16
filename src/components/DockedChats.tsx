@@ -21,7 +21,7 @@ import {
 import { useChatStore } from '@stores/chatStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
-import { ConversationType, Attachment, TaskRef, ReplyRef, ChatMessage } from '@/types/index';
+import { ConversationType, Attachment, TaskRef, ReplyRef, ChatMessage, Conversation } from '@/types/index';
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -749,6 +749,125 @@ const DropZone: React.FC<{ isDragOver: boolean; isTaskDrag?: boolean }> = ({ isD
   </div>
 );
 
+// Mobile "wallet" view — when more than one chat is docked, default to a
+// stacked-card overview (like boarding passes in a wallet app) instead of
+// dropping straight into the most recently docked conversation. Tapping a
+// card opens that conversation in the full MobileBottomSheet.
+const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: string) => void }> = ({ conversationIds, onSelect }) => {
+  const conversations = useChatStore((s) => s.conversations);
+  const currentUserId = useChatStore((s) => s.currentUserId);
+
+  // Local display order — lets a tap on a background card shuffle it to the
+  // front instead of jumping straight into the conversation. Reconciled
+  // against conversationIds below so docking/undocking still works.
+  const [order, setOrder] = useState<string[]>(conversationIds);
+  const [swapPair, setSwapPair] = useState<[string, string] | null>(null);
+
+  useEffect(() => {
+    setOrder((prev) => {
+      const known = new Set(conversationIds);
+      const kept = prev.filter((id) => known.has(id));
+      const added = conversationIds.filter((id) => !kept.includes(id));
+      return [...kept, ...added];
+    });
+  }, [conversationIds]);
+
+  const cards = order
+    .map((id) => conversations.find((c) => c.id === id))
+    .filter((c): c is Conversation => !!c);
+
+  if (cards.length === 0) return null;
+
+  const PEEK = 44; // px of each underlying card visible above the front one
+  const frontIndex = cards.length - 1;
+  const frontId = cards[frontIndex].id;
+
+  const handleCardClick = (id: string, index: number) => {
+    if (index === frontIndex) {
+      onSelect(id);
+      return;
+    }
+    // Shuffle: flick both cards left, then swap their stack positions so the
+    // tapped card settles in front and the old front tucks in behind.
+    setSwapPair([id, frontId]);
+    setTimeout(() => {
+      setOrder((prev) => {
+        const next = [...prev];
+        const tappedIdx = next.indexOf(id);
+        const frontIdx = next.indexOf(frontId);
+        [next[tappedIdx], next[frontIdx]] = [next[frontIdx], next[tappedIdx]];
+        return next;
+      });
+      setSwapPair(null);
+    }, 150);
+  };
+
+  return (
+    <div
+      className="md:hidden fixed bottom-0 left-0 right-0 z-[60] px-3"
+      style={{ paddingBottom: 'max(14px, env(safe-area-inset-bottom))' }}
+    >
+      <p className="text-center text-[11px] font-semibold text-gray-400 dark:text-slate-500 mb-2 tracking-wide uppercase">
+        {cards.length} chats docked — tap a card to bring it forward
+      </p>
+      <div className="relative" style={{ height: 96 + frontIndex * PEEK }}>
+        {cards.map((conv, i) => {
+          const otherParticipant = conv.type === 'dm'
+            ? conv.participants.find((p) => p.userId !== currentUserId)
+            : null;
+          const avatar = otherParticipant?.avatar || conv.participants[0]?.avatar;
+          const isFront = i === frontIndex;
+          const fromFront = frontIndex - i;
+          const isSwapping = !!swapPair && swapPair.includes(conv.id);
+          return (
+            <button
+              key={conv.id}
+              onClick={() => handleCardClick(conv.id, i)}
+              className={clsx(
+                'absolute left-0 right-0 rounded-2xl text-left overflow-hidden',
+                'bg-white dark:bg-slate-800 shadow-lg border border-gray-200/70 dark:border-slate-700/70',
+                'transition-all ease-out active:scale-[0.98]'
+              )}
+              style={{
+                bottom: fromFront * PEEK,
+                zIndex: i,
+                height: isFront ? 96 : 56,
+                transform: isSwapping ? 'translateX(-18px)' : 'translateX(0)',
+                transitionDuration: isSwapping ? '150ms' : '280ms',
+              }}
+            >
+              <div className="h-9 px-3 flex items-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 flex-shrink-0">
+                {avatar ? (
+                  <img src={avatar} alt={conv.name} className="w-5 h-5 rounded-full flex-shrink-0 ring-1 ring-white/50" />
+                ) : (
+                  <span className="w-5 h-5 rounded-full flex-shrink-0 ring-1 ring-white/50 bg-white/20 flex items-center justify-center">
+                    {getConvIcon(conv.type)}
+                  </span>
+                )}
+                <span className="text-xs font-bold text-white truncate flex-1">{conv.name}</span>
+                {conv.unreadCount > 0 && (
+                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">
+                    {conv.unreadCount}
+                  </span>
+                )}
+              </div>
+              {isFront && (
+                <div className="px-3 py-2">
+                  <p className="text-xs text-gray-500 dark:text-slate-400 truncate">
+                    {conv.lastMessage
+                      ? `${conv.lastMessage.senderId === currentUserId ? 'You: ' : ''}${conv.lastMessage.text}`
+                      : 'No messages yet'}
+                  </p>
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 // Mobile bottom-sheet with swipe-to-dismiss
 const MobileBottomSheet: React.FC<{ conversationId: string; onDismiss: () => void }> = ({ conversationId, onDismiss }) => {
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -820,6 +939,15 @@ export const DockedChats: React.FC = () => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isTaskDrag, setIsTaskDrag] = useState(false);
   const { dockChat, undockChat } = useChatStore();
+  // Mobile only: which docked conversation (if any) the user has tapped open
+  // from the wallet stack. Falls back to the stack once it's undocked.
+  const [mobileExpandedId, setMobileExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (mobileExpandedId && !dockedChatIds.includes(mobileExpandedId)) {
+      setMobileExpandedId(null);
+    }
+  }, [dockedChatIds, mobileExpandedId]);
 
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
@@ -864,12 +992,28 @@ export const DockedChats: React.FC = () => {
     <>
       <DropZone isDragOver={isDragOver} isTaskDrag={isTaskDrag} />
 
-      {/* Mobile: bottom-sheet chat panel with swipe-to-dismiss */}
-      {dockedChatIds.length > 0 && (
+      {/* Mobile: single chat goes straight to the bottom-sheet; with more
+          than one docked, default to the wallet stack overview, opening a
+          conversation into the same bottom-sheet only once it's tapped */}
+      {dockedChatIds.length === 1 && (
         <MobileBottomSheet
-          conversationId={dockedChatIds[dockedChatIds.length - 1]}
-          onDismiss={() => undockChat(dockedChatIds[dockedChatIds.length - 1])}
+          conversationId={dockedChatIds[0]}
+          onDismiss={() => undockChat(dockedChatIds[0])}
         />
+      )}
+      {dockedChatIds.length > 1 && (
+        mobileExpandedId ? (
+          <MobileBottomSheet
+            key={mobileExpandedId}
+            conversationId={mobileExpandedId}
+            onDismiss={() => setMobileExpandedId(null)}
+          />
+        ) : (
+          <MobileWalletStack
+            conversationIds={dockedChatIds}
+            onSelect={(id) => setMobileExpandedId(id)}
+          />
+        )
       )}
 
       {/* Docked bubbles — desktop only, always below the ChatBot (z-50) */}
