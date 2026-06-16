@@ -21,6 +21,11 @@ const getUserStore = () => import('@stores/userStore').then((m) => m.useUserStor
 type RealtimeChannel = ReturnType<NonNullable<typeof supabase>['channel']>;
 const _typingChannels: Record<string, RealtimeChannel> = {};
 const _typingExpiry: Record<string, ReturnType<typeof setTimeout>> = {};
+// Multiple components (docked window + full Chat page) can subscribe to the
+// same conversation's typing channel at once — refcount so the channel is
+// only torn down once nobody needs it anymore, instead of the last
+// unmounting consumer killing it out from under the others.
+const _typingRefCounts: Record<string, number> = {};
 const TYPING_EXPIRY_MS = 4000;
 
 /** Aggregate DB reaction rows into the app's { emoji, users[] } shape */
@@ -338,8 +343,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   subscribeTyping: (conversationId) => {
     if (!supabase) return;
-    // Clean up any previous subscription for this conversation first
-    get().unsubscribeTyping(conversationId);
+    _typingRefCounts[conversationId] = (_typingRefCounts[conversationId] || 0) + 1;
+
+    // Already subscribed (e.g. the docked window and the full Chat page both
+    // have this conversation open) — reuse the existing channel rather than
+    // tearing it down and racing a new one into its place.
+    if (_typingChannels[conversationId]) return;
 
     const channel = supabase
       .channel(`typing:${conversationId}`)
@@ -380,6 +389,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   unsubscribeTyping: (conversationId) => {
+    const remaining = (_typingRefCounts[conversationId] || 1) - 1;
+    if (remaining > 0) {
+      _typingRefCounts[conversationId] = remaining;
+      return; // still in use by another open window/page for this conversation
+    }
+    delete _typingRefCounts[conversationId];
+
     const channel = _typingChannels[conversationId];
     if (channel && supabase) {
       supabase.removeChannel(channel);
@@ -1114,7 +1130,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   clearMockData: () => {
-    Object.keys(_typingChannels).forEach((id) => get().unsubscribeTyping(id));
+    // Force-close regardless of refcount — components haven't had a chance
+    // to clean up yet on a full logout/mode-switch.
+    Object.keys(_typingChannels).forEach((id) => {
+      _typingRefCounts[id] = 0;
+      get().unsubscribeTyping(id);
+    });
     set({
       conversations: [],
       messages: {},
