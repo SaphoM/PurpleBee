@@ -26,6 +26,13 @@ const _typingExpiry: Record<string, ReturnType<typeof setTimeout>> = {};
 // only torn down once nobody needs it anymore, instead of the last
 // unmounting consumer killing it out from under the others.
 const _typingRefCounts: Record<string, number> = {};
+// supabase.removeChannel() is async — if a subscribe for the same
+// conversation comes in before a prior teardown finishes, the client can
+// hand back the not-yet-fully-removed channel object and a second
+// `.on('broadcast', ...)` ends up stacked on top of the first, silently
+// breaking delivery. Track in-flight removals so a fresh subscribe waits
+// for them instead of racing.
+const _typingRemovals: Record<string, Promise<void>> = {};
 const TYPING_EXPIRY_MS = 4000;
 
 /** Aggregate DB reaction rows into the app's { emoji, users[] } shape */
@@ -350,42 +357,75 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // tearing it down and racing a new one into its place.
     if (_typingChannels[conversationId]) return;
 
-    const channel = supabase
-      .channel(`typing:${conversationId}`)
-      .on('broadcast', { event: 'typing' }, ({ payload }) => {
-        const { userId, name, isTyping } = payload as { userId: string; name: string; isTyping: boolean };
-        if (userId === get().currentUserId) return; // ignore our own broadcast
+    const createChannel = (attempt = 0) => {
+      // A subscribe/unsubscribe pair can race in: bail if something else
+      // already created the channel, or if nobody wants it anymore by now.
+      if (_typingChannels[conversationId] || !_typingRefCounts[conversationId] || !supabase) return;
 
-        const expiryKey = `${conversationId}:${userId}`;
-        if (_typingExpiry[expiryKey]) clearTimeout(_typingExpiry[expiryKey]);
+      const channel = supabase
+        .channel(`typing:${conversationId}`)
+        .on('broadcast', { event: 'typing' }, ({ payload }) => {
+          const { userId, name, isTyping } = payload as { userId: string; name: string; isTyping: boolean };
+          if (userId === get().currentUserId) return; // ignore our own broadcast
 
-        set((state) => {
-          const current = state.typingUsers[conversationId] || [];
-          const withoutUser = current.filter((u) => u.userId !== userId);
-          return {
-            typingUsers: {
-              ...state.typingUsers,
-              [conversationId]: isTyping ? [...withoutUser, { userId, name }] : withoutUser,
-            },
-          };
-        });
+          const expiryKey = `${conversationId}:${userId}`;
+          if (_typingExpiry[expiryKey]) clearTimeout(_typingExpiry[expiryKey]);
 
-        // Safety net: auto-clear if a "stopped typing" broadcast is missed
-        // (e.g. the other tab closed mid-keystroke)
-        if (isTyping) {
-          _typingExpiry[expiryKey] = setTimeout(() => {
-            set((state) => ({
+          set((state) => {
+            const current = state.typingUsers[conversationId] || [];
+            const withoutUser = current.filter((u) => u.userId !== userId);
+            return {
               typingUsers: {
                 ...state.typingUsers,
-                [conversationId]: (state.typingUsers[conversationId] || []).filter((u) => u.userId !== userId),
+                [conversationId]: isTyping ? [...withoutUser, { userId, name }] : withoutUser,
               },
-            }));
-          }, TYPING_EXPIRY_MS);
-        }
-      })
-      .subscribe();
+            };
+          });
 
-    _typingChannels[conversationId] = channel;
+          // Safety net: auto-clear if a "stopped typing" broadcast is missed
+          // (e.g. the other tab closed mid-keystroke)
+          if (isTyping) {
+            _typingExpiry[expiryKey] = setTimeout(() => {
+              set((state) => ({
+                typingUsers: {
+                  ...state.typingUsers,
+                  [conversationId]: (state.typingUsers[conversationId] || []).filter((u) => u.userId !== userId),
+                },
+              }));
+            }, TYPING_EXPIRY_MS);
+          }
+        })
+        .subscribe((status) => {
+          // Realtime channels can occasionally report success client-side
+          // while the broadcast binding never actually registers
+          // server-side (no error, just silently dead). A plain 'joined'
+          // state isn't trustworthy on its own — only retire the pending
+          // flag once we get an explicit SUBSCRIBED ack, and on anything
+          // else (TIMED_OUT / CHANNEL_ERROR / CLOSED) tear down and retry
+          // a few times rather than leaving a dead listener in place.
+          if (status === 'SUBSCRIBED') return;
+          if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+            if (_typingChannels[conversationId] === channel) delete _typingChannels[conversationId];
+            if (supabase) supabase.removeChannel(channel);
+            if (_typingRefCounts[conversationId] && attempt < 3) {
+              setTimeout(() => createChannel(attempt + 1), 300 * (attempt + 1));
+            }
+          }
+        });
+
+      _typingChannels[conversationId] = channel;
+    };
+
+    // If a previous channel for this conversation is still being torn down,
+    // wait for that to finish before creating a fresh one — otherwise the
+    // Realtime client can hand back the not-yet-removed object and we'd
+    // stack a second handler on top of the dying one.
+    const pendingRemoval = _typingRemovals[conversationId];
+    if (pendingRemoval) {
+      pendingRemoval.then(() => createChannel());
+    } else {
+      createChannel();
+    }
   },
 
   unsubscribeTyping: (conversationId) => {
@@ -398,8 +438,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     const channel = _typingChannels[conversationId];
     if (channel && supabase) {
-      supabase.removeChannel(channel);
       delete _typingChannels[conversationId];
+      _typingRemovals[conversationId] = supabase.removeChannel(channel).then(() => {
+        delete _typingRemovals[conversationId];
+      });
     }
     set((state) => {
       if (!state.typingUsers[conversationId]) return state;

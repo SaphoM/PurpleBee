@@ -363,6 +363,7 @@ export const Chat: React.FC = () => {
   const typingNames = useChatStore((s) =>
     activeConversationId ? (s.typingUsers[activeConversationId]?.map((u) => u.name) ?? []) : []
   );
+  const typingUsersMap = useChatStore((s) => s.typingUsers);
 
   const [messageInput, setMessageInput] = useState('');
   const [showNewDM, setShowNewDM] = useState(false);
@@ -421,6 +422,33 @@ export const Chat: React.FC = () => {
       unsubscribeTyping(activeConversationId);
     };
   }, [activeConversationId, subscribeTyping, unsubscribeTyping]);
+
+  // Also listen on every conversation in the sidebar list so "X is typing…"
+  // can replace the last-message preview even when that conversation isn't
+  // the one currently open (subscribeTyping/unsubscribeTyping are
+  // refcounted, so this safely shares the channel with the effect above).
+  // Sorted so reordering the list (e.g. a new message bumps a conversation
+  // to the top) doesn't change this key — only the underlying *set* of
+  // conversation ids should re-trigger a subscribe/unsubscribe cycle.
+  const conversationIdsKey = conversations.map((c) => c.id).slice().sort().join(',');
+  useEffect(() => {
+    const ids = conversationIdsKey ? conversationIdsKey.split(',') : [];
+    // Stagger the joins instead of firing them all in the same tick —
+    // bursting many simultaneous channel subscribes over one multiplexed
+    // Realtime socket can leave some broadcast bindings unregistered
+    // server-side even though the client reports them as joined.
+    const subscribed: string[] = [];
+    const timers = ids.map((id, i) => setTimeout(() => {
+      subscribeTyping(id);
+      subscribed.push(id);
+    }, i * 120));
+    return () => {
+      timers.forEach(clearTimeout);
+      // Only unsubscribe ids whose staggered subscribe actually ran —
+      // otherwise this would decrement a refcount that was never incremented
+      subscribed.forEach((id) => unsubscribeTyping(id));
+    };
+  }, [conversationIdsKey, subscribeTyping, unsubscribeTyping]);
 
   const handleInputChange = (value: string) => {
     setMessageInput(value);
@@ -663,14 +691,27 @@ export const Chat: React.FC = () => {
                         )}
                       </div>
                       <div className="flex items-center justify-between">
-                        <p className={clsx(
-                          'text-xs truncate flex-1',
-                          conv.unreadCount > 0 ? 'text-gray-600 dark:text-slate-300 font-medium' : 'text-gray-400 dark:text-slate-500'
-                        )}>
-                          {conv.lastMessage
-                            ? `${conv.lastMessage.senderId === currentUserId ? 'You: ' : ''}${conv.lastMessage.text}`
-                            : 'No messages yet'}
-                        </p>
+                        {(typingUsersMap[conv.id]?.length ?? 0) > 0 ? (
+                          <p className="text-xs truncate flex-1 italic text-purple-500 dark:text-purple-400 flex items-center gap-1.5">
+                            <span className="flex gap-0.5 flex-shrink-0">
+                              <span className="w-1 h-1 rounded-full bg-purple-400 dark:bg-purple-500 animate-bounce [animation-delay:-0.3s]" />
+                              <span className="w-1 h-1 rounded-full bg-purple-400 dark:bg-purple-500 animate-bounce [animation-delay:-0.15s]" />
+                              <span className="w-1 h-1 rounded-full bg-purple-400 dark:bg-purple-500 animate-bounce" />
+                            </span>
+                            {typingUsersMap[conv.id].length === 1
+                              ? `${typingUsersMap[conv.id][0].name} is typing…`
+                              : `${typingUsersMap[conv.id].map((u) => u.name).join(', ')} are typing…`}
+                          </p>
+                        ) : (
+                          <p className={clsx(
+                            'text-xs truncate flex-1',
+                            conv.unreadCount > 0 ? 'text-gray-600 dark:text-slate-300 font-medium' : 'text-gray-400 dark:text-slate-500'
+                          )}>
+                            {conv.lastMessage
+                              ? `${conv.lastMessage.senderId === currentUserId ? 'You: ' : ''}${conv.lastMessage.text}`
+                              : 'No messages yet'}
+                          </p>
+                        )}
                         {conv.unreadCount > 0 && (
                           <span className="ml-2 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-purple-600 text-white flex-shrink-0">
                             {conv.unreadCount}
