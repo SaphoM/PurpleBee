@@ -810,7 +810,7 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
       style={{ paddingBottom: 'max(14px, env(safe-area-inset-bottom))' }}
     >
       <p className="text-center text-[11px] font-semibold text-gray-400 dark:text-slate-500 mb-2 tracking-wide uppercase">
-        {cards.length} chats docked — tap a card to bring it forward
+        {cards.length} chat{cards.length !== 1 ? 's' : ''} docked — tap {cards.length > 1 ? 'a card to bring it forward' : 'to reopen'}
       </p>
       <div className="relative" style={{ height: FRONT_HEIGHT + frontIndex * PEEK }}>
         {cards.map((conv, i) => {
@@ -919,24 +919,33 @@ const MobileBottomSheet: React.FC<{ conversationId: string; onDismiss: () => voi
   }, [onDismiss]);
 
   return (
-    <div
-      ref={sheetRef}
-      className="md:hidden fixed bottom-0 left-0 right-0 z-[60] flex flex-col bg-white dark:bg-slate-900 rounded-t-2xl shadow-[0_-4px_30px_rgba(0,0,0,0.15)] border-t border-gray-200 dark:border-slate-700"
-      style={{ height: '70dvh', transform: 'translateY(0)', willChange: 'transform' }}
-    >
-      {/* Drag handle — touch target */}
+    <>
+      {/* Backdrop — tapping it minimizes to the wallet/bubble, same as
+          dragging the sheet down. Never undocks; only the header's ×
+          button does that. */}
       <div
-        className="flex justify-center py-3 flex-shrink-0 cursor-grab active:cursor-grabbing"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        className="md:hidden fixed inset-0 z-[59] bg-black/30"
+        onClick={onDismiss}
+      />
+      <div
+        ref={sheetRef}
+        className="md:hidden fixed bottom-0 left-0 right-0 z-[60] flex flex-col bg-white dark:bg-slate-900 rounded-t-2xl shadow-[0_-4px_30px_rgba(0,0,0,0.15)] border-t border-gray-200 dark:border-slate-700"
+        style={{ height: '70dvh', transform: 'translateY(0)', willChange: 'transform' }}
       >
-        <div className="w-10 h-1.5 rounded-full bg-gray-300 dark:bg-slate-600" />
+        {/* Drag handle — touch target */}
+        <div
+          className="flex justify-center py-3 flex-shrink-0 cursor-grab active:cursor-grabbing"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="w-10 h-1.5 rounded-full bg-gray-300 dark:bg-slate-600" />
+        </div>
+        <div className="flex-1 min-h-0 flex flex-col">
+          <DockedChatWindow conversationId={conversationId} />
+        </div>
       </div>
-      <div className="flex-1 min-h-0 flex flex-col">
-        <DockedChatWindow conversationId={conversationId} />
-      </div>
-    </div>
+    </>
   );
 };
 
@@ -946,16 +955,31 @@ export const DockedChats: React.FC = () => {
   const chatBotOpen = useChatStore((s) => s.chatBotOpen);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isTaskDrag, setIsTaskDrag] = useState(false);
-  const { dockChat, undockChat } = useChatStore();
-  // Mobile only: which docked conversation (if any) the user has tapped open
-  // from the wallet stack. Falls back to the stack once it's undocked.
+  const { dockChat } = useChatStore();
+  // Mobile only: which docked conversation (if any) is currently expanded
+  // into the full bottom sheet. Tapping the backdrop or dragging the sheet
+  // down minimizes back to the wallet stack — it never undocks. Only the
+  // header's × button (undockChat) actually removes a docked chat.
   const [mobileExpandedId, setMobileExpandedId] = useState<string | null>(null);
+  const prevDockedIdsRef = useRef<string[]>(dockedChatIds);
 
   useEffect(() => {
     if (mobileExpandedId && !dockedChatIds.includes(mobileExpandedId)) {
       setMobileExpandedId(null);
     }
   }, [dockedChatIds, mobileExpandedId]);
+
+  // Auto-expand a conversation the moment it's freshly docked, so docking
+  // still feels immediate — minimizing afterwards just returns it to the
+  // wallet stack instead of closing it, so more chats can be docked alongside it.
+  useEffect(() => {
+    const prev = prevDockedIdsRef.current;
+    const newlyDocked = dockedChatIds.find((id) => !prev.includes(id));
+    if (newlyDocked) {
+      setMobileExpandedId(newlyDocked);
+    }
+    prevDockedIdsRef.current = dockedChatIds;
+  }, [dockedChatIds]);
 
   useEffect(() => {
     const handleDragOver = (e: DragEvent) => {
@@ -1000,16 +1024,12 @@ export const DockedChats: React.FC = () => {
     <>
       <DropZone isDragOver={isDragOver} isTaskDrag={isTaskDrag} />
 
-      {/* Mobile: single chat goes straight to the bottom-sheet; with more
-          than one docked, default to the wallet stack overview, opening a
-          conversation into the same bottom-sheet only once it's tapped */}
-      {dockedChatIds.length === 1 && (
-        <MobileBottomSheet
-          conversationId={dockedChatIds[0]}
-          onDismiss={() => undockChat(dockedChatIds[0])}
-        />
-      )}
-      {dockedChatIds.length > 1 && (
+      {/* Mobile: a freshly-docked chat opens straight into the bottom sheet.
+          Tapping the backdrop or dragging it down minimizes to the wallet
+          stack overview (even with just one chat docked) rather than
+          undocking, so the user can go dock more chats and come back to
+          all of them. Tapping a wallet card re-opens it in the same sheet. */}
+      {dockedChatIds.length > 0 && (
         mobileExpandedId ? (
           <MobileBottomSheet
             key={mobileExpandedId}
