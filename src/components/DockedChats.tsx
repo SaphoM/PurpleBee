@@ -778,7 +778,9 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
 
   if (cards.length === 0) return null;
 
-  const PEEK = 44; // px of each underlying card visible above the front one
+  const PEEK = 44; // px of each underlying card visible above the one in front of it
+  const FRONT_HEIGHT = 96;
+  const BEHIND_HEIGHT = 56;
   const frontIndex = cards.length - 1;
   const frontId = cards[frontIndex].id;
 
@@ -810,7 +812,7 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
       <p className="text-center text-[11px] font-semibold text-gray-400 dark:text-slate-500 mb-2 tracking-wide uppercase">
         {cards.length} chats docked — tap a card to bring it forward
       </p>
-      <div className="relative" style={{ height: 96 + frontIndex * PEEK }}>
+      <div className="relative" style={{ height: FRONT_HEIGHT + frontIndex * PEEK }}>
         {cards.map((conv, i) => {
           const otherParticipant = conv.type === 'dm'
             ? conv.participants.find((p) => p.userId !== currentUserId)
@@ -819,6 +821,12 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
           const isFront = i === frontIndex;
           const fromFront = frontIndex - i;
           const isSwapping = !!swapPair && swapPair.includes(conv.id);
+          // The front card is taller than the rest (it shows a last-message
+          // preview), so the first card behind it needs an extra offset
+          // equal to that height difference — otherwise it only peeks out
+          // by a few px instead of a full PEEK, making it nearly invisible
+          // and hard to tap.
+          const bottomOffset = isFront ? 0 : (FRONT_HEIGHT - BEHIND_HEIGHT) + fromFront * PEEK;
           return (
             <button
               key={conv.id}
@@ -829,9 +837,9 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
                 'transition-all ease-out active:scale-[0.98]'
               )}
               style={{
-                bottom: fromFront * PEEK,
+                bottom: bottomOffset,
                 zIndex: i,
-                height: isFront ? 96 : 56,
+                height: isFront ? FRONT_HEIGHT : BEHIND_HEIGHT,
                 transform: isSwapping ? 'translateX(-18px)' : 'translateX(0)',
                 transitionDuration: isSwapping ? '150ms' : '280ms',
               }}
