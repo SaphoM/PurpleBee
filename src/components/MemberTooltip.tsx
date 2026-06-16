@@ -6,7 +6,6 @@ import {
   UserPlus, X, Timer, UserMinus,
 } from 'lucide-react';
 import { useUserStore, type TeamProfile } from '@stores/userStore';
-import { useSettingsStore } from '@stores/settingsStore';
 
 // ── Time allocation presets ───────────────────────────────────────────
 const timePresets = [15, 30, 45, 60, 90, 120];
@@ -51,7 +50,6 @@ export const MemberTooltip: React.FC<MemberTooltipProps> = ({
   const anchorRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const tooltipTimeout = useRef<ReturnType<typeof setTimeout>>();
-  const keepMockData = useSettingsStore((s) => s.keepMockData);
   const assignableMembers = useUserStore((s) => s.assignableMembers);
 
   const invitableMembers = canInvite

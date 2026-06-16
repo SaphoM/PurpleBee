@@ -7,28 +7,15 @@ import {
   Mail,
   MessageSquare,
   Crown,
-  Shield,
-  MoreVertical,
   CheckCircle2,
-  Clock,
   AlertTriangle,
-  BarChart3,
   X,
   Copy,
   Check,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
   Circle,
-  Zap,
   Target,
   Activity,
   ListChecks,
-  CalendarDays,
-  Star,
-  UserMinus,
-  ShieldCheck,
-  ShieldOff,
   Pencil,
   Plus,
 } from 'lucide-react';
@@ -38,7 +25,7 @@ import { useTaskStore } from '@stores/taskStore';
 import { useUserStore } from '@stores/userStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { useUIStore } from '@stores/uiStore';
-import { ChatParticipant, Task, TaskStatus } from '@/types/index';
+import { ChatParticipant, Task } from '@/types/index';
 import { format, formatDistanceToNow, isPast, isToday } from 'date-fns';
 import { authDb, inviteDb } from '@/lib/dataService';
 import { isDbConnected } from '@/lib/supabase';
@@ -82,17 +69,6 @@ const mockExtendedData: Record<string, { department: string; title: string; join
   'user-4': { department: 'Engineering', title: 'Full-Stack Developer', joinedDate: new Date('2024-04-05'), email: 'kabelo@xspark.co.za' },
   'user-5': { department: 'Engineering', title: 'Integration Engineer', joinedDate: new Date('2024-06-12'), email: 'naledi@xspark.co.za' },
 };
-
-// Stat pill
-const StatPill: React.FC<{ icon: React.ReactNode; value: number | string; label: string; color?: string }> = ({ icon, value, label, color }) => (
-  <div className="flex items-center gap-2">
-    <span className={clsx('text-gray-400 dark:text-slate-500', color)}>{icon}</span>
-    <div>
-      <p className="text-sm font-bold text-gray-900 dark:text-slate-100">{value}</p>
-      <p className="text-[10px] text-gray-500 dark:text-slate-400">{label}</p>
-    </div>
-  </div>
-);
 
 // Invite modal
 const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {

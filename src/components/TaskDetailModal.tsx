@@ -6,7 +6,6 @@ import {
   X,
   Clock,
   Users,
-  FileText,
   CalendarDays,
   Tag,
   Timer,
@@ -27,7 +26,6 @@ import {
   Settings2,
   Info,
   Paperclip,
-  Image,
   Link2,
   Upload,
   ExternalLink,
@@ -60,13 +58,6 @@ const statusConfig: { value: TaskStatus; label: string; color: string; bg: strin
   { value: 'review', label: 'Review', color: 'text-amber-700 dark:text-amber-300', bg: 'bg-amber-100 dark:bg-amber-900/30' },
   { value: 'completed', label: 'Completed', color: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
 ];
-
-const priorityConfig: Record<TaskPriority, { label: string; color: string; icon: string }> = {
-  low: { label: 'Low', color: 'text-gray-500', icon: '' },
-  medium: { label: 'Medium', color: 'text-yellow-600 dark:text-yellow-400', icon: '' },
-  high: { label: 'High', color: 'text-orange-600 dark:text-orange-400', icon: '' },
-  urgent: { label: 'Urgent', color: 'text-red-600 dark:text-red-400', icon: '' },
-};
 
 const SubtaskText: React.FC<{ completed: boolean; title: string; reveal?: boolean }> = ({ completed, title, reveal }) => {
   if (!completed) {
@@ -183,7 +174,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [showAttachments, setShowAttachments] = useState(false);
   const [attachmentTrigger, setAttachmentTrigger] = useState<string>('');
   const [noteInput, setNoteInput] = useState('');
-  const [showNotes, setShowNotes] = useState(true);
   const [showAllNotes, setShowAllNotes] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const noteInputRef = React.useRef<HTMLInputElement>(null);
@@ -751,7 +741,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                       value={newMiniTaskInput}
                       onChange={(e) => setNewMiniTaskInput(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === 'Enter' && !e.repeat) {
                           e.preventDefault();
                           handleAddMiniTask();
                         }
@@ -1041,7 +1031,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                           type="url"
                           value={linkUrl}
                           onChange={(e) => setLinkUrl(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddLink(); } }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); handleAddLink(); } }}
                           placeholder="https://..."
                           className={clsx(
                             'flex-1 rounded-lg px-3 py-2 text-sm',

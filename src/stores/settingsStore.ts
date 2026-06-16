@@ -3,15 +3,6 @@ import { create } from 'zustand';
 export type AccentColor = 'purple' | 'blue' | 'green' | 'amber' | 'red' | 'pink';
 export type DashboardLayout = 'default' | 'modern';
 
-export const accentColorMap: Record<AccentColor, { hex: string; label: string; tw: string }> = {
-  purple: { hex: '#8b5cf6', label: 'Purple', tw: 'purple' },
-  blue:   { hex: '#3b82f6', label: 'Blue',   tw: 'blue' },
-  green:  { hex: '#10b981', label: 'Green',  tw: 'emerald' },
-  amber:  { hex: '#f59e0b', label: 'Amber',  tw: 'amber' },
-  red:    { hex: '#ef4444', label: 'Red',     tw: 'red' },
-  pink:   { hex: '#ec4899', label: 'Pink',    tw: 'pink' },
-};
-
 export interface AppSettings {
   keepMockData: boolean;
   showTips: boolean;

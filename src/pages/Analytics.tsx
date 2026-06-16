@@ -1,42 +1,34 @@
 import React, { useState, useMemo } from 'react';
 import clsx from 'clsx';
 import {
-  BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell, RadialBarChart, RadialBar,
+  BarChart, Bar, Line, AreaChart, Area, PieChart, Pie, Cell, RadialBarChart, RadialBar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import {
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
   CheckCircle2,
-  Clock,
   AlertTriangle,
   Target,
   Flame,
   Zap,
-  Calendar,
-  Users,
   ArrowUpRight,
   ArrowDownRight,
   Activity,
   Timer,
   ListChecks,
   Award,
-  ChevronDown,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@components/Card';
 import { useTaskStore } from '@stores/taskStore';
 import { useUIStore } from '@stores/uiStore';
 import { useUserStore } from '@stores/userStore';
-import { TaskStatus, TaskPriority } from '@/types/index';
-import { format, subDays, isAfter, isBefore, startOfWeek, endOfWeek, isPast, isToday } from 'date-fns';
+import { format, subDays, isPast, isToday } from 'date-fns';
 
 type TimeRange = '7d' | '14d' | '30d' | '90d';
 
 // Generate realistic mock data for charts
 const generateWeeklyData = () => {
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  return days.map((day, i) => ({
+  return days.map((day) => ({
     day,
     completed: Math.floor(Math.random() * 6) + 2,
     created: Math.floor(Math.random() * 5) + 1,

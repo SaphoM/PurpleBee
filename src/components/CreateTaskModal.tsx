@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
-import { X, Plus, Trash2, CalendarDays, Tag, FolderKanban, ChevronDown } from 'lucide-react';
+import { X, Plus, Trash2, CalendarDays, Clock, Tag, FolderKanban, ChevronDown } from 'lucide-react';
 import { TaskStatus, TaskPriority } from '@/types/index';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
@@ -28,6 +28,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const [status, setStatus] = useState<TaskStatus>(defaultStatus);
   const [priority, setPriority] = useState<TaskPriority>('medium');
   const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('17:00');
+  const [dueDateError, setDueDateError] = useState(false);
   const [estimatedHours, setEstimatedHours] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
@@ -89,6 +91,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     setStatus(defaultStatus);
     setPriority('medium');
     setDueDate('');
+    setDueTime('17:00');
+    setDueDateError(false);
     setEstimatedHours('');
     setTags([]);
     setTagInput('');
@@ -104,6 +108,10 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
+    if (!dueDate) {
+      setDueDateError(true);
+      return;
+    }
 
     addTask({
       title: title.trim(),
@@ -111,7 +119,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       status,
       priority,
       assignedTo: user?.id,
-      dueDate: dueDate ? new Date(dueDate) : undefined,
+      dueDate: new Date(`${dueDate}T${dueTime || '00:00'}`),
       estimatedHours: estimatedHours ? Number(estimatedHours) : undefined,
       tags,
       progress: 0,
@@ -359,19 +367,42 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
-                <CalendarDays size={14} className="inline mr-1" /> Due Date
+                <CalendarDays size={14} className="inline mr-1" /> Due Date <span className="text-red-500">*</span>
               </label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className={clsx(
-                  'w-full rounded-lg px-4 py-2.5 text-sm',
-                  'bg-white border border-gray-300 text-gray-800',
-                  'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
-                  'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
-                )}
-              />
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => { setDueDate(e.target.value); setDueDateError(false); }}
+                  required
+                  className={clsx(
+                    'flex-1 min-w-0 rounded-lg px-4 py-2.5 text-sm',
+                    'bg-white border text-gray-800',
+                    'dark:bg-slate-700/50 dark:text-slate-100',
+                    dueDateError
+                      ? 'border-red-400 dark:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                      : 'border-gray-300 dark:border-slate-600 focus:ring-2 focus:ring-purple-500/20',
+                    'focus:outline-none focus:border-purple-500'
+                  )}
+                />
+                <div className="relative w-[120px] flex-shrink-0">
+                  <Clock size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+                  <input
+                    type="time"
+                    value={dueTime}
+                    onChange={(e) => setDueTime(e.target.value)}
+                    className={clsx(
+                      'w-full rounded-lg pl-7 pr-2 py-2.5 text-sm',
+                      'bg-white border border-gray-300 text-gray-800',
+                      'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                      'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                    )}
+                  />
+                </div>
+              </div>
+              {dueDateError && (
+                <p className="text-xs text-red-500 mt-1">Due date is required</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Estimated Hours</label>
@@ -462,7 +493,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                   type="text"
                   value={subtaskInput}
                   onChange={(e) => setSubtaskInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); addSubtask(); } }}
                   placeholder="Subtask title..."
                   className={clsx(
                     'w-full rounded-lg px-3 py-2 text-sm',

@@ -3,7 +3,6 @@ import clsx from 'clsx';
 import {
   Settings,
   Bell,
-  BellOff,
   Volume2,
   VolumeX,
   Mail,
@@ -15,7 +14,6 @@ import {
   User as UserIcon,
   Palette,
   Globe,
-  ChevronRight,
   RotateCcw,
   Save,
   Check,
@@ -32,7 +30,6 @@ import {
   Unlink2,
   LogIn,
   UserPlus,
-  Building2,
   ArrowRight,
   Loader2,
   X,

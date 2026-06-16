@@ -9,10 +9,6 @@ import {
   Bell,
   Lightbulb,
   Zap,
-  CheckSquare,
-  Calendar,
-  Users,
-  Sparkles,
 } from 'lucide-react';
 import { useSettingsStore } from '@stores/settingsStore';
 
@@ -250,7 +246,7 @@ const welcomeTips: WelcomeTip[] = [
   {
     icon: <Layout size={20} />,
     title: 'Kanban Board',
-    description: 'Drag and drop tasks between columns to update their status. Use the view switcher to toggle between Kanban, List, Calendar, and Timeline views.',
+    description: 'Drag and drop tasks between columns to update their status. Use the view switcher to toggle between Kanban and List, or check the Calendar page for a deadline view.',
   },
   {
     icon: <FolderKanban size={20} />,

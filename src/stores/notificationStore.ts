@@ -170,7 +170,6 @@ function generateNotificationsForUser(userId: string, userName: string): Notific
   const others = getOtherMembers(userId);
   const firstName = userName.split(' ')[0];
 
-  const pick = (arr: TeamMember[]) => arr[Math.floor(Math.random() * arr.length)];
   const o1 = others[0], o2 = others[1], o3 = others[2], o4 = others[3 % others.length];
 
   const notifications: Notification[] = [

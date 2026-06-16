@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Conversation, ChatMessage, ConversationType, ChatParticipant } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
 import { chatDb, notificationDb } from '@/lib/dataService';
+import { supabase } from '@/lib/supabase';
 
 /**
  * Returns true when mock/sample data mode is active.
@@ -13,6 +14,14 @@ const isMockMode = () => useSettingsStore.getState().keepMockData;
 
 // Lazy import to avoid circular dependency (userStore → chatStore → userStore)
 const getUserStore = () => import('@stores/userStore').then((m) => m.useUserStore);
+
+// ─── Typing presence (ephemeral Realtime broadcast, no DB writes) ─────────
+// Keyed by conversationId — separate from the table-backed state above since
+// typing status is transient and should never be persisted.
+type RealtimeChannel = ReturnType<NonNullable<typeof supabase>['channel']>;
+const _typingChannels: Record<string, RealtimeChannel> = {};
+const _typingExpiry: Record<string, ReturnType<typeof setTimeout>> = {};
+const TYPING_EXPIRY_MS = 4000;
 
 /** Aggregate DB reaction rows into the app's { emoji, users[] } shape */
 function aggregateReactions(rows: { emoji: string; user_id: string }[]): { emoji: string; users: string[] }[] {
@@ -302,6 +311,13 @@ interface ChatStore {
   hydrateFromDb: (userId: string) => Promise<void>;
   clearMockData: () => void;
   restoreMockData: (userId: string) => void;
+
+  // Typing presence
+  typingUsers: Record<string, { userId: string; name: string }[]>;
+  setTyping: (conversationId: string, isTyping: boolean) => void;
+  subscribeTyping: (conversationId: string) => void;
+  unsubscribeTyping: (conversationId: string) => void;
+  getTypingNames: (conversationId: string) => string[];
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -317,6 +333,80 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   dockedChatIds: [],
   chatBotOpen: false,
   setChatBotOpen: (open) => set({ chatBotOpen: open }),
+
+  typingUsers: {},
+
+  subscribeTyping: (conversationId) => {
+    if (!supabase) return;
+    // Clean up any previous subscription for this conversation first
+    get().unsubscribeTyping(conversationId);
+
+    const channel = supabase
+      .channel(`typing:${conversationId}`)
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        const { userId, name, isTyping } = payload as { userId: string; name: string; isTyping: boolean };
+        if (userId === get().currentUserId) return; // ignore our own broadcast
+
+        const expiryKey = `${conversationId}:${userId}`;
+        if (_typingExpiry[expiryKey]) clearTimeout(_typingExpiry[expiryKey]);
+
+        set((state) => {
+          const current = state.typingUsers[conversationId] || [];
+          const withoutUser = current.filter((u) => u.userId !== userId);
+          return {
+            typingUsers: {
+              ...state.typingUsers,
+              [conversationId]: isTyping ? [...withoutUser, { userId, name }] : withoutUser,
+            },
+          };
+        });
+
+        // Safety net: auto-clear if a "stopped typing" broadcast is missed
+        // (e.g. the other tab closed mid-keystroke)
+        if (isTyping) {
+          _typingExpiry[expiryKey] = setTimeout(() => {
+            set((state) => ({
+              typingUsers: {
+                ...state.typingUsers,
+                [conversationId]: (state.typingUsers[conversationId] || []).filter((u) => u.userId !== userId),
+              },
+            }));
+          }, TYPING_EXPIRY_MS);
+        }
+      })
+      .subscribe();
+
+    _typingChannels[conversationId] = channel;
+  },
+
+  unsubscribeTyping: (conversationId) => {
+    const channel = _typingChannels[conversationId];
+    if (channel && supabase) {
+      supabase.removeChannel(channel);
+      delete _typingChannels[conversationId];
+    }
+    set((state) => {
+      if (!state.typingUsers[conversationId]) return state;
+      const next = { ...state.typingUsers };
+      delete next[conversationId];
+      return { typingUsers: next };
+    });
+  },
+
+  setTyping: (conversationId, isTyping) => {
+    const channel = _typingChannels[conversationId];
+    if (!channel) return; // not subscribed (e.g. mock mode, or no DB connection)
+    const { currentUserId, currentUserName } = get();
+    channel.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { userId: currentUserId, name: currentUserName.split(' ')[0], isTyping },
+    });
+  },
+
+  getTypingNames: (conversationId) => {
+    return (get().typingUsers[conversationId] || []).map((u) => u.name);
+  },
 
   loadForUser: (userId) => {
     ensureSeedData(); // only generates once
@@ -1024,12 +1114,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   clearMockData: () => {
+    Object.keys(_typingChannels).forEach((id) => get().unsubscribeTyping(id));
     set({
       conversations: [],
       messages: {},
       activeConversationId: null,
       dockedChatIds: [],
       teamMembers: [],
+      typingUsers: {},
     });
   },
 

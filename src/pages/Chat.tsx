@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import clsx from 'clsx';
 import {
@@ -12,24 +12,19 @@ import {
   CheckSquare,
   Pin,
   PinOff,
-  Circle,
-  MoreVertical,
   Plus,
   ArrowLeft,
   Smile,
   Paperclip,
   X,
-  ChevronDown,
   PanelBottomClose,
-  FileText,
-  Image as ImageIcon,
   File,
   Download,
   SmilePlus,
   CornerUpLeft,
 } from 'lucide-react';
 import { useChatStore } from '@stores/chatStore';
-import { ConversationType, Conversation, ChatParticipant, Attachment, TaskRef, ReplyRef, ChatMessage } from '@/types/index';
+import { ConversationType, Attachment, ReplyRef, ChatMessage } from '@/types/index';
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
@@ -363,7 +358,11 @@ export const Chat: React.FC = () => {
     togglePin, teamMembers, dockChat,
     currentUserId, toggleReaction,
     conversations: allConversations,
+    subscribeTyping, unsubscribeTyping, setTyping,
   } = useChatStore();
+  const typingNames = useChatStore((s) =>
+    activeConversationId ? (s.typingUsers[activeConversationId]?.map((u) => u.name) ?? []) : []
+  );
 
   const [messageInput, setMessageInput] = useState('');
   const [showNewDM, setShowNewDM] = useState(false);
@@ -383,6 +382,8 @@ export const Chat: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reactionBtnRef = useRef<HTMLButtonElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSendingRef = useRef(false);
+  const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const conversations = getFilteredConversations();
   const activeConversation = useChatStore((s) => s.conversations.find((c) => c.id === s.activeConversationId));
@@ -401,7 +402,7 @@ export const Chat: React.FC = () => {
   // Close reaction picker on click outside
   useEffect(() => {
     if (!reactionPickerMsgId) return;
-    const handle = (e: MouseEvent) => setReactionPickerMsgId(null);
+    const handle = () => setReactionPickerMsgId(null);
     // Delay to avoid closing immediately on the same click that opened it
     const timer = setTimeout(() => document.addEventListener('click', handle), 0);
     return () => { clearTimeout(timer); document.removeEventListener('click', handle); };
@@ -410,6 +411,24 @@ export const Chat: React.FC = () => {
   useEffect(() => {
     if (activeConversationId) inputRef.current?.focus();
   }, [activeConversationId]);
+
+  // Listen for the other participant's typing presence on the active conversation
+  useEffect(() => {
+    if (!activeConversationId) return;
+    subscribeTyping(activeConversationId);
+    return () => {
+      if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+      unsubscribeTyping(activeConversationId);
+    };
+  }, [activeConversationId, subscribeTyping, unsubscribeTyping]);
+
+  const handleInputChange = (value: string) => {
+    setMessageInput(value);
+    if (!activeConversationId) return;
+    setTyping(activeConversationId, true);
+    if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+    typingStopTimer.current = setTimeout(() => setTyping(activeConversationId, false), 2000);
+  };
 
   const startLongPress = (msg: ChatMessage, e: React.MouseEvent | React.TouchEvent) => {
     const x = 'clientX' in e ? e.clientX : e.touches[0].clientX;
@@ -432,6 +451,13 @@ export const Chat: React.FC = () => {
 
   const handleSend = () => {
     if (!activeConversationId || (!messageInput.trim() && pendingAttachments.length === 0)) return;
+    // Guard against double-submission (Enter key-repeat, double-click, or
+    // a stray duplicate event firing handleSend twice for one user action)
+    if (isSendingRef.current) return;
+    isSendingRef.current = true;
+    setTimeout(() => { isSendingRef.current = false; }, 300);
+    if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+    setTyping(activeConversationId, false);
     const replyTo: ReplyRef | undefined = pendingReply
       ? { id: pendingReply.id, text: pendingReply.text, senderName: pendingReply.senderName, taskRef: pendingReply.taskRef }
       : undefined;
@@ -938,6 +964,18 @@ export const Chat: React.FC = () => {
                     );
                   })
                 )}
+                {typingNames.length > 0 && (
+                  <div className="flex items-center gap-1.5 px-1">
+                    <span className="flex gap-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-slate-500 animate-bounce [animation-delay:-0.3s]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-slate-500 animate-bounce [animation-delay:-0.15s]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-slate-500 animate-bounce" />
+                    </span>
+                    <span className="text-xs text-gray-400 dark:text-slate-500 italic">
+                      {typingNames.length === 1 ? `${typingNames[0]} is typing…` : `${typingNames.join(', ')} are typing…`}
+                    </span>
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
 
@@ -1008,9 +1046,9 @@ export const Chat: React.FC = () => {
                     ref={inputRef}
                     type="text"
                     value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
+                    onChange={(e) => handleInputChange(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
+                      if (e.key === 'Enter' && !e.shiftKey && !e.repeat) {
                         e.preventDefault();
                         handleSend();
                       }
@@ -1307,6 +1345,18 @@ export const Chat: React.FC = () => {
                   );
                 })
               )}
+              {typingNames.length > 0 && (
+                <div className="flex items-center gap-1.5 px-1">
+                  <span className="flex gap-0.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-slate-500 animate-bounce [animation-delay:-0.3s]" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-slate-500 animate-bounce [animation-delay:-0.15s]" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-slate-500 animate-bounce" />
+                  </span>
+                  <span className="text-xs text-gray-400 dark:text-slate-500 italic">
+                    {typingNames.length === 1 ? `${typingNames[0]} is typing…` : `${typingNames.join(', ')} are typing…`}
+                  </span>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
@@ -1338,8 +1388,8 @@ export const Chat: React.FC = () => {
                   ref={inputRef}
                   type="text"
                   value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  onChange={(e) => handleInputChange(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.repeat) { e.preventDefault(); handleSend(); } }}
                   placeholder={`Message ${activeConversation.name}...`}
                   className={clsx(
                     'flex-1 rounded-xl px-3 py-2 text-sm',

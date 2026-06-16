@@ -6,7 +6,7 @@ import { KanbanBoard } from '@components/KanbanBoard';
 import { TaskCard } from '@components/TaskCard';
 import { CreateTaskModal } from '@components/CreateTaskModal';
 import { TaskDetailModal } from '@components/TaskDetailModal';
-import { Plus, Filter, Layout, List as ListIcon, Eye, Users, User } from 'lucide-react';
+import { Plus, Layout, List as ListIcon, Eye, Users, User } from 'lucide-react';
 import { useTaskStore } from '@stores/taskStore';
 import { useUIStore } from '@stores/uiStore';
 import { useUserStore } from '@stores/userStore';
@@ -19,7 +19,6 @@ export const Tasks: React.FC = () => {
   const {
     user,
     canViewAllTasks,
-    canDeleteTasks,
     getEffectiveUserId,
     assignableMembers,
   } = useUserStore();
@@ -84,14 +83,6 @@ export const Tasks: React.FC = () => {
   };
 
   const isAdminOrManager = canViewAllTasks();
-
-  // Label for the current filter
-  const filterLabel = (() => {
-    if (taskOwnerFilter === 'mine') return 'My Tasks';
-    if (taskOwnerFilter === 'all') return 'All Tasks';
-    const member = assignableMembers.find((m) => m.id === taskOwnerFilter);
-    return member ? member.name.split(' ')[0] + "'s Tasks" : 'Tasks';
-  })();
 
   return (
     <div className="space-y-6">

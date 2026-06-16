@@ -106,11 +106,10 @@ const DesktopDayCell: React.FC<{
 // ── Upcoming Date Group (mobile) ──────────────────────────────────────
 const UpcomingGroup: React.FC<{
   date: Date;
-  dateStr: string;
   tasks: Task[];
   defaultExpanded: boolean;
   onTaskClick: (id: string) => void;
-}> = ({ date, dateStr, tasks: dayTasks, defaultExpanded, onTaskClick }) => {
+}> = ({ date, tasks: dayTasks, defaultExpanded, onTaskClick }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const dayIsToday = isToday(date);
   const overdue = isPast(date) && !dayIsToday;
@@ -542,7 +541,6 @@ export const CalendarPage: React.FC = () => {
                 <UpcomingGroup
                   key={dateStr}
                   date={date}
-                  dateStr={dateStr}
                   tasks={dayTasks}
                   defaultExpanded={isToday(date) || idx < 3}
                   onTaskClick={(id) => setSelectedTaskId(id)}
@@ -565,7 +563,6 @@ export const CalendarPage: React.FC = () => {
                 <UpcomingGroup
                   key={dateStr}
                   date={date}
-                  dateStr={dateStr}
                   tasks={dayTasks}
                   defaultExpanded={isToday(date) || idx < 2}
                   onTaskClick={(id) => setSelectedTaskId(id)}

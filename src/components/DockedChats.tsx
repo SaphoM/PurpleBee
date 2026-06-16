@@ -5,7 +5,6 @@ import {
   X,
   Send,
   Minimize2,
-  Maximize2,
   Hash,
   AtSign,
   CheckSquare,
@@ -17,7 +16,6 @@ import {
   SmilePlus,
   CornerUpLeft,
   Star,
-  Pencil,
   Check,
 } from 'lucide-react';
 import { useChatStore } from '@stores/chatStore';
@@ -90,7 +88,9 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
     conversations, getConversationMessages, sendMessage,
     editMessage, deleteMessage, starMessage, forwardMessage,
     toggleReaction, undockChat, currentUserId,
+    subscribeTyping, unsubscribeTyping, setTyping,
   } = useChatStore();
+  const typingNames = useChatStore((s) => s.typingUsers[conversationId]?.map((u) => u.name) ?? []);
   const tasks = useTaskStore((s) => s.tasks);
   const { getProjectById } = useProjectStore();
   const [isExpanded, setIsExpanded] = useState(true);
@@ -113,6 +113,8 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reactionBtnRef = useRef<HTMLButtonElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSendingRef = useRef(false);
+  const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const conv = conversations.find((c) => c.id === conversationId);
   const messages = getConversationMessages(conversationId);
@@ -123,6 +125,22 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
       inputRef.current?.focus();
     }
   }, [isExpanded, messages.length]);
+
+  // Listen for the other participant's typing presence while this window is open
+  useEffect(() => {
+    subscribeTyping(conversationId);
+    return () => {
+      if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+      unsubscribeTyping(conversationId);
+    };
+  }, [conversationId, subscribeTyping, unsubscribeTyping]);
+
+  const handleInputChange = (value: string) => {
+    setInput(value);
+    setTyping(conversationId, true);
+    if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+    typingStopTimer.current = setTimeout(() => setTyping(conversationId, false), 2000);
+  };
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -227,6 +245,13 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
 
   const handleSend = () => {
     if (!input.trim() && pendingAttachments.length === 0 && !pendingTaskRef) return;
+    // Guard against double-submission (Enter key-repeat, double-click, or
+    // a stray duplicate event firing handleSend twice for one user action)
+    if (isSendingRef.current) return;
+    isSendingRef.current = true;
+    setTimeout(() => { isSendingRef.current = false; }, 300);
+    if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+    setTyping(conversationId, false);
     const replyTo: ReplyRef | undefined = pendingReply
       ? { id: pendingReply.id, text: pendingReply.text, senderName: pendingReply.senderName, taskRef: pendingReply.taskRef }
       : undefined;
@@ -460,6 +485,18 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                 );
               })
             )}
+            {typingNames.length > 0 && (
+              <div className="flex items-center gap-1.5 px-1">
+                <span className="flex gap-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-slate-500 animate-bounce [animation-delay:-0.3s]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-slate-500 animate-bounce [animation-delay:-0.15s]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-slate-500 animate-bounce" />
+                </span>
+                <span className="text-[10px] text-gray-400 dark:text-slate-500 italic">
+                  {typingNames.length === 1 ? `${typingNames[0]} is typing…` : `${typingNames.join(', ')} are typing…`}
+                </span>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 
@@ -598,8 +635,8 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                 ref={inputRef}
                 type="text"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.repeat) handleSend(); }}
                 placeholder={`Message ${displayName}...`}
                 className={clsx(
                   'flex-1 rounded-full px-3 py-2 text-xs',

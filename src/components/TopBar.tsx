@@ -1,6 +1,6 @@
 import React from 'react';
 import clsx from 'clsx';
-import { Search, Bell, Settings, Zap, ChevronDown, Shield, Crown, User, ArrowRightLeft, Eye, X, Check, CheckCheck, Trash2, BellOff, MessageCircle, FileText, FolderKanban, Users } from 'lucide-react';
+import { Search, Bell, Settings, Shield, Crown, User, ArrowRightLeft, Eye, X, Check, CheckCheck, Trash2, BellOff, MessageCircle, FileText, FolderKanban, Users } from 'lucide-react';
 import { useNotificationStore, notificationCategoryConfig } from '@stores/notificationStore';
 import { useUserStore } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
@@ -8,7 +8,7 @@ import { useSettingsStore } from '@stores/settingsStore';
 import { useUIStore } from '@stores/uiStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
-import { Notification, NotificationType } from '@/types/index';
+import { Notification } from '@/types/index';
 import { Tip } from '@components/Tip';
 
 // ── Search result types ───────────────────────────────────────────────
@@ -53,7 +53,6 @@ export const TopBar: React.FC = () => {
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const setGlobalSearchQuery = useUIStore((s) => s.setGlobalSearchQuery);
   const keepMockData = useSettingsStore((s) => s.keepMockData);
-  const showTips = useSettingsStore((s) => s.showTips);
   const dockChat = useChatStore((s) => s.dockChat);
   const tasks = useTaskStore((s) => s.tasks);
   const projects = useProjectStore((s) => s.projects);

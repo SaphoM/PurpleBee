@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { Task, TaskStatus } from '@/types/index';
 import { PriorityBadge } from './Badge';
-import { Clock, Users, FileText, GripVertical, ChevronDown, FolderKanban } from 'lucide-react';
+import { Clock, FileText, GripVertical, ChevronDown, FolderKanban } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';

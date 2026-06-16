@@ -14,12 +14,10 @@ import {
   Mail,
   Sparkles,
   Building2,
-  UserPlus,
   Database,
   Lightbulb,
   Check,
   ArrowRight,
-  Globe,
   Users,
   Briefcase,
 } from 'lucide-react';

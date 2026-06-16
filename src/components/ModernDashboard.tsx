@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import clsx from 'clsx';
 import {
-  CheckCircle,
   Clock,
   AlertCircle,
   Zap,
   TrendingUp,
-  TrendingDown,
   MoreHorizontal,
   ExternalLink,
   ListChecks,
@@ -19,8 +17,6 @@ import {
   BarChart,
   Bar,
   XAxis,
-  YAxis,
-  Tooltip,
   ResponsiveContainer,
 } from 'recharts';
 import { useTaskStore } from '@stores/taskStore';
@@ -43,7 +39,7 @@ const weeklyActivity = [
 export const ModernDashboard: React.FC = () => {
   const { tasks: allTasks, getTasksForUser } = useTaskStore();
   const projects = useProjectStore((s) => s.projects);
-  const { user, canViewAllTasks, getEffectiveUserId, isViewingOther, getViewingProfile } = useUserStore();
+  const { canViewAllTasks, getEffectiveUserId } = useUserStore();
   const { darkMode } = useUIStore();
   const keepMockData = useSettingsStore((s) => s.keepMockData);
   const [activityTab, setActivityTab] = useState<'tasks' | 'projects'>('tasks');
@@ -51,7 +47,6 @@ export const ModernDashboard: React.FC = () => {
   const tasks = canViewAllTasks() ? allTasks : getTasksForUser(getEffectiveUserId());
   const completedTasks = tasks.filter((t) => t.status === 'completed').length;
   const inProgressTasks = tasks.filter((t) => t.status === 'in-progress').length;
-  const todoTasks = tasks.filter((t) => t.status === 'todo').length;
   const overdueTasks = tasks.filter(
     (t) => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== 'completed'
   ).length;
@@ -96,17 +91,6 @@ export const ModernDashboard: React.FC = () => {
     medium: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
     low: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
   };
-
-  const statusColors: Record<string, string> = {
-    completed: 'text-emerald-600',
-    'in-progress': 'text-blue-600',
-    todo: 'text-gray-500',
-    review: 'text-amber-600',
-  };
-
-  const chartTooltipStyle = darkMode
-    ? { backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#e2e8f0' }
-    : { backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#374151' };
 
   return (
     <div className="space-y-6">

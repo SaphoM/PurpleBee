@@ -211,26 +211,6 @@ export const taskDb = {
     if (error) { console.error('[dataService] tasks.delete', error); return false; }
     return true;
   },
-
-  /** Bulk insert — only used when restoring mock data with DB connected AND mock OFF */
-  async bulkInsert(tasks: Task[], createdBy?: string, mockMode?: boolean): Promise<boolean> {
-    if (!shouldPersist(mockMode)) return true;
-    const rows = tasks.map((t) => toDbInsert(t, createdBy));
-    const { error } = await supabase!.from('tasks').upsert(rows, { onConflict: 'id' });
-    if (error) { console.error('[dataService] tasks.bulkInsert', error); return false; }
-    return true;
-  },
-
-  /** Delete all tasks for a user — used when clearing data with DB connected */
-  async deleteAllForUser(userId: string, mockMode?: boolean): Promise<boolean> {
-    if (!shouldPersist(mockMode)) return true;
-    const { error } = await supabase!
-      .from('tasks')
-      .delete()
-      .or(`assigned_to.eq.${userId},created_by.eq.${userId}`);
-    if (error) { console.error('[dataService] tasks.deleteAllForUser', error); return false; }
-    return true;
-  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -278,13 +258,6 @@ export const notificationDb = {
     if (error) { console.error('[dataService] notifications.markRead', error); return false; }
     return true;
   },
-
-  async deleteAllForUser(userId: string, mockMode?: boolean) {
-    if (!shouldPersist(mockMode)) return true;
-    const { error } = await supabase!.from('notifications').delete().eq('user_id', userId);
-    if (error) { console.error('[dataService] notifications.deleteAllForUser', error); return false; }
-    return true;
-  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -324,14 +297,6 @@ export const projectDb = {
     const { data, error } = await q;
     if (error) { console.error('[dataService] projects.fetchAll', error); return null; }
     return data;
-  },
-
-  /** Insert a project row */
-  async insert(project: Record<string, unknown>, mockMode?: boolean) {
-    if (!shouldPersist(mockMode)) return true;
-    const { error } = await supabase!.from('projects').insert(project);
-    if (error) { console.error('[dataService] projects.insert', error); return false; }
-    return true;
   },
 
   /** Insert a project AND its project_tasks in one go */
@@ -397,13 +362,6 @@ export const projectDb = {
     if (error) { console.error('[dataService] project_tasks.delete', error); return false; }
     return true;
   },
-
-  async deleteAllForUser(userId: string, mockMode?: boolean) {
-    if (!shouldPersist(mockMode)) return true;
-    const { error } = await supabase!.from('projects').delete().eq('created_by', userId);
-    if (error) { console.error('[dataService] projects.deleteAllForUser', error); return false; }
-    return true;
-  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -434,17 +392,6 @@ export const chatDb = {
       .in('id', convIds)
       .order('updated_at', { ascending: false });
     if (error) { console.error('[dataService] chat.fetchConversations', error); return null; }
-    return data;
-  },
-
-  /** Fetch all participants for a conversation */
-  async fetchParticipants(conversationId: string, mockMode?: boolean) {
-    if (!shouldPersist(mockMode)) return null;
-    const { data, error } = await supabase!
-      .from('conversation_participants')
-      .select('*, profile:profiles(name, avatar, role)')
-      .eq('conversation_id', conversationId);
-    if (error) { console.error('[dataService] chat.fetchParticipants', error); return null; }
     return data;
   },
 
@@ -567,17 +514,6 @@ export const chatDb = {
     return true;
   },
 
-  /** Mark a message as read */
-  async markRead(messageId: string, userId: string, mockMode?: boolean): Promise<boolean> {
-    if (!shouldPersist(mockMode)) return true;
-    const { error } = await supabase!.from('message_reads').upsert(
-      { message_id: messageId, user_id: userId },
-      { onConflict: 'message_id,user_id' }
-    );
-    if (error) { console.error('[dataService] chat.markRead', error); return false; }
-    return true;
-  },
-
   /** Create a conversation + add participants */
   async createConversation(
     conv: { id: string; type: string; name: string; description?: string; taskId?: string; taskTitle?: string; teamId?: string; pinned?: boolean },
@@ -670,40 +606,6 @@ export const chatDb = {
       .eq('id', userId);
     if (error) { console.error('[dataService] chat.fetchTeamMembers solo', error); return null; }
     return data?.map((p: any) => ({ user_id: p.id, role: p.role, profiles: p })) || null;
-  },
-
-  async deleteAllForUser(_userId: string, mockMode?: boolean) {
-    if (!shouldPersist(mockMode)) return true;
-    // Conversations are shared — cascade via team deletion in practice
-    return true;
-  },
-};
-
-// ═══════════════════════════════════════════════════════════════════════
-// USER SETTINGS
-// ═══════════════════════════════════════════════════════════════════════
-
-export const settingsDb = {
-  async fetch(userId: string) {
-    // Settings always read from DB if connected (not gated by mockMode)
-    if (!isDbConnected()) return null;
-    const { data, error } = await supabase!
-      .from('user_settings')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-    if (error) { console.error('[dataService] settings.fetch', error); return null; }
-    return data;
-  },
-
-  async upsert(userId: string, settings: Record<string, unknown>) {
-    // Settings always persist if connected (not gated by mockMode)
-    if (!isDbConnected()) return true;
-    const { error } = await supabase!
-      .from('user_settings')
-      .upsert({ user_id: userId, ...settings }, { onConflict: 'user_id' });
-    if (error) { console.error('[dataService] settings.upsert', error); return false; }
-    return true;
   },
 };
 
@@ -954,30 +856,6 @@ export const inviteDb = {
       .single();
     if (error) { console.error('[dataService] inviteDb.getByToken', error); return null; }
     return data;
-  },
-
-  /** List pending invites for a team */
-  async listForTeam(teamId: string) {
-    if (!isDbConnected()) return [];
-    const { data, error } = await supabase!
-      .from('invites')
-      .select('*')
-      .eq('team_id', teamId)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
-    if (error) { console.error('[dataService] inviteDb.listForTeam', error); return []; }
-    return data || [];
-  },
-
-  /** Revoke an invite */
-  async revoke(inviteId: string) {
-    if (!isDbConnected()) return false;
-    const { error } = await supabase!
-      .from('invites')
-      .update({ status: 'revoked', updated_at: new Date().toISOString() })
-      .eq('id', inviteId);
-    if (error) { console.error('[dataService] inviteDb.revoke', error); return false; }
-    return true;
   },
 
   /** Accept an invite (used after sign-up via invite link) */

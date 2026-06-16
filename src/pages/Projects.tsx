@@ -10,7 +10,6 @@ import {
   Users,
   Sparkles,
   Trash2,
-  UserPlus,
   ArrowLeft,
   FolderKanban,
   AlertCircle,
@@ -34,16 +33,6 @@ import { useChatStore } from '@stores/chatStore';
 import { useToastStore } from '@components/Toast';
 import { useUIStore } from '@stores/uiStore';
 import { MemberTooltip, MemberInfo } from '@components/MemberTooltip';
-
-// ── Template icon mapping (clean outline icons) ────────────────────────
-const templateIconMap: Record<string, React.ReactNode> = {
-  'web-app': <Globe size={24} strokeWidth={1.5} />,
-  'mobile-app': <Smartphone size={24} strokeWidth={1.5} />,
-  'marketing': <Megaphone size={24} strokeWidth={1.5} />,
-  'api-service': <Zap size={24} strokeWidth={1.5} />,
-  'design-system': <Palette size={24} strokeWidth={1.5} />,
-  'custom': <Wrench size={24} strokeWidth={1.5} />,
-};
 
 const getTemplateIcon = (templateId: string, size: number = 24) => {
   const icons: Record<string, React.ReactNode> = {
@@ -436,7 +425,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                     type="text"
                     value={customTaskInput}
                     onChange={(e) => setCustomTaskInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomTask(); } }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); addCustomTask(); } }}
                     placeholder="Type a task title and press Enter..."
                     className={clsx(
                       'flex-1 rounded-lg px-4 py-2.5 text-sm',
@@ -736,7 +725,6 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
 
     // If an admin/manager added a task for someone else, notify the assignee too
     if (pt.assignedTo && pt.assignedTo !== currentUserId) {
-      const assigneeName = assignableMembers.find((p) => p.id === pt.assignedTo)?.name || '';
       addNotification({
         userId: pt.assignedTo,
         type: 'task-assigned',
@@ -857,7 +845,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                   value={newTaskTitle}
                   onChange={(e) => { setNewTaskTitle(e.target.value); setShowSuggestions(true); }}
                   onFocus={() => setShowSuggestions(true)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddTaskToProject(); if (e.key === 'Escape') { setShowAddTask(false); setShowSuggestions(false); } }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.repeat) handleAddTaskToProject(); if (e.key === 'Escape') { setShowAddTask(false); setShowSuggestions(false); } }}
                   placeholder="Type to search suggested tasks..."
                   className={clsx(
                     'w-full rounded-lg px-4 py-2.5 text-sm',
@@ -1399,7 +1387,6 @@ export const Projects: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {orderedProjects.map((project) => {
             const sc = statusConfig[project.status];
-            const assignedCount = project.tasks.filter((t) => t.assignedTo).length;
             const totalHours = project.tasks.reduce((sum, t) => sum + t.estimatedHours, 0);
             const members = [...new Set(project.tasks.map((t) => t.assignedTo).filter(Boolean))] as string[];
             const isDraggingThis = draggingId === project.id;

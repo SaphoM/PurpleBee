@@ -1,9 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import clsx from 'clsx';
 import {
-  Zap,
   TrendingUp,
-  TrendingDown,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -13,11 +11,8 @@ import {
   ShieldAlert,
   Sparkles,
   ArrowRight,
-  ChevronRight,
   Activity,
   BarChart3,
-  Users,
-  Calendar,
   Flame,
   Eye,
   RefreshCw,
@@ -36,8 +31,8 @@ import {
 import { Card, CardHeader, CardContent } from '@components/Card';
 import { useTaskStore } from '@stores/taskStore';
 import { useUserStore } from '@stores/userStore';
-import { Task, TaskStatus, TaskPriority } from '@/types/index';
-import { format, differenceInDays, isPast, isToday, addDays, subDays } from 'date-fns';
+import { Task, TaskPriority } from '@/types/index';
+import { format, differenceInDays, isPast, addDays } from 'date-fns';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 type InsightCategory = 'all' | 'productivity' | 'risks' | 'suggestions' | 'forecasts';
@@ -108,7 +103,6 @@ const generateInsights = (tasks: Task[]): Insight[] => {
   const review = tasks.filter((t) => t.status === 'review');
   const overdue = tasks.filter((t) => t.dueDate && isPast(new Date(t.dueDate)) && t.status !== 'completed');
   const urgent = tasks.filter((t) => t.priority === 'urgent' && t.status !== 'completed');
-  const high = tasks.filter((t) => t.priority === 'high' && t.status !== 'completed');
   const dueSoon = tasks.filter((t) => {
     if (!t.dueDate || t.status === 'completed') return false;
     const days = differenceInDays(new Date(t.dueDate), now);

@@ -10,6 +10,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 ### Task Management
 - Multi-level priorities (Low, Medium, High, Urgent)
 - Status tracking (To Do, In Progress, Review, Completed)
+- **Due date is required on task creation** — the Create Task modal pairs a native date picker with a time picker (defaults to 17:00) for fast entry; submitting without a date shows inline validation ("Due date is required") and the browser's native required-field prompt; date + time combine into a single `dueDate` timestamp on the task
 - Progress visualization (0–100%) — auto-updates when a task is dragged between Kanban columns: `completed → 100%`, `review → 75%`, `in-progress → 10%`, `todo → 0%`
 - Drag-and-drop Kanban — column changes persist to Supabase immediately in live mode; mock mode updates Zustand in-memory state
 - **Completion approval gate** — regular members (`role: 'user'`) cannot mark a task as completed through any path. Every entry point is blocked:
@@ -33,10 +34,9 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - `createdBy` stamped on every new task; hydrated from `created_by` DB column on load
 
 ### Multiple View Modes
-- **Kanban Board** — Drag-and-drop task management
-- **List View** — Traditional task list with filtering
-- **Calendar View** — Deadline visualization
-- **Timeline View** — Project timeline
+- **Kanban Board** — Drag-and-drop task management; toggle via the view switcher on the Tasks page
+- **List View** — Traditional task list with filtering; toggle via the same view switcher
+- **Calendar View** — Deadline visualization; its own page (month grid, agenda list, and upcoming-tasks grouping) accessed from the sidebar
 
 ### Project Management
 - Project templates (Web App, Mobile, Marketing, API, Design System, Training, Services, Custom)
@@ -62,6 +62,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - **Task card visual styling in chat** — received task card bubbles use a light fresh green gradient (`from-emerald-50 to-white`); sent (isMe) task cards use a solid emerald-700 green covering the left 55% fading to transparent so the card reads as green against the purple bubble with legible white text
 - Task card attachments persist to Supabase via `task_ref JSONB` column on the `messages` table; hydrated on load so the card renders correctly after a page refresh — both in docked chat windows and in the full Chat page conversation view
 - **Message actions (long-press or right-click)** — hold any message bubble to reveal the context menu: **Reply** (quoted reply banner above input; sent bubble shows original sender + preview with purple left-border), **Forward** (conversation picker), **Copy** (clipboard), **Edit** (inline text input, persisted to DB; "edited" label shown), **Info** (timestamp tooltip), **Star** (amber ★ marker), **Delete** (soft-delete — bubble shows "Message deleted"; `is_deleted` persisted to DB), **More…** (extensible)
+- **Typing indicator** — "[Name] is typing…" with an animated three-dot bounce appears above the input in both the docked chat window and the full Chat page when the other participant is composing a message; powered by Supabase Realtime **Broadcast** (`typing:{conversationId}` channel) — ephemeral, never written to a DB table; the indicator clears as soon as the other side sends or pauses typing for 2s, with a 4s auto-expiry safety net in case the "stopped typing" signal is missed (e.g. their tab closes mid-keystroke); only active when Supabase is connected — no-op in offline demo mode since there's no second participant to broadcast to
 
 ### Global Search
 - TopBar search bar filters content across every page in real-time
@@ -97,6 +98,12 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 - Focus session tracking
 - AI-generated recommendations
 - Team performance metrics
+
+### AI Insights
+- Dedicated page (sidebar → AI Insights) that derives insights directly from the current user's real task data — no external AI API call
+- Categorized tabs: **All**, **Productivity**, **Risks**, **Suggestions**, **Forecasts**
+- Each insight has a severity (info / success / warning / critical), a confidence score, an impact rating, and an optional action button
+- Thumbs up/down feedback and dismiss per insight (session-local, not persisted)
 
 ### Customization
 - 6 accent color themes (Purple, Blue, Green, Amber, Red, Pink)

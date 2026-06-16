@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import clsx from 'clsx';
 import { XCircle, Loader2, Users, CheckCircle } from 'lucide-react';
 import { inviteDb } from '@/lib/dataService';
 import { useUserStore } from '@stores/userStore';
