@@ -147,11 +147,11 @@ export const taskDb = {
    */
   async fetchAll(userId: string, mockMode?: boolean, teamId?: string | null): Promise<Task[] | null> {
     if (!shouldPersist(mockMode)) return null;
-    // Prefer team-scoped fetch so every member of the company sees the shared
-    // backlog. Fall back to user-scoped when no team is resolved (single-user mode).
     let q = supabase!.from('tasks').select('*').order('created_at', { ascending: false });
     if (teamId) {
-      q = q.eq('team_id', teamId);
+      // Include team tasks AND any tasks the user owns directly (handles cases
+      // where tasks were created before the team was resolved or team changed).
+      q = q.or(`team_id.eq.${teamId},assigned_to.eq.${userId},created_by.eq.${userId}`);
     } else {
       q = q.or(`assigned_to.eq.${userId},created_by.eq.${userId}`);
     }
@@ -290,7 +290,9 @@ export const projectDb = {
       .order('created_at', { ascending: false })
       .order('order', { referencedTable: 'project_tasks', ascending: true });
     if (teamId) {
-      q = q.eq('team_id', teamId);
+      // Include team projects AND any projects the user created directly (handles
+      // cases where projects were created before the team resolved or team changed).
+      q = q.or(`team_id.eq.${teamId},created_by.eq.${userId}`);
     } else {
       q = q.eq('created_by', userId);
     }
@@ -797,10 +799,6 @@ export const authDb = {
       console.error('[dataService] getOrCreateTeam add member', memberErr);
       // Team was created, still usable — log but don't throw
     }
-
-    // Sync profiles.role so the app reads 'admin' on next login without
-    // needing to cross-reference team_members every time.
-    await supabase!.from('profiles').update({ role: 'admin' }).eq('id', userId);
 
     return { team_id: newTeam.id, role: 'admin' as const, team: newTeam };
   },
