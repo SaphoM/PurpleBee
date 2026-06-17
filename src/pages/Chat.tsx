@@ -528,7 +528,10 @@ export const Chat: React.FC = () => {
 
   const handleSelectConversation = (id: string) => {
     setActiveConversation(id);
-    setMobileShowChat(true);
+    if (window.innerWidth < 768) {
+      // Mobile: use the wallet (DockedChats) rather than the in-page overlay
+      dockChat(id);
+    }
   };
 
   const onlineCount = teamMembers.filter((m) => m.online).length;
