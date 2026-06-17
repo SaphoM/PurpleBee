@@ -753,7 +753,12 @@ const DropZone: React.FC<{ isDragOver: boolean; isTaskDrag?: boolean }> = ({ isD
 // stacked-card overview (like boarding passes in a wallet app) instead of
 // dropping straight into the most recently docked conversation. Tapping a
 // card opens that conversation in the full MobileBottomSheet.
-const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: string) => void }> = ({ conversationIds, onSelect }) => {
+const MobileWalletStack: React.FC<{
+  conversationIds: string[];
+  onSelect: (id: string) => void;
+  // Which chat (if any) is currently open in the bottom sheet above
+  expandedId?: string | null;
+}> = ({ conversationIds, onSelect, expandedId }) => {
   const conversations = useChatStore((s) => s.conversations);
   const currentUserId = useChatStore((s) => s.currentUserId);
 
@@ -785,12 +790,18 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
   const frontId = cards[frontIndex].id;
 
   const handleCardClick = (id: string, index: number) => {
+    // Tapping the card that is already open in the sheet above does nothing —
+    // it's already the active conversation.
+    if (id === expandedId) return;
+
     if (index === frontIndex) {
+      // Front card: open immediately without any shuffle.
       onSelect(id);
       return;
     }
-    // Shuffle: flick both cards left, then swap their stack positions so the
-    // tapped card settles in front and the old front tucks in behind.
+    // Background card: shuffle-swap then open in a single tap.
+    // Flick both cards left, swap their positions, then call onSelect so the
+    // newly-promoted card opens straight into the bottom sheet.
     setSwapPair([id, frontId]);
     // 180ms: 150ms for the flick animation + ~30ms buffer for React's render
     // delay so the flick fully completes before the position swap begins.
@@ -803,16 +814,20 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
         return next;
       });
       setSwapPair(null);
+      // Open immediately after the swap settles — one tap to switch chats.
+      onSelect(id);
     }, 180);
   };
 
   return (
+    // z-[58]: sits below the backdrop (z-[59]) and sheet (z-[60]) so the
+    // wallet is always visible in the strip the sheet leaves uncovered.
     <div
-      className="md:hidden fixed bottom-0 left-0 right-0 z-[60] px-3"
+      className="md:hidden fixed bottom-0 left-0 right-0 z-[58] px-3"
       style={{ paddingBottom: 'max(14px, env(safe-area-inset-bottom))' }}
     >
       <p className="text-center text-[11px] font-semibold text-gray-400 dark:text-slate-500 mb-2 tracking-wide uppercase">
-        {cards.length} chat{cards.length !== 1 ? 's' : ''} docked — tap {cards.length > 1 ? 'a card to bring it forward' : 'to reopen'}
+        {cards.length} chat{cards.length !== 1 ? 's' : ''} docked — {cards.length > 1 ? 'tap to switch' : 'tap to reopen'}
       </p>
       <div className="relative" style={{ height: FRONT_HEIGHT + frontIndex * PEEK }}>
         {cards.map((conv, i) => {
@@ -823,6 +838,7 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
           const isFront = i === frontIndex;
           const fromFront = frontIndex - i;
           const isSwapping = !!swapPair && swapPair.includes(conv.id);
+          const isCurrentlyOpen = conv.id === expandedId;
           // The front card is taller than the rest (it shows a last-message
           // preview), so the first card behind it needs an extra offset
           // equal to that height difference — otherwise it only peeks out
@@ -835,7 +851,10 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
               onClick={() => handleCardClick(conv.id, i)}
               className={clsx(
                 'absolute left-0 right-0 rounded-2xl text-left overflow-hidden',
-                'bg-white dark:bg-slate-800 shadow-lg border border-gray-200/70 dark:border-slate-700/70',
+                'bg-white dark:bg-slate-800 shadow-lg border',
+                isCurrentlyOpen
+                  ? 'border-purple-400 dark:border-purple-500'
+                  : 'border-gray-200/70 dark:border-slate-700/70',
                 // active:scale-[0.98] is intentionally omitted — it's overridden by
                 // the inline transform style and would silently do nothing. Use
                 // active:opacity-90 instead so tap feedback still works.
@@ -860,6 +879,12 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
                   </span>
                 )}
                 <span className="text-xs font-bold text-white truncate flex-1">{conv.name}</span>
+                {/* "Open" pill for the currently expanded chat */}
+                {isCurrentlyOpen && (
+                  <span className="text-[8px] font-semibold bg-white/25 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">
+                    Open
+                  </span>
+                )}
                 {conv.unreadCount > 0 && (
                   <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center flex-shrink-0">
                     {conv.unreadCount}
@@ -884,7 +909,13 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
 };
 
 // Mobile bottom-sheet with swipe-to-dismiss
-const MobileBottomSheet: React.FC<{ conversationId: string; onDismiss: () => void }> = ({ conversationId, onDismiss }) => {
+const MobileBottomSheet: React.FC<{
+  conversationId: string;
+  onDismiss: () => void;
+  // px to lift the sheet (and backdrop) above the wallet stack when 2+ chats
+  // are docked so the wallet cards remain visible and tappable below the sheet.
+  walletOffset?: number;
+}> = ({ conversationId, onDismiss, walletOffset = 0 }) => {
   const sheetRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ startY: number; currentY: number; dragging: boolean }>({ startY: 0, currentY: 0, dragging: false });
   const DISMISS_THRESHOLD = 120; // px to drag before auto-dismiss
@@ -925,19 +956,28 @@ const MobileBottomSheet: React.FC<{ conversationId: string; onDismiss: () => voi
     }
   }, [onDismiss]);
 
+  // When walletOffset > 0 the wallet cards are visible below the sheet, so we
+  // cap the sheet height so it doesn't run off the top of the screen.
+  const sheetHeight = walletOffset > 0
+    ? `calc(100dvh - ${walletOffset}px - 60px)`
+    : '70dvh';
+
   return (
     <>
       {/* Backdrop — tapping it minimizes to the wallet/bubble, same as
           dragging the sheet down. Never undocks; only the header's ×
-          button does that. */}
+          button does that.
+          When walletOffset > 0 the backdrop stops at the wallet strip so
+          the wallet cards underneath remain visible and tappable. */}
       <div
-        className="md:hidden fixed inset-0 z-[59] bg-black/30"
+        className="md:hidden fixed inset-x-0 top-0 z-[59] bg-black/30"
+        style={{ bottom: walletOffset || undefined }}
         onClick={onDismiss}
       />
       <div
         ref={sheetRef}
-        className="md:hidden fixed bottom-0 left-0 right-0 z-[60] flex flex-col bg-white dark:bg-slate-900 rounded-t-2xl shadow-[0_-4px_30px_rgba(0,0,0,0.15)] border-t border-gray-200 dark:border-slate-700"
-        style={{ height: '70dvh', transform: 'translateY(0)', willChange: 'transform' }}
+        className="md:hidden fixed left-0 right-0 z-[60] flex flex-col bg-white dark:bg-slate-900 rounded-t-2xl shadow-[0_-4px_30px_rgba(0,0,0,0.15)] border-t border-gray-200 dark:border-slate-700"
+        style={{ height: sheetHeight, bottom: walletOffset, transform: 'translateY(0)', willChange: 'transform' }}
       >
         {/* Drag handle — touch target */}
         <div
@@ -1031,23 +1071,46 @@ export const DockedChats: React.FC = () => {
     <>
       <DropZone isDragOver={isDragOver} isTaskDrag={isTaskDrag} />
 
-      {/* Mobile: a freshly-docked chat opens straight into the bottom sheet.
-          Tapping the backdrop or dragging it down minimizes to the wallet
-          stack overview (even with just one chat docked) rather than
-          undocking, so the user can go dock more chats and come back to
-          all of them. Tapping a wallet card re-opens it in the same sheet. */}
+      {/* ── Mobile chat UI ──────────────────────────────────────────────────
+          Layout when 2+ chats are docked:
+            z-[58]  MobileWalletStack — always visible at the bottom
+            z-[59]  Backdrop (stops at walletOffset so wallet stays exposed)
+            z-[60]  MobileBottomSheet (lifted by walletOffset)
+          Tapping any wallet card while the sheet is open triggers a
+          shuffle-swap (if it's a background card) and switches the chat
+          in one tap — no separate minimize step needed.
+
+          When only 1 chat is docked the wallet shows only when the sheet
+          is not open (tap its single card to re-expand). */}
+
+      {/* Wallet — always mounted when 2+ chats are docked */}
+      {dockedChatIds.length > 1 && (
+        <MobileWalletStack
+          conversationIds={dockedChatIds}
+          onSelect={(id) => setMobileExpandedId(id)}
+          expandedId={mobileExpandedId}
+        />
+      )}
+
       {dockedChatIds.length > 0 && (
         mobileExpandedId ? (
           <MobileBottomSheet
             key={mobileExpandedId}
             conversationId={mobileExpandedId}
             onDismiss={() => setMobileExpandedId(null)}
+            walletOffset={dockedChatIds.length > 1
+              // label (~24px) + card stack + safe-area padding (~14px)
+              ? 38 + 96 + (dockedChatIds.length - 1) * 44
+              : 0}
           />
         ) : (
-          <MobileWalletStack
-            conversationIds={dockedChatIds}
-            onSelect={(id) => setMobileExpandedId(id)}
-          />
+          /* Single-chat wallet: show a one-card stack so the user can tap to reopen */
+          dockedChatIds.length === 1 ? (
+            <MobileWalletStack
+              conversationIds={dockedChatIds}
+              onSelect={(id) => setMobileExpandedId(id)}
+            />
+          ) : null
         )
       )}
 
