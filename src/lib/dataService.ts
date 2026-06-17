@@ -798,6 +798,10 @@ export const authDb = {
       // Team was created, still usable — log but don't throw
     }
 
+    // Sync profiles.role so the app reads 'admin' on next login without
+    // needing to cross-reference team_members every time.
+    await supabase!.from('profiles').update({ role: 'admin' }).eq('id', userId);
+
     return { team_id: newTeam.id, role: 'admin' as const, team: newTeam };
   },
 

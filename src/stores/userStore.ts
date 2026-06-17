@@ -382,7 +382,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
       // DB write can be scoped to the company.
       try {
         const team = await authDb.getOrCreateTeam(supaUser.id, name);
-        set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
+        const effectiveRole = (team.role as AppRole) || role;
+        set((state) => ({
+          currentTeamId: team.team_id,
+          currentTeamName: team.team?.name || null,
+          user: state.user ? { ...state.user, role: effectiveRole } : null,
+        }));
       } catch (err) {
         console.warn('[userStore] could not resolve team on login', err);
       }
@@ -469,7 +474,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
         // we'll re-resolve so the invitee gets attached to the inviter's team.
         try {
           const team = await authDb.getOrCreateTeam(supaUser.id, name);
-          set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
+          const effectiveRole = (team.role as AppRole) || role;
+          set((state) => ({
+            currentTeamId: team.team_id,
+            currentTeamName: team.team?.name || null,
+            user: state.user ? { ...state.user, role: effectiveRole } : null,
+          }));
         } catch (err) {
           console.warn('[userStore] could not resolve team on session restore', err);
         }
