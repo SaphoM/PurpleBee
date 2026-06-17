@@ -792,6 +792,8 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
     // Shuffle: flick both cards left, then swap their stack positions so the
     // tapped card settles in front and the old front tucks in behind.
     setSwapPair([id, frontId]);
+    // 180ms: 150ms for the flick animation + ~30ms buffer for React's render
+    // delay so the flick fully completes before the position swap begins.
     setTimeout(() => {
       setOrder((prev) => {
         const next = [...prev];
@@ -801,7 +803,7 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
         return next;
       });
       setSwapPair(null);
-    }, 150);
+    }, 180);
   };
 
   return (
@@ -834,13 +836,18 @@ const MobileWalletStack: React.FC<{ conversationIds: string[]; onSelect: (id: st
               className={clsx(
                 'absolute left-0 right-0 rounded-2xl text-left overflow-hidden',
                 'bg-white dark:bg-slate-800 shadow-lg border border-gray-200/70 dark:border-slate-700/70',
-                'transition-all ease-out active:scale-[0.98]'
+                // active:scale-[0.98] is intentionally omitted — it's overridden by
+                // the inline transform style and would silently do nothing. Use
+                // active:opacity-90 instead so tap feedback still works.
+                'transition-all ease-out active:opacity-90'
               )}
               style={{
                 bottom: bottomOffset,
                 zIndex: i,
                 height: isFront ? FRONT_HEIGHT : BEHIND_HEIGHT,
-                transform: isSwapping ? 'translateX(-18px)' : 'translateX(0)',
+                // 40px flick is pronounced enough to read as a deliberate shuffle
+                // on any phone screen without feeling jarring.
+                transform: isSwapping ? 'translateX(-40px)' : 'translateX(0)',
                 transitionDuration: isSwapping ? '150ms' : '280ms',
               }}
             >

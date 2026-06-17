@@ -1395,8 +1395,6 @@ export const Projects: React.FC = () => {
             return (
               <div
                 key={project.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, project.id)}
                 onDragOver={(e) => handleDragOver(e, project.id)}
                 onDrop={(e) => handleDrop(e, project.id)}
                 onDragEnd={handleDragEnd}
@@ -1410,8 +1408,12 @@ export const Projects: React.FC = () => {
                   isDraggingThis && 'opacity-30 scale-95 shadow-none',
                 )}
               >
-                {/* Grip handle — left edge, away from edit/delete buttons at top-right */}
-                <div className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-gray-300 dark:text-slate-600 z-10 select-none">
+                {/* Grip handle — drag source; left edge away from edit/delete buttons at top-right */}
+                <div
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, project.id)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-gray-300 dark:text-slate-600 z-10 select-none"
+                >
                   <GripVertical size={16} />
                 </div>
               <button
