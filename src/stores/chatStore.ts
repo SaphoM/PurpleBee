@@ -38,6 +38,9 @@ const TYPING_EXPIRY_MS = 4000;
 // ─── Realtime subscription for new incoming messages ─────────────────
 let _messageChannel: RealtimeChannel | null = null;
 
+// ─── Realtime presence — tracks who is online across the team ────────
+let _presenceChannel: RealtimeChannel | null = null;
+
 /** Aggregate DB reaction rows into the app's { emoji, users[] } shape */
 function aggregateReactions(rows: { emoji: string; user_id: string }[]): { emoji: string; users: string[] }[] {
   const map = new Map<string, string[]>();
@@ -356,6 +359,8 @@ interface ChatStore {
   restoreMockData: (userId: string) => void;
   subscribeMessages: () => void;
   unsubscribeMessages: () => void;
+  subscribePresence: (teamId: string | null) => void;
+  unsubscribePresence: () => void;
 
   // Typing presence
   typingUsers: Record<string, { userId: string; name: string }[]>;
@@ -1180,9 +1185,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       dockedChatIds: [],
     });
 
-    // Start (or restart) realtime subscription for incoming messages
+    // Start (or restart) realtime subscriptions
     get().unsubscribeMessages();
     get().subscribeMessages();
+    get().unsubscribePresence();
+    get().subscribePresence(teamId);
   },
 
   subscribeMessages: () => {
@@ -1244,8 +1251,88 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
   },
 
+  subscribePresence: (teamId) => {
+    if (!supabase || _presenceChannel) return;
+    const { currentUserId, currentUserName } = get();
+    if (!currentUserId) return;
+
+    const channelName = teamId ? `presence:team-${teamId}` : `presence:user-${currentUserId}`;
+
+    _presenceChannel = supabase
+      .channel(channelName)
+      .on('presence', { event: 'sync' }, () => {
+        if (!_presenceChannel) return;
+        const state = _presenceChannel.presenceState<{ userId: string }>();
+        const onlineIds = new Set(
+          Object.values(state).flat().map((p) => p.userId),
+        );
+        set((s) => ({
+          teamMembers: s.teamMembers.map((m) => ({
+            ...m,
+            online: onlineIds.has(m.userId),
+            lastSeen: !onlineIds.has(m.userId) && m.online ? new Date() : m.lastSeen,
+          })),
+          conversations: s.conversations.map((c) => ({
+            ...c,
+            participants: c.participants.map((p) => ({
+              ...p,
+              online: onlineIds.has(p.userId),
+            })),
+          })),
+        }));
+      })
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        const joinedIds = new Set((newPresences as unknown as { userId: string }[]).map((p) => p.userId));
+        set((s) => ({
+          teamMembers: s.teamMembers.map((m) => ({
+            ...m,
+            online: m.online || joinedIds.has(m.userId),
+          })),
+          conversations: s.conversations.map((c) => ({
+            ...c,
+            participants: c.participants.map((p) => ({
+              ...p,
+              online: p.online || joinedIds.has(p.userId),
+            })),
+          })),
+        }));
+      })
+      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+        const leftIds = new Set((leftPresences as unknown as { userId: string }[]).map((p) => p.userId));
+        const now = new Date();
+        set((s) => ({
+          teamMembers: s.teamMembers.map((m) => ({
+            ...m,
+            online: leftIds.has(m.userId) ? false : m.online,
+            lastSeen: leftIds.has(m.userId) ? now : m.lastSeen,
+          })),
+          conversations: s.conversations.map((c) => ({
+            ...c,
+            participants: c.participants.map((p) => ({
+              ...p,
+              online: leftIds.has(p.userId) ? false : p.online,
+              lastSeen: leftIds.has(p.userId) ? now : p.lastSeen,
+            })),
+          })),
+        }));
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED' && _presenceChannel) {
+          await _presenceChannel.track({ userId: currentUserId, name: currentUserName });
+        }
+      });
+  },
+
+  unsubscribePresence: () => {
+    if (_presenceChannel && supabase) {
+      supabase.removeChannel(_presenceChannel);
+      _presenceChannel = null;
+    }
+  },
+
   clearMockData: () => {
     get().unsubscribeMessages();
+    get().unsubscribePresence();
     // Force-close regardless of refcount — components haven't had a chance
     // to clean up yet on a full logout/mode-switch.
     Object.keys(_typingChannels).forEach((id) => {
