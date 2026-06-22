@@ -35,6 +35,9 @@ const _typingRefCounts: Record<string, number> = {};
 const _typingRemovals: Record<string, Promise<void>> = {};
 const TYPING_EXPIRY_MS = 4000;
 
+// ─── Realtime subscription for new incoming messages ─────────────────
+let _messageChannel: RealtimeChannel | null = null;
+
 /** Aggregate DB reaction rows into the app's { emoji, users[] } shape */
 function aggregateReactions(rows: { emoji: string; user_id: string }[]): { emoji: string; users: string[] }[] {
   const map = new Map<string, string[]>();
@@ -44,6 +47,34 @@ function aggregateReactions(rows: { emoji: string; user_id: string }[]): { emoji
     map.set(r.emoji, arr);
   }
   return Array.from(map, ([emoji, users]) => ({ emoji, users }));
+}
+
+/** Map a raw Supabase message row (with joined sender/reactions/attachments) to ChatMessage */
+function dbRowToMessage(m: any): ChatMessage {
+  return {
+    id: m.id,
+    conversationId: m.conversation_id,
+    senderId: m.sender_id,
+    senderName: m.sender?.name || 'Unknown',
+    senderAvatar: m.sender?.avatar,
+    text: m.text,
+    timestamp: new Date(m.created_at),
+    readBy: [m.sender_id],
+    attachments: (m.attachments || []).map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      url: a.url,
+      type: a.type,
+      size: a.size,
+      previewUrl: a.preview_url,
+      uploadedAt: new Date(a.uploaded_at),
+    })),
+    reactions: aggregateReactions(m.reactions || []),
+    ...(m.task_ref ? { taskRef: m.task_ref } : {}),
+    ...(m.reply_to ? { replyTo: m.reply_to } : {}),
+    ...(m.edited_at ? { editedAt: new Date(m.edited_at) } : {}),
+    ...(m.is_deleted ? { isDeleted: true } : {}),
+  };
 }
 
 // ─── Team members (shared reference) ──────────────────────────────────
@@ -323,6 +354,8 @@ interface ChatStore {
   hydrateFromDb: (userId: string) => Promise<void>;
   clearMockData: () => void;
   restoreMockData: (userId: string) => void;
+  subscribeMessages: () => void;
+  unsubscribeMessages: () => void;
 
   // Typing presence
   typingUsers: Record<string, { userId: string; name: string }[]>;
@@ -1046,30 +1079,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           };
         });
 
-        const chatMessages: ChatMessage[] = (dbMessages || []).map((m: any) => ({
-          id: m.id,
-          conversationId: m.conversation_id,
-          senderId: m.sender_id,
-          senderName: m.sender?.name || 'Unknown',
-          senderAvatar: m.sender?.avatar,
-          text: m.text,
-          timestamp: new Date(m.created_at),
-          readBy: [m.sender_id],
-          attachments: (m.attachments || []).map((a: any) => ({
-            id: a.id,
-            name: a.name,
-            url: a.url,
-            type: a.type,
-            size: a.size,
-            previewUrl: a.preview_url,
-            uploadedAt: new Date(a.uploaded_at),
-          })),
-          reactions: aggregateReactions(m.reactions || []),
-          ...(m.task_ref ? { taskRef: m.task_ref } : {}),
-          ...(m.reply_to ? { replyTo: m.reply_to } : {}),
-          ...(m.edited_at ? { editedAt: new Date(m.edited_at) } : {}),
-          ...(m.is_deleted ? { isDeleted: true } : {}),
-        }));
+        const chatMessages: ChatMessage[] = (dbMessages || []).map(dbRowToMessage);
 
         msgs[dbConv.id] = chatMessages;
         const lastMsg = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : undefined;
@@ -1169,9 +1179,73 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       activeConversationId: autoSelectId,
       dockedChatIds: [],
     });
+
+    // Start (or restart) realtime subscription for incoming messages
+    get().unsubscribeMessages();
+    get().subscribeMessages();
+  },
+
+  subscribeMessages: () => {
+    if (!supabase || _messageChannel) return;
+
+    _messageChannel = supabase
+      .channel('purplebee-messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        async (payload) => {
+          const convId = payload.new.conversation_id as string;
+          const msgId = payload.new.id as string;
+          const { currentUserId, activeConversationId } = get();
+
+          // Skip our own optimistically-added messages
+          if (payload.new.sender_id === currentUserId) return;
+
+          // Only process conversations we have loaded (user is a participant)
+          if (get().messages[convId] === undefined) return;
+
+          // Avoid duplicates
+          if ((get().messages[convId] || []).some((m) => m.id === msgId)) return;
+
+          // Fetch full message row with sender profile
+          const data = await chatDb.fetchMessageById(msgId, false);
+          if (!data) return;
+
+          const newMsg = dbRowToMessage(data);
+          const isActive = activeConversationId === convId;
+
+          set((state) => ({
+            messages: {
+              ...state.messages,
+              [convId]: [...(state.messages[convId] || []), newMsg],
+            },
+            conversations: state.conversations.map((c) =>
+              c.id === convId
+                ? {
+                    ...c,
+                    lastMessage: newMsg,
+                    updatedAt: new Date(),
+                    unreadCount: isActive ? 0 : c.unreadCount + 1,
+                  }
+                : c
+            ),
+          }));
+
+          if (isActive) get().markAsRead(convId);
+        },
+      )
+      .subscribe();
+  },
+
+  unsubscribeMessages: () => {
+    if (_messageChannel && supabase) {
+      supabase.removeChannel(_messageChannel);
+      _messageChannel = null;
+    }
   },
 
   clearMockData: () => {
+    get().unsubscribeMessages();
     // Force-close regardless of refcount — components haven't had a chance
     // to clean up yet on a full logout/mode-switch.
     Object.keys(_typingChannels).forEach((id) => {

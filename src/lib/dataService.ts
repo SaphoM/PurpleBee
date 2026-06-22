@@ -414,6 +414,23 @@ export const chatDb = {
     return data;
   },
 
+  /** Fetch a single message by ID, with reactions and attachments */
+  async fetchMessageById(messageId: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return null;
+    const { data, error } = await supabase!
+      .from('messages')
+      .select(`
+        *,
+        sender:profiles!sender_id(name, avatar),
+        reactions:message_reactions(*),
+        attachments:attachments(*)
+      `)
+      .eq('id', messageId)
+      .single();
+    if (error) { console.error('[dataService] chat.fetchMessageById', error); return null; }
+    return data;
+  },
+
   /** Send a message — returns the inserted row's id */
   async sendMessage(
     msg: {

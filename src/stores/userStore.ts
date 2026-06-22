@@ -376,6 +376,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
         isLoading: false,
       });
 
+      // Real Supabase users must always be in live mode — mock/demo mode
+      // is only for Quick Login demo profiles (user-1 … user-5).
+      if (useSettingsStore.getState().keepMockData) {
+        useSettingsStore.getState().setKeepMockData(false);
+      }
+
       hydrateStores(supaUser.id, name);
 
       // Resolve (or auto-create) the team this user belongs to so every
@@ -467,6 +473,12 @@ export const useUserStore = create<UserStore>((set, get) => ({
           viewingAsId: null,
           error: null,
         });
+
+        // Real Supabase users must always be in live mode
+        if (useSettingsStore.getState().keepMockData) {
+          useSettingsStore.getState().setKeepMockData(false);
+        }
+
         hydrateStores(supaUser.id, name);
 
         // Resolve the team this user belongs to so every DB write can be
