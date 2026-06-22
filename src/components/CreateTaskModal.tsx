@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
+import { v4 as uuidv4 } from 'uuid';
 import { X, Plus, Trash2, CalendarDays, Clock, Tag, FolderKanban, ChevronDown } from 'lucide-react';
 import { TaskStatus, TaskPriority } from '@/types/index';
 import { useTaskStore } from '@stores/taskStore';
@@ -125,8 +126,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       progress: 0,
       isRecurring,
       recurringPattern: isRecurring ? { frequency: recurringFrequency } : undefined,
-      subtasks: subtasks.map((s, i) => ({
-        id: `sub-${i}`,
+      subtasks: subtasks.map((s) => ({
+        id: uuidv4(),
         title: s.title,
         description: s.description || undefined,
         completed: false,

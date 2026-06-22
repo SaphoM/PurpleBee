@@ -27,7 +27,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Recurring tasks with customizable patterns
 - Subtasks (Mini Tasks) with inline add — the add form shows a **Title** field (required) and a **Description** field (optional, "Brief explanation"); both in the task detail modal (Mini Tasks section) and the Create Task modal (Subtasks section); pressing Enter on the title field also submits; added subtasks show their title and description in the list; the `+` / "Add subtask" button activates once a title is entered
 - **Completed subtask reveal** — completed subtasks show with a strikethrough in a green container row; hovering (or touch-holding on mobile) the entire green row temporarily reveals the unstruckthrough text so it can be read; the hover area covers the full container, not just the text
-- Mini tasks persist to Supabase `subtasks` table in live mode; loaded alongside parent tasks on hydration; completion ratio drives the task progress bar (completed ÷ total × 100)
+- Mini tasks persist to Supabase `subtasks` table in live mode; loaded alongside parent tasks on hydration; completion ratio drives the task progress bar (completed ÷ total × 100); subtasks added via the Create Task modal are assigned proper UUIDs so Postgres accepts the insert — previously they used `sub-0`, `sub-1` placeholder IDs which Postgres rejected, causing subtasks to disappear after save
 - File attachments
 - Time estimation and tracking
 - Task assignment to team members — Assigned To card in the task detail modal resolves the UUID to the member's name and avatar from `assignableMembers`
