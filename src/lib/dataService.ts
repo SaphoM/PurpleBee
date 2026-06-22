@@ -552,12 +552,31 @@ export const chatDb = {
     });
     if (convErr) { console.error('[dataService] chat.createConversation', convErr); return false; }
 
-    const rows = participantUserIds.map((uid) => ({
-      conversation_id: conv.id,
-      user_id: uid,
-    }));
-    const { error: partErr } = await supabase!.from('conversation_participants').insert(rows);
-    if (partErr) { console.error('[dataService] chat.createConversation participants', partErr); return false; }
+    // Insert own row first so the updated RLS WITH CHECK
+    // (is_conversation_participant) passes for the second insert.
+    const { data: { session } } = await supabase!.auth.getSession();
+    const currentUid = session?.user?.id;
+    const selfId = currentUid && participantUserIds.includes(currentUid) ? currentUid : null;
+    const otherIds = participantUserIds.filter((uid) => uid !== selfId);
+
+    if (selfId) {
+      const { error: selfErr } = await supabase!
+        .from('conversation_participants')
+        .insert({ conversation_id: conv.id, user_id: selfId });
+      if (selfErr) { console.error('[dataService] chat.createConversation self participant', selfErr); return false; }
+      if (otherIds.length > 0) {
+        const { error: othersErr } = await supabase!
+          .from('conversation_participants')
+          .insert(otherIds.map((uid) => ({ conversation_id: conv.id, user_id: uid })));
+        if (othersErr) { console.error('[dataService] chat.createConversation other participants', othersErr); return false; }
+      }
+    } else {
+      // Admin/manager path where current user isn't in the list, or no session — try all at once.
+      const { error: partErr } = await supabase!
+        .from('conversation_participants')
+        .insert(participantUserIds.map((uid) => ({ conversation_id: conv.id, user_id: uid })));
+      if (partErr) { console.error('[dataService] chat.createConversation participants', partErr); return false; }
+    }
     return true;
   },
 
