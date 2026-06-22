@@ -193,7 +193,7 @@ export const LoginPage: React.FC = () => {
         {/* Logo + Header */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <img src="/logo.png" alt="PurpleBee Task Manager" className="h-16 object-contain" />
+            <img src="/logo.png" alt="PurpleBee Task Manager" className="h-24 object-contain" />
           </div>
           <p className="text-gray-500 dark:text-slate-400 mt-1">
             {pageMode === 'login' ? 'Sign in to your workspace' : 'Create your business account'}

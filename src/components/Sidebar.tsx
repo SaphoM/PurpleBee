@@ -112,11 +112,14 @@ export const Sidebar: React.FC = () => {
         )}
       >
         {/* Logo */}
-        <div className={clsx('flex items-center h-20 border-b border-gray-200 dark:border-slate-800', sidebarCollapsed ? 'justify-center px-2' : 'justify-center px-6')}>
+        <div className={clsx('flex flex-col items-center justify-center h-24 border-b border-gray-200 dark:border-slate-800', sidebarCollapsed ? 'px-2' : 'px-6')}>
           {sidebarCollapsed ? (
-            <img src="/logo.png" alt="PurpleBee" className="h-9 w-9 object-contain" />
+            <img src="/logo.png" alt="PurpleBee" className="h-12 w-12 object-contain" />
           ) : (
-            <img src="/logo.png" alt="PurpleBee Task Manager" className="h-10 object-contain" />
+            <>
+              <img src="/logo.png" alt="PurpleBee Task Manager" className="h-14 object-contain" />
+              <span className="text-xs text-gray-400 dark:text-slate-500 mt-1">v1.2</span>
+            </>
           )}
         </div>
 
