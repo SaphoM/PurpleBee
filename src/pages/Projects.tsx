@@ -1214,6 +1214,8 @@ export const Projects: React.FC = () => {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragIdRef = useRef<string | null>(null);
+  // Track whether a drag actually moved so we can swallow the resulting click
+  const didDragRef = useRef(false);
 
   // Sync order when projects list changes (add/delete)
   useEffect(() => {
@@ -1228,9 +1230,9 @@ export const Projects: React.FC = () => {
 
   const handleDragStart = (e: React.DragEvent, projectId: string) => {
     dragIdRef.current = projectId;
+    didDragRef.current = true;
     setDraggingId(projectId);
     e.dataTransfer.effectAllowed = 'move';
-    // Use a transparent ghost image so the card doesn't snap to cursor
     const ghost = document.createElement('div');
     ghost.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;';
     document.body.appendChild(ghost);
@@ -1276,6 +1278,8 @@ export const Projects: React.FC = () => {
     setDragOverId(null);
     setDraggingId(null);
     dragIdRef.current = null;
+    // Reset after a tick so the click handler that fires after dragend can check it
+    setTimeout(() => { didDragRef.current = false; }, 50);
   };
 
   // globalSearchQuery is shared with TopBar — typing in either filters the grid
@@ -1395,12 +1399,14 @@ export const Projects: React.FC = () => {
             return (
               <div
                 key={project.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, project.id)}
                 onDragOver={(e) => handleDragOver(e, project.id)}
                 onDrop={(e) => handleDrop(e, project.id)}
                 onDragEnd={handleDragEnd}
                 onDragLeave={(e) => handleDragLeave(e, project.id)}
                 className={clsx(
-                  'relative rounded-2xl border text-left transition-all duration-150 group',
+                  'relative rounded-2xl border text-left transition-all duration-150 group cursor-grab active:cursor-grabbing',
                   'bg-white dark:bg-slate-800/50',
                   isDropTarget
                     ? 'border-purple-400 dark:border-purple-500 ring-2 ring-purple-400/40 shadow-lg shadow-purple-500/20 scale-[1.02]'
@@ -1408,17 +1414,13 @@ export const Projects: React.FC = () => {
                   isDraggingThis && 'opacity-30 scale-95 shadow-none',
                 )}
               >
-                {/* Grip handle — drag source; left edge away from edit/delete buttons at top-right */}
-                <div
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, project.id)}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-gray-300 dark:text-slate-600 z-10 select-none"
-                >
+                {/* Grip handle — visual affordance only; dragging is handled by the card div */}
+                <div className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 dark:text-slate-600 z-10 select-none pointer-events-none">
                   <GripVertical size={16} />
                 </div>
               <button
-                onClick={() => setSelectedProjectId(project.id)}
-                className="w-full p-5 pl-7 text-left"
+                onClick={() => { if (didDragRef.current) return; setSelectedProjectId(project.id); }}
+                className="w-full p-5 pl-7 text-left cursor-inherit"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
