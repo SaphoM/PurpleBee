@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { version } from '../../package.json';
 import clsx from 'clsx';
 import {
   LayoutDashboard,
@@ -118,7 +119,7 @@ export const Sidebar: React.FC = () => {
           ) : (
             <>
               <img src="/logo.png" alt="PurpleBee Task Manager" className="h-14 object-contain" />
-              <span className="text-xs text-gray-400 dark:text-slate-500 mt-1">v1.2</span>
+              <span className="text-xs text-gray-400 dark:text-slate-500 mt-1">v{version}</span>
             </>
           )}
         </div>
