@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
+</p>
+
 # PurpleBee - AI-Powered Productivity Dashboard
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
