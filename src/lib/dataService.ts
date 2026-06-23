@@ -554,8 +554,8 @@ export const chatDb = {
 
     // Insert own row first so the updated RLS WITH CHECK
     // (is_conversation_participant) passes for the second insert.
-    const { data: { session } } = await supabase!.auth.getSession();
-    const currentUid = session?.user?.id;
+    const { getCurrentUserId } = await import('./authApi');
+    const currentUid = getCurrentUserId();
     const selfId = currentUid && participantUserIds.includes(currentUid) ? currentUid : null;
     const otherIds = participantUserIds.filter((uid) => uid !== selfId);
 
@@ -652,12 +652,18 @@ export const chatDb = {
 // ═══════════════════════════════════════════════════════════════════════
 
 export const authDb = {
-  /** Sign in with email + password via Supabase Auth */
+  /** Sign in via the backend auth proxy (sets httpOnly refresh-token cookie) */
   async signIn(email: string, password: string) {
     if (!isDbConnected()) return null;
-    const { data, error } = await supabase!.auth.signInWithPassword({ email, password });
-    if (error) { console.error('[dataService] auth.signIn', error); return null; }
-    return data;
+    const { loginViaServer } = await import('./authApi');
+    try {
+      const data = await loginViaServer(email, password);
+      // data.user is the Supabase user object; data.access_token is in-memory only
+      return { user: data.user, session: { access_token: data.access_token } };
+    } catch (err) {
+      console.error('[dataService] auth.signIn', err);
+      return null;
+    }
   },
 
   /** Sign up a new user */
@@ -698,17 +704,23 @@ export const authDb = {
     return { success: true, error: null };
   },
 
-  /** Sign out */
+  /** Sign out — revokes session on the backend and clears the httpOnly cookie */
   async signOut() {
-    if (!isDbConnected()) return;
-    await supabase!.auth.signOut();
+    const { logoutViaServer } = await import('./authApi');
+    await logoutViaServer();
   },
 
-  /** Get current session */
+  /**
+   * Get current session.
+   * Returns the in-memory session if present; otherwise attempts a silent
+   * refresh via the httpOnly cookie (covers the page-reload case).
+   */
   async getSession() {
     if (!isDbConnected()) return null;
-    const { data } = await supabase!.auth.getSession();
-    return data.session;
+    const { getStoredSession, silentRefresh } = await import('./authApi');
+    const stored = getStoredSession();
+    if (stored) return stored;
+    return silentRefresh();
   },
 
   /** Fetch the user's profile row */

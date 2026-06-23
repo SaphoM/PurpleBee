@@ -529,10 +529,8 @@ export const useUserStore = create<UserStore>((set, get) => ({
     set({ user, isAuthenticated: true, error: null }),
 
   logout: () => {
-    // Sign out of Supabase if connected
-    if (isDbConnected()) {
-      authDb.signOut().catch(() => {});
-    }
+    // Revoke session on backend (clears httpOnly cookie) + clear in-memory token
+    authDb.signOut().catch(() => {});
     // Clean up realtime subscription before clearing auth state
     useNotificationStore.getState().unsubscribeRealtime();
     set({ user: null, isAuthenticated: false, viewingAsId: null, error: null, currentTeamId: null, currentTeamName: null });
