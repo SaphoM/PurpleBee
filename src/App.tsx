@@ -140,7 +140,10 @@ const App: React.FC = () => {
   // Password recovery — user clicked the reset link in their email.
   // Show the standalone ResetPasswordPage (not the dashboard) so
   // the user MUST set a new password before accessing the app.
-  if (pendingPasswordRecovery && isAuthenticated) {
+  // isAuthenticated is NOT required here — the user arrives via email link
+  // without an existing session; Supabase fires PASSWORD_RECOVERY before
+  // our store sets isAuthenticated.
+  if (pendingPasswordRecovery) {
     return <ResetPasswordPage isRecoveryMode />;
   }
 

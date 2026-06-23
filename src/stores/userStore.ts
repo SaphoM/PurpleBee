@@ -5,7 +5,7 @@ import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { useTaskStore, setTaskUserContext } from '@stores/taskStore';
 import { useProjectStore, setProjectUserContext } from '@stores/projectStore';
-import { supabase, isDbConnected } from '@/lib/supabase';
+import { supabase, isDbConnected, setSupabaseToken } from '@/lib/supabase';
 import { authDb } from '@/lib/dataService';
 
 export type AppRole = 'admin' | 'manager' | 'user';
@@ -441,10 +441,14 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
     // Listen for PASSWORD_RECOVERY event from Supabase Auth.
     // This fires when a user clicks the reset-password link in their email.
-    // We set a flag so App.tsx can show the reset form instead of the dashboard.
+    // We capture the session's access token so updatePassword() can make
+    // an authenticated call, and set the flag so App.tsx shows the reset form.
     if (supabase) {
-      supabase.auth.onAuthStateChange((event) => {
+      supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'PASSWORD_RECOVERY') {
+          if (session?.access_token) {
+            setSupabaseToken(session.access_token);
+          }
           set({ pendingPasswordRecovery: true });
         }
       });
