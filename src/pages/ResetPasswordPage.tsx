@@ -126,10 +126,9 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({
       <div className="relative w-full max-w-lg">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl shadow-lg shadow-purple-500/30 mb-4">
-            <Zap size={32} className="text-white" />
+          <div className="flex justify-center mb-3">
+            <img src="/logo.png" alt="PurpleBee" className="h-20 object-contain" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-slate-100">Purple Bee</h1>
           <p className="text-gray-500 dark:text-slate-400 mt-1">
             {isRecoveryMode ? 'Set your new password' : 'Reset your password'}
           </p>
