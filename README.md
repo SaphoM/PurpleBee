@@ -14,7 +14,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 ### Task Management
 - Multi-level priorities (Low, Medium, High, Urgent)
 - Status tracking (To Do, In Progress, Review, Completed)
-- **Due date is required on task creation** — the Create Task modal pairs a native date picker with a time picker (defaults to 17:00) for fast entry; submitting without a date shows inline validation ("Due date is required") and the browser's native required-field prompt; date + time combine into a single `dueDate` timestamp on the task
+- **Due date is required on task creation** — the Create Task modal pairs a native date picker with a time picker (defaults to 17:00) for fast entry; the date field defaults to today and has a `min` constraint set to today so past dates are not selectable and cannot be submitted; submitting with a missing or past date shows inline validation ("Due date is required" / "Due date cannot be in the past"); date + time combine into a single `dueDate` timestamp on the task; `createdAt` is always stamped to `new Date()` at submit time
 - Progress visualization (0–100%) — auto-updates when a task is dragged between Kanban columns: `completed → 100%`, `review → 75%`, `in-progress → 10%`, `todo → 0%`
 - Drag-and-drop Kanban — column changes persist to Supabase immediately in live mode; mock mode updates Zustand in-memory state
 - **Completion approval gate** — regular members (`role: 'user'`) cannot mark a task as completed through any path. Every entry point is blocked:

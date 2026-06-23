@@ -24,11 +24,14 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const user = useUserStore((s) => s.user);
   const canManageTeam = useUserStore((s) => s.canManageTeam);
 
+  // Today in YYYY-MM-DD — used as the date input min to block backdating
+  const todayStr = new Date().toISOString().split('T')[0];
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<TaskStatus>(defaultStatus);
   const [priority, setPriority] = useState<TaskPriority>('medium');
-  const [dueDate, setDueDate] = useState('');
+  const [dueDate, setDueDate] = useState(todayStr);
   const [dueTime, setDueTime] = useState('17:00');
   const [dueDateError, setDueDateError] = useState(false);
   const [estimatedHours, setEstimatedHours] = useState('');
@@ -109,7 +112,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    if (!dueDate) {
+    if (!dueDate || dueDate < todayStr) {
       setDueDateError(true);
       return;
     }
@@ -374,6 +377,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 <input
                   type="date"
                   value={dueDate}
+                  min={todayStr}
                   onChange={(e) => { setDueDate(e.target.value); setDueDateError(false); }}
                   required
                   className={clsx(
@@ -402,7 +406,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 </div>
               </div>
               {dueDateError && (
-                <p className="text-xs text-red-500 mt-1">Due date is required</p>
+                <p className="text-xs text-red-500 mt-1">{!dueDate ? 'Due date is required' : 'Due date cannot be in the past'}</p>
               )}
             </div>
             <div>
