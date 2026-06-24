@@ -720,10 +720,13 @@ export const authDb = {
     return { success: true, error: null };
   },
 
-  /** Sign out — revokes session on the backend and clears the httpOnly cookie */
+  /** Sign out — revokes session on the backend, clears the httpOnly cookie, and signs out of GoTrue */
   async signOut() {
     const { logoutViaServer } = await import('./authApi');
     await logoutViaServer();
+    // Also sign out of GoTrue so its localStorage session is cleared.
+    // Without this, the next page load would auto-restore the old session.
+    if (supabase) await supabase.auth.signOut().catch(() => {});
   },
 
   /**

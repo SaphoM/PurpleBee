@@ -453,12 +453,15 @@ export const useUserStore = create<UserStore>((set, get) => ({
           event === 'INITIAL_SESSION'
         ) {
           if (session?.access_token) setSupabaseToken(session.access_token);
-        } else if (event === 'SIGNED_OUT') {
-          setSupabaseToken(null);
         } else if (event === 'PASSWORD_RECOVERY') {
           if (session?.access_token) setSupabaseToken(session.access_token);
           set({ pendingPasswordRecovery: true });
         }
+        // SIGNED_OUT is intentionally NOT handled here. GoTrue fires this
+        // asynchronously from a failed refresh-token attempt (400) — in Safari
+        // this deferred event arrives AFTER SIGNED_IN and clears _tokenRef,
+        // causing 401s on all subsequent queries. Token teardown is handled
+        // explicitly in authDb.signOut() instead.
       });
     }
 
