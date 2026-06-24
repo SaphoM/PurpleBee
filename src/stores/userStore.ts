@@ -1,11 +1,12 @@
 import { create } from 'zustand';
+import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import { User } from '@/types/index';
 import { useNotificationStore } from '@stores/notificationStore';
 import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { useTaskStore, setTaskUserContext } from '@stores/taskStore';
 import { useProjectStore, setProjectUserContext } from '@stores/projectStore';
-import { supabase, isDbConnected, setSupabaseToken } from '@/lib/supabase';
+import { supabase, isDbConnected } from '@/lib/supabase';
 import { authDb } from '@/lib/dataService';
 
 export type AppRole = 'admin' | 'manager' | 'user';
@@ -184,6 +185,83 @@ async function hydrateWithTeam(
   ]);
 }
 
+type StoreSet = (
+  partial:
+    | Partial<UserStore>
+    | ((state: UserStore) => Partial<UserStore>),
+) => void;
+type StoreGet = () => UserStore;
+
+// ── Build app state from an authenticated Supabase user ────────────────
+// Shared by initSession (page reload) and loginWithEmail (fresh login):
+// resolves the profile + team, sets the user, and hydrates all stores.
+async function restoreUserSession(
+  supaUser: SupabaseAuthUser,
+  set: StoreSet,
+  get: StoreGet,
+) {
+  const profile = await authDb.getProfile(supaUser.id);
+  const name = profile?.name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User';
+  const avatar = profile?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
+  const role: AppRole = profile?.role || 'user';
+
+  set({
+    user: {
+      id: supaUser.id,
+      email: supaUser.email || '',
+      name,
+      role,
+      avatar,
+      createdAt: new Date(supaUser.created_at),
+      updatedAt: new Date(),
+    },
+    isAuthenticated: true,
+    viewingAsId: null,
+    error: null,
+  });
+
+  // Real Supabase users must always be in live mode (mock is for Quick Login only).
+  if (useSettingsStore.getState().keepMockData) {
+    useSettingsStore.getState().setKeepMockData(false);
+  }
+
+  hydrateStores(supaUser.id, name);
+
+  // Resolve (or auto-create) the team so DB writes are company-scoped, and apply
+  // the team-level role (admin/manager/user) as the user's effective role.
+  try {
+    const team = await authDb.getOrCreateTeam(supaUser.id, name);
+    const effectiveRole = (team.role as AppRole) || role;
+    set((state) => ({
+      currentTeamId: team.team_id,
+      currentTeamName: team.team?.name || null,
+      user: state.user ? { ...state.user, role: effectiveRole } : null,
+    }));
+  } catch (err) {
+    console.warn('[userStore] could not resolve team', err);
+  }
+
+  await get().loadAssignableMembers();
+  await hydrateWithTeam(supaUser.id, get().currentTeamId, name);
+
+  // Auto-accept a pending invite if the user just signed up via an invite link.
+  const pendingToken = sessionStorage.getItem('purplebee-invite-token');
+  if (pendingToken) {
+    sessionStorage.removeItem('purplebee-invite-token');
+    try {
+      const { inviteDb } = await import('@/lib/dataService');
+      await inviteDb.accept(pendingToken, supaUser.id);
+      try {
+        const team = await authDb.getTeamForUser(supaUser.id);
+        if (team) set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
+      } catch {}
+      window.location.hash = '#onboard';
+    } catch {
+      // Non-critical — invite may already be accepted by the DB trigger.
+    }
+  }
+}
+
 export const useUserStore = create<UserStore>((set, get) => ({
   user: null,
   isAuthenticated: false,
@@ -352,54 +430,8 @@ export const useUserStore = create<UserStore>((set, get) => ({
         set({ error: 'Invalid email or password', isLoading: false });
         return false;
       }
-
-      const supaUser = result.user;
-      // Fetch profile from profiles table
-      const profile = await authDb.getProfile(supaUser.id);
-      const name = profile?.name || supaUser.user_metadata?.name || email.split('@')[0];
-      const avatar = profile?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
-      const role: AppRole = profile?.role || 'user';
-
-      set({
-        user: {
-          id: supaUser.id,
-          email: supaUser.email || email,
-          name,
-          role,
-          avatar,
-          createdAt: new Date(supaUser.created_at),
-          updatedAt: new Date(),
-        },
-        isAuthenticated: true,
-        viewingAsId: null,
-        error: null,
-        isLoading: false,
-      });
-
-      // Real Supabase users must always be in live mode — mock/demo mode
-      // is only for Quick Login demo profiles (user-1 … user-5).
-      if (useSettingsStore.getState().keepMockData) {
-        useSettingsStore.getState().setKeepMockData(false);
-      }
-
-      hydrateStores(supaUser.id, name);
-
-      // Resolve (or auto-create) the team this user belongs to so every
-      // DB write can be scoped to the company.
-      try {
-        const team = await authDb.getOrCreateTeam(supaUser.id, name);
-        const effectiveRole = (team.role as AppRole) || role;
-        set((state) => ({
-          currentTeamId: team.team_id,
-          currentTeamName: team.team?.name || null,
-          user: state.user ? { ...state.user, role: effectiveRole } : null,
-        }));
-      } catch (err) {
-        console.warn('[userStore] could not resolve team on login', err);
-      }
-      // Always hydrate chat/tasks/projects — they load by userId even without a team
-      await get().loadAssignableMembers();
-      await hydrateWithTeam(supaUser.id, get().currentTeamId, name);
+      await restoreUserSession(result.user, set, get);
+      set({ isLoading: false });
       return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Login failed';
@@ -439,108 +471,34 @@ export const useUserStore = create<UserStore>((set, get) => ({
     }
     set({ isLoading: true });
 
-    // We wait for INITIAL_SESSION rather than calling auth.getSession() directly.
-    //
-    // Why: auth.getSession() triggers GoTrue's internal startup (recover → refresh
-    // expired token → 400 → _removeSession cleanup). That cleanup acquires a lock
-    // asynchronously and can fire AFTER signInWithPassword has stored a new session,
-    // wiping it and causing 401s on every subsequent REST call. INITIAL_SESSION fires
-    // only once GoTrue's entire startup sequence — including any cleanup — is done,
-    // so by the time the user reaches the login form GoTrue's lock is free and a
-    // fresh signInWithPassword is safe.
-    await new Promise<void>((resolve) => {
-      if (!supabase) {
-        set({ authChecked: true, isLoading: false });
-        resolve();
-        return;
-      }
-
-      supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'INITIAL_SESSION') {
-          // GoTrue's startup is now complete. Restore state if there's a valid session.
-          if (session?.access_token && session.user && !get().pendingPasswordRecovery) {
-            setSupabaseToken(session.access_token);
-            const supaUser = session.user;
-            try {
-              const profile = await authDb.getProfile(supaUser.id);
-              const name = profile?.name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User';
-              const avatar = profile?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
-              const role: AppRole = profile?.role || 'user';
-
-              set({
-                user: {
-                  id: supaUser.id,
-                  email: supaUser.email || '',
-                  name,
-                  role,
-                  avatar,
-                  createdAt: new Date(supaUser.created_at),
-                  updatedAt: new Date(),
-                },
-                isAuthenticated: true,
-                viewingAsId: null,
-                error: null,
-              });
-
-              if (useSettingsStore.getState().keepMockData) {
-                useSettingsStore.getState().setKeepMockData(false);
-              }
-              hydrateStores(supaUser.id, name);
-
-              try {
-                const team = await authDb.getOrCreateTeam(supaUser.id, name);
-                const effectiveRole = (team.role as AppRole) || role;
-                set((state) => ({
-                  currentTeamId: team.team_id,
-                  currentTeamName: team.team?.name || null,
-                  user: state.user ? { ...state.user, role: effectiveRole } : null,
-                }));
-              } catch (err) {
-                console.warn('[userStore] could not resolve team on session restore', err);
-              }
-
-              await get().loadAssignableMembers();
-              await hydrateWithTeam(supaUser.id, get().currentTeamId, name);
-
-              // Auto-accept pending invite if user just signed up via invite link
-              const pendingToken = sessionStorage.getItem('purplebee-invite-token');
-              if (pendingToken) {
-                sessionStorage.removeItem('purplebee-invite-token');
-                try {
-                  const { inviteDb } = await import('@/lib/dataService');
-                  await inviteDb.accept(pendingToken, supaUser.id);
-                  try {
-                    const team = await authDb.getTeamForUser(supaUser.id);
-                    if (team) set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
-                  } catch {}
-                  window.location.hash = '#onboard';
-                } catch {}
-              }
-            } catch (err) {
-              console.warn('[userStore] initSession: error restoring user', err);
-            }
-          }
-
-          set({ isLoading: false, authChecked: true });
-          resolve();
-        } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          if (session?.access_token) setSupabaseToken(session.access_token);
-        } else if (event === 'PASSWORD_RECOVERY') {
-          if (session?.access_token) setSupabaseToken(session.access_token);
+    // Listen for password-recovery deep links (Supabase fires this when the user
+    // arrives via a reset-password email). supabase-js handles all other token
+    // lifecycle (persistence, auto-refresh, header injection) internally.
+    if (supabase) {
+      supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'PASSWORD_RECOVERY' && session) {
           set({ pendingPasswordRecovery: true });
         }
-        // SIGNED_OUT is intentionally not handled — GoTrue fires this from expired-token
-        // cleanup asynchronously and can race with a fresh login. Token teardown is
-        // handled explicitly in authDb.signOut() only.
       });
-    });
+    }
+
+    try {
+      const session = await authDb.getSession();
+      if (session?.user) {
+        await restoreUserSession(session.user, set, get);
+      }
+    } catch (err) {
+      console.warn('[userStore] initSession: error restoring session', err);
+    }
+
+    set({ isLoading: false, authChecked: true });
   },
 
   setUser: (user) =>
     set({ user, isAuthenticated: true, error: null }),
 
   logout: () => {
-    // Revoke session on backend (clears httpOnly cookie) + clear in-memory token
+    // Sign out of Supabase Auth (clears the persisted session)
     authDb.signOut().catch(() => {});
     // Clean up realtime subscription before clearing auth state
     useNotificationStore.getState().unsubscribeRealtime();
