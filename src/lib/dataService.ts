@@ -16,7 +16,7 @@
  * Instead, callers pass `keepMockData` or we read it via a getter.
  */
 
-import { supabase, isDbConnected } from './supabase';
+import { supabase, isDbConnected, setSupabaseToken } from './supabase';
 import type { Task, TaskStatus, TaskPriority, Subtask } from '@/types/index';
 
 // ── Central gate ──────────────────────────────────────────────────────
@@ -652,18 +652,34 @@ export const chatDb = {
 // ═══════════════════════════════════════════════════════════════════════
 
 export const authDb = {
-  /** Sign in via the backend auth proxy (sets httpOnly refresh-token cookie) */
+  /** Sign in — tries the backend proxy first (httpOnly cookie), falls back to direct Supabase */
   async signIn(email: string, password: string) {
     if (!isDbConnected()) return null;
+
+    // Primary: backend proxy sets an httpOnly refresh-token cookie
     const { loginViaServer } = await import('./authApi');
     try {
       const data = await loginViaServer(email, password);
-      // data.user is the Supabase user object; data.access_token is in-memory only
       return { user: data.user, session: { access_token: data.access_token } };
-    } catch (err) {
-      console.error('[dataService] auth.signIn', err);
-      return null;
+    } catch (proxyErr) {
+      // If the backend is simply unreachable (network error / not running),
+      // fall through to direct Supabase.  If it returned a 4xx the error
+      // message will contain the real reason (wrong password, etc.) so we
+      // re-throw so the caller shows the right message.
+      const msg = proxyErr instanceof Error ? proxyErr.message : '';
+      const isNetworkError = proxyErr instanceof TypeError || msg === 'Failed to fetch' || msg.includes('NetworkError') || msg.includes('ECONNREFUSED');
+      if (!isNetworkError) {
+        console.error('[dataService] auth.signIn', proxyErr);
+        return null;
+      }
+      console.warn('[dataService] auth.signIn: backend unreachable, using direct Supabase');
     }
+
+    // Fallback: direct Supabase (no httpOnly cookie, token lives in memory)
+    const { data, error } = await supabase!.auth.signInWithPassword({ email, password });
+    if (error) { console.error('[dataService] auth.signIn fallback', error); return null; }
+    if (data.session?.access_token) setSupabaseToken(data.session.access_token);
+    return data;
   },
 
   /** Sign up a new user */
@@ -712,15 +728,27 @@ export const authDb = {
 
   /**
    * Get current session.
-   * Returns the in-memory session if present; otherwise attempts a silent
-   * refresh via the httpOnly cookie (covers the page-reload case).
+   * 1. In-memory (fastest — same page lifetime)
+   * 2. Backend cookie refresh (covers page reload when backend is running)
+   * 3. Direct Supabase session (fallback when backend is unreachable)
    */
   async getSession() {
     if (!isDbConnected()) return null;
     const { getStoredSession, silentRefresh } = await import('./authApi');
+
     const stored = getStoredSession();
     if (stored) return stored;
-    return silentRefresh();
+
+    const refreshed = await silentRefresh();
+    if (refreshed) return refreshed;
+
+    // Backend unavailable — ask Supabase directly
+    const { data } = await supabase!.auth.getSession();
+    if (data.session?.access_token) {
+      setSupabaseToken(data.session.access_token);
+      return data.session;
+    }
+    return null;
   },
 
   /** Fetch the user's profile row */
