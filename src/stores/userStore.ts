@@ -439,16 +439,24 @@ export const useUserStore = create<UserStore>((set, get) => ({
     }
     set({ isLoading: true });
 
-    // Listen for PASSWORD_RECOVERY event from Supabase Auth.
-    // This fires when a user clicks the reset-password link in their email.
-    // We capture the session's access token so updatePassword() can make
-    // an authenticated call, and set the flag so App.tsx shows the reset form.
+    // Keep _tokenRef in sync with GoTrue's live session so every PostgREST
+    // query carries the correct Authorization header via the global fetch override.
+    // INITIAL_SESSION fires on listener registration (handles page-reload restore).
+    // SIGNED_IN / TOKEN_REFRESHED fire on login and silent refresh.
+    // SIGNED_OUT clears the token.
+    // PASSWORD_RECOVERY additionally shows the reset-password form.
     if (supabase) {
       supabase.auth.onAuthStateChange((event, session) => {
-        if (event === 'PASSWORD_RECOVERY') {
-          if (session?.access_token) {
-            setSupabaseToken(session.access_token);
-          }
+        if (
+          event === 'SIGNED_IN' ||
+          event === 'TOKEN_REFRESHED' ||
+          event === 'INITIAL_SESSION'
+        ) {
+          if (session?.access_token) setSupabaseToken(session.access_token);
+        } else if (event === 'SIGNED_OUT') {
+          setSupabaseToken(null);
+        } else if (event === 'PASSWORD_RECOVERY') {
+          if (session?.access_token) setSupabaseToken(session.access_token);
           set({ pendingPasswordRecovery: true });
         }
       });
