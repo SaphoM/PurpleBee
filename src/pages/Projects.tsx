@@ -1269,6 +1269,31 @@ export const Projects: React.FC = () => {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteConfirmInfo, setDeleteConfirmInfo] = useState<{ name: string; taskCount: number } | null>(null);
 
+  // ── Long-press highlight ──────────────────────────────────────────────
+  const highlightKey = `project-highlights-${currentUserId}`;
+  const [highlightedProjects, setHighlightedProjects] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(highlightKey) || '[]')); } catch { return new Set(); }
+  });
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTriggered = useRef(false);
+
+  const startLongPress = (projectId: string) => {
+    longPressTriggered.current = false;
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true;
+      setHighlightedProjects((prev) => {
+        const next = new Set(prev);
+        if (next.has(projectId)) { next.delete(projectId); } else { next.add(projectId); }
+        try { localStorage.setItem(highlightKey, JSON.stringify([...next])); } catch {}
+        return next;
+      });
+    }, 500);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  };
+
   // ── Drag-to-reorder state ──────────────────────────────────────────────
   const storageKey = `project-order-${currentUserId}`;
   const [projectOrder, setProjectOrder] = useState<string[]>(() => {
@@ -1463,6 +1488,7 @@ export const Projects: React.FC = () => {
             const members = [...new Set(project.tasks.map((t) => t.assignedTo).filter(Boolean))] as string[];
             const isDraggingThis = draggingId === project.id;
             const isDropTarget = dragOverId === project.id;
+            const isHighlighted = highlightedProjects.has(project.id);
 
             return (
               <div
@@ -1473,12 +1499,20 @@ export const Projects: React.FC = () => {
                 onDrop={(e) => handleDrop(e, project.id)}
                 onDragEnd={handleDragEnd}
                 onDragLeave={(e) => handleDragLeave(e, project.id)}
+                onMouseDown={() => startLongPress(project.id)}
+                onMouseUp={cancelLongPress}
+                onMouseLeave={cancelLongPress}
+                onTouchStart={() => startLongPress(project.id)}
+                onTouchEnd={cancelLongPress}
+                onTouchMove={cancelLongPress}
                 className={clsx(
                   'relative rounded-2xl border text-left transition-all duration-150 group cursor-grab active:cursor-grabbing',
-                  'bg-white dark:bg-slate-800/50',
-                  isDropTarget
+                  isHighlighted
+                    ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/40 shadow-lg shadow-amber-500/10'
+                    : 'bg-white dark:bg-slate-800/50',
+                  !isHighlighted && (isDropTarget
                     ? 'border-purple-400 dark:border-purple-500 ring-2 ring-purple-400/40 shadow-lg shadow-purple-500/20 scale-[1.02]'
-                    : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 hover:shadow-lg',
+                    : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 hover:shadow-lg'),
                   isDraggingThis && 'opacity-30 scale-95 shadow-none',
                 )}
               >
@@ -1487,7 +1521,7 @@ export const Projects: React.FC = () => {
                   <GripVertical size={16} />
                 </div>
               <button
-                onClick={() => { if (didDragRef.current) return; setSelectedProjectId(project.id); }}
+                onClick={() => { if (didDragRef.current) return; if (longPressTriggered.current) { longPressTriggered.current = false; return; } setSelectedProjectId(project.id); }}
                 className="w-full p-5 pl-7 text-left cursor-inherit"
               >
                 <div className="flex items-start justify-between mb-3">
