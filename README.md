@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.2.0
+# PurpleBee - AI-Powered Productivity Dashboard · v1.3.0
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -43,7 +43,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - **Calendar View** — Deadline visualization; its own page (month grid, agenda list, and upcoming-tasks grouping) accessed from the sidebar
 
 ### Project Management
-- Project templates (Web App, Mobile, Marketing, API, Design System, Training, Services, Custom)
+- Project templates (Web App, Mobile, Marketing, API, Design System, Training, Services, Cybersecurity, Cloud Computing, Support, Custom)
 - Project task breakdown with suggested tasks per template
 - Team member assignment per project task — triggers instant `task-assigned` notification to the assignee (live mode)
 - Project status tracking (Planning, Active, On Hold, Completed)
@@ -68,6 +68,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - **Task card visual styling in chat** — received task card bubbles use a light fresh green gradient (`from-emerald-50 to-white`); sent (isMe) task cards use a solid emerald-700 green covering the left 55% fading to transparent so the card reads as green against the purple bubble with legible white text
 - Task card attachments persist to Supabase via `task_ref JSONB` column on the `messages` table; hydrated on load so the card renders correctly after a page refresh — both in docked chat windows and in the full Chat page conversation view
 - **Message actions (long-press or right-click)** — hold any message bubble to reveal the context menu: **Reply** (quoted reply banner above input; sent bubble shows original sender + preview with purple left-border), **Forward** (conversation picker), **Copy** (clipboard), **Edit** (inline text input, persisted to DB; "edited" label shown), **Info** (timestamp tooltip), **Star** (amber ★ marker), **Delete** (soft-delete — bubble shows "Message deleted"; `is_deleted` persisted to DB), **More…** (extensible)
+- **Chat auto-select** — after `hydrateFromDb` loads conversations in live mode, the first conversation in the list is automatically selected so the Chat page is never blank on initial load
 - **Real-time message delivery** — inbound messages appear instantly without a page refresh; `chatStore` subscribes to a `postgres_changes` INSERT event on the `messages` table via Supabase Realtime; each new row is fetched with full sender profile, reactions, and attachments via `chatDb.fetchMessageById`, de-duplicated against existing optimistic inserts, and merged into the store — unread count increments for background conversations and auto-clears for the active one; the subscription is started after `hydrateFromDb` and torn down on logout
 - **Typing indicator** — "[Name] is typing…" with an animated three-dot bounce appears above the input in both the docked chat window and the full Chat page when the other participant is composing a message; powered by Supabase Realtime **Broadcast** (`typing:{conversationId}` channel) — ephemeral, never written to a DB table; the indicator clears as soon as the other side sends or pauses typing for 2s, with a 4s auto-expiry safety net in case the "stopped typing" signal is missed (e.g. their tab closes mid-keystroke); only active when Supabase is connected — no-op in offline demo mode since there's no second participant to broadcast to; the channel is reference-counted in `chatStore`, so opening the same conversation in both the docked window and the full Chat page (or any other overlap) shares one connection instead of one view's unmount tearing down the channel out from under the other
 - **Typing status in the conversation list** — the Chat page sidebar subscribes to typing presence for every visible conversation (not just the one currently open), so a row's last-message preview is replaced with "[Name] is typing…" the moment they start composing, reverting to the normal preview when they stop or send; the list's subscribe key is sorted so a conversation jumping to the top from new activity doesn't spuriously tear down and rejoin every channel; joins are staggered (~120ms apart) rather than fired in one burst, and a join that comes back as `TIMED_OUT`/`CHANNEL_ERROR`/`CLOSED` is automatically torn down and retried up to 3 times
@@ -137,7 +138,18 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 | Realtime | Supabase Realtime (`postgres_changes` · Broadcast · Presence) |
 | Hosting | Render (static site, staging branch auto-deploys) |
 | Utilities | clsx, uuid, date-fns |
-| Version | 1.2.0 — sidebar version badge reads from `package.json` at build time |
+| Version | 1.3.0 — sidebar version badge reads from `package.json` at build time |
+
+## Auth Architecture
+
+Authentication is handled entirely by **supabase-js** — there is no backend Express proxy.
+
+- `supabase.ts` creates a standard `createClient` with `persistSession: true`, `autoRefreshToken: true`, and `detectSessionInUrl: true`. No custom `global.fetch` override or manual token tracking (`_tokenRef`) — supabase-js injects the live, auto-refreshed `Authorization` header into every PostgREST/Storage/Realtime request natively.
+- `userStore.initSession` waits for the `INITIAL_SESSION` GoTrue event (fires after the full startup/refresh cycle) rather than calling `auth.getSession()` directly, which avoids a race where GoTrue's async lock could wipe a freshly stored session.
+- A shared `restoreUserSession()` helper is used by both login and page-refresh paths to populate the user store, resolve team membership, hydrate all stores, and apply the effective role from `team_members`.
+- The app is deployed as a **static site on Render** — there is no server-side component. All auth is client-side Supabase.
+
+> **Why this matters for JWT changes:** If you update Supabase JWT settings (expiry, signing secret, rotation), supabase-js auto-refreshes tokens transparently. Any custom fetch override that injects a manually-tracked token will go stale immediately and cause 401s on all REST queries — which is why that pattern was removed.
 
 ## Store Architecture
 
@@ -206,7 +218,7 @@ src/
 ├── components/       # Reusable UI (Sidebar, TopBar, KanbanBoard, ChatBot, etc.)
 ├── pages/            # Page components (Dashboard, Tasks, Projects, Chat, etc.)
 ├── stores/           # Zustand state management (7 stores)
-├── lib/              # Supabase client + data service layer
+├── lib/              # Supabase client (`supabase.ts`) + data service layer (`dataService.ts`)
 ├── types/            # Shared TypeScript types
 ├── App.tsx           # Root layout + hash routing
 ├── index.css         # Tailwind base + accent color variables
@@ -233,7 +245,7 @@ When missing, the app runs in offline demo mode with mock data.
 | `projects` | SELECT/INSERT/UPDATE/DELETE | scoped to `team_id` or `created_by` |
 | `profiles` | UPDATE | `id = auth.uid()` — users update own profile; admins update any via service role |
 | `team_members` | UPDATE | scoped to `team_id` membership — role changes sync via `authDb.updateProfile` |
-| `teams` | SELECT | `id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())` |
+| `teams` | SELECT | `id IN (SELECT team_id FROM team_members WHERE user_id = auth.uid())` — allows all team members (including `role: 'user'`) to read their own team row; required for `getTeamForUser` to succeed on login |
 | `conversation_participants` | SELECT | `user_id = auth.uid() OR is_conversation_participant(conversation_id)` — users see their own rows and co-members' rows |
 | `conversation_participants` | INSERT/UPDATE/DELETE | USING `user_id = auth.uid() OR is_admin_or_manager()`; WITH CHECK adds `OR is_conversation_participant(conversation_id)` — once a user's own row is committed they can add peers to the same conversation (enables non-admin DM creation) |
 | `conversations` | SELECT | participant OR admin/manager OR (`type IN ('announcement','team') AND team_id matches user's team`) — ensures all team members see shared channels |

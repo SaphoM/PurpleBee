@@ -24,6 +24,9 @@ import {
   GraduationCap,
   Briefcase,
   GripVertical,
+  ShieldCheck,
+  Cloud,
+  Headphones,
 } from 'lucide-react';
 import { useProjectStore, projectTemplates, ProjectTask } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
@@ -43,6 +46,9 @@ const getTemplateIcon = (templateId: string, size: number = 24) => {
     'design-system': <Palette size={size} strokeWidth={1.5} />,
     'training': <GraduationCap size={size} strokeWidth={1.5} />,
     'services': <Briefcase size={size} strokeWidth={1.5} />,
+    'cybersecurity': <ShieldCheck size={size} strokeWidth={1.5} />,
+    'cloud-computing': <Cloud size={size} strokeWidth={1.5} />,
+    'support': <Headphones size={size} strokeWidth={1.5} />,
     'custom': <Wrench size={size} strokeWidth={1.5} />,
   };
   return icons[templateId] || <FolderKanban size={size} strokeWidth={1.5} />;
