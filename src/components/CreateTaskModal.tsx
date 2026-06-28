@@ -18,11 +18,14 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   onClose,
   defaultStatus = 'todo',
 }) => {
-  const { addTask } = useTaskStore();
+  const { addTask, tasks: boardTasks } = useTaskStore();
   const getAllProjectTaskTitles = useProjectStore((s) => s.getAllProjectTaskTitles);
   const projects = useProjectStore((s) => s.projects);
   const user = useUserStore((s) => s.user);
   const canManageTeam = useUserStore((s) => s.canManageTeam);
+
+  // Titles already on the task board (lowercased for case-insensitive comparison)
+  const scheduledTitles = new Set(boardTasks.map((t) => t.title.toLowerCase().trim()));
 
   // Today in YYYY-MM-DD — used as the date input min to block backdating
   const todayStr = new Date().toISOString().split('T')[0];
@@ -288,6 +291,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                       </div>
                       {tasks.map((pt) => {
                         const isAssignedToMe = !!pt.assignedTo && !!user?.id && pt.assignedTo === user?.id;
+                        const isScheduled = scheduledTitles.has(pt.taskTitle.toLowerCase().trim());
                         return (
                           <button
                             key={pt.taskId}
@@ -307,10 +311,16 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                             />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
-                                <p className="text-sm text-gray-800 dark:text-slate-200 truncate">{pt.taskTitle}</p>
+                                <p className={clsx('text-sm truncate', isScheduled ? 'text-gray-400 dark:text-slate-500' : 'text-gray-800 dark:text-slate-200')}>{pt.taskTitle}</p>
                                 {isAssignedToMe && (
                                   <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold leading-none">
                                     YOU
+                                  </span>
+                                )}
+                                {isScheduled && (
+                                  <span className="flex-shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 text-[10px] font-medium leading-none">
+                                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none" className="flex-shrink-0"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                    Scheduled
                                   </span>
                                 )}
                               </div>
