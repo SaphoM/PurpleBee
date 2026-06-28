@@ -1089,15 +1089,33 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                       <span className="text-xs text-gray-400 dark:text-slate-500 italic">Unassigned</span>
                     )}
 
-                    {!task.linkedTaskId && (
-                      <button
-                        onClick={() => handleCreateActualTask(task)}
-                        title="Add to my Tasks board"
-                        className="p-2 sm:p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 transition-colors"
-                      >
-                        <CheckCircle2 size={18} className="sm:w-4 sm:h-4" />
-                      </button>
-                    )}
+                    {(() => {
+                      const isAssignedToMe = !!currentUserId && task.assignedTo === currentUserId;
+                      const isOnBoard = !!task.linkedTaskId;
+                      const isSelected = isAssignedToMe || isOnBoard;
+                      if (isSelected) {
+                        return (
+                          <span
+                            title={isOnBoard ? 'On your Tasks board' : 'Assigned to you'}
+                            className="p-2 sm:p-1.5 rounded-lg text-emerald-500 dark:text-emerald-400"
+                          >
+                            <CheckCircle2 size={18} className="sm:w-4 sm:h-4 fill-emerald-500 dark:fill-emerald-400 text-white dark:text-slate-900" />
+                          </span>
+                        );
+                      }
+                      return (
+                        <button
+                          onClick={() => {
+                            if (currentUserId) assignProjectTask(project.id, task.id, currentUserId);
+                            handleCreateActualTask(task);
+                          }}
+                          title="Assign to me & add to Tasks board"
+                          className="p-2 sm:p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                        >
+                          <CheckCircle2 size={18} className="sm:w-4 sm:h-4" />
+                        </button>
+                      );
+                    })()}
 
                     {canManage && (
                       <button
