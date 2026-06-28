@@ -22,6 +22,7 @@ import {
 import { Card, CardHeader, CardContent } from '@components/Card';
 import { useChatStore } from '@stores/chatStore';
 import { useTaskStore } from '@stores/taskStore';
+import { useProjectStore } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { useUIStore } from '@stores/uiStore';
@@ -378,6 +379,7 @@ const MemberDetailModal: React.FC<{
 }> = ({ member, isOpen, onClose, onMessage }) => {
   if (!isOpen || !member) return null;
 
+  const projects = useProjectStore((s) => s.projects);
   const deptStyle = departmentConfig[member.department] || { color: 'text-gray-700 dark:text-slate-300', bg: 'bg-gray-50 dark:bg-slate-700/30' };
 
   return (
@@ -498,6 +500,7 @@ const MemberDetailModal: React.FC<{
               <div className="space-y-2 max-h-48 overflow-y-auto">
                 {member.tasksAssigned.map((task) => {
                   const overdue = task.dueDate && isPast(new Date(task.dueDate)) && task.status !== 'completed' && !isToday(new Date(task.dueDate));
+                  const project = task.projectId ? projects.find((p) => p.id === task.projectId) : null;
                   return (
                     <div key={task.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-50 dark:bg-slate-800/30 border border-gray-100 dark:border-slate-700/30">
                       <span className={clsx(
@@ -511,6 +514,12 @@ const MemberDetailModal: React.FC<{
                         <p className={clsx('text-sm font-medium truncate', task.status === 'completed' ? 'line-through text-gray-400 dark:text-slate-500' : 'text-gray-800 dark:text-slate-200')}>
                           {task.title}
                         </p>
+                        {project && (
+                          <p className="text-[10px] text-gray-400 dark:text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                            <span>{project.icon}</span>
+                            <span>{project.name}</span>
+                          </p>
+                        )}
                       </div>
                       {overdue && <AlertTriangle size={12} className="text-red-500 flex-shrink-0" />}
                       <div className="flex items-center gap-1.5 flex-shrink-0">
