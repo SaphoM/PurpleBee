@@ -193,14 +193,26 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="sticky top-0 z-10 flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 dark:border-slate-700/50 bg-white dark:bg-slate-800 rounded-t-2xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between p-4 sm:p-6 border-b border-gray-200 dark:border-slate-700/50 bg-white dark:bg-slate-800 rounded-t-2xl">
           <div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">Create New Task</h2>
             <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Fill in the details for your new task</p>
+            {projectTasks.length > 0 && (
+              <div className="flex items-center gap-2 mt-2">
+                <span className="flex items-center gap-1 text-xs font-medium text-gray-400 dark:text-slate-500">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  {projectTasks.filter(pt => scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length} scheduled
+                </span>
+                <span className="text-xs text-gray-300 dark:text-slate-600">·</span>
+                <span className="text-xs font-medium text-purple-500 dark:text-purple-400">
+                  {projectTasks.filter(pt => !scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length} to schedule
+                </span>
+              </div>
+            )}
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-300 transition-colors"
+            className="text-gray-400 hover:text-gray-600 dark:text-slate-400 dark:hover:text-slate-300 transition-colors mt-1"
           >
             <X size={24} />
           </button>
