@@ -661,7 +661,7 @@ const industrySuggestions: Record<string, { title: string; description: string; 
 // ── Project Detail View ────────────────────────────────────────────────
 const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ projectId, onBack }) => {
   const { getProjectById, updateProject, assignProjectTask, removeProjectTask, addProjectTask } = useProjectStore();
-  const { addTask } = useTaskStore();
+  const { addTask, tasks: boardTasks } = useTaskStore();
   const { isAdmin, isManager } = useUserStore();
   const currentUserId = useUserStore((s) => s.user?.id);
   const currentUserName = useUserStore((s) => s.user?.name || '');
@@ -687,6 +687,20 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   const assignedCount = project.tasks.filter((t) => t.assignedTo).length;
   const totalHours = project.tasks.reduce((sum, t) => sum + t.estimatedHours, 0);
   const sc = statusConfig[project.status];
+
+  // Auto-update project status based on linked board task progress
+  useEffect(() => {
+    if (project.tasks.length === 0) return;
+    const linked = project.tasks
+      .filter((t) => t.linkedTaskId)
+      .map((t) => boardTasks.find((bt) => bt.id === t.linkedTaskId))
+      .filter(Boolean) as typeof boardTasks;
+    if (linked.length === 0) return;
+    const allCompleted = linked.every((t) => t.status === 'completed');
+    const anyActive = linked.some((t) => t.status === 'in-progress' || t.status === 'review');
+    const derived = allCompleted ? 'completed' : anyActive ? 'active' : project.status === 'on-hold' ? 'on-hold' : linked.length > 0 ? 'planning' : project.status;
+    if (derived !== project.status) updateProject(project.id, { status: derived as any });
+  }, [boardTasks, project.tasks, project.id]);
 
   // Build suggestions: template tasks + industry tasks that haven't been added yet
   const existingTitles = new Set(project.tasks.map((t) => t.title.toLowerCase()));
