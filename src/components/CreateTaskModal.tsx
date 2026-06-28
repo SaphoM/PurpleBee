@@ -62,12 +62,19 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       )
     : projectTasks;
 
-  // Group suggestions by project
+  // Group suggestions by project; within each group put assigned-to-me tasks first
   const groupedSuggestions = filteredSuggestions.reduce<Record<string, typeof projectTasks>>((acc, pt) => {
     if (!acc[pt.projectId]) acc[pt.projectId] = [];
     acc[pt.projectId].push(pt);
     return acc;
   }, {});
+  Object.keys(groupedSuggestions).forEach((projId) => {
+    groupedSuggestions[projId].sort((a, b) => {
+      const aMe = !!a.assignedTo && !!user?.id && a.assignedTo === user?.id ? 0 : 1;
+      const bMe = !!b.assignedTo && !!user?.id && b.assignedTo === user?.id ? 0 : 1;
+      return aMe - bMe;
+    });
+  });
 
   // Close dropdown on outside click (use pointerdown + RAF so touch taps on
   // dropdown items register their onClick before the dropdown closes)
@@ -302,9 +309,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                               <div className="flex items-center gap-1.5">
                                 <p className="text-sm text-gray-800 dark:text-slate-200 truncate">{pt.taskTitle}</p>
                                 {isAssignedToMe && (
-                                  <span className="flex items-center gap-1 flex-shrink-0">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
-                                    <span className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">You</span>
+                                  <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-bold leading-none">
+                                    YOU
                                   </span>
                                 )}
                               </div>
