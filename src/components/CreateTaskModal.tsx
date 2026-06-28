@@ -272,10 +272,20 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                   'rounded-xl shadow-xl max-h-64 overflow-y-auto'
                 )}
               >
-                <div className="px-3 py-2 border-b border-gray-100 dark:border-slate-700">
+                <div className="px-3 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
                   <p className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
                     <FolderKanban size={10} /> Project Tasks
                   </p>
+                  <div className="flex items-center gap-2">
+                    <span className="flex items-center gap-1 text-[10px] font-medium text-gray-400 dark:text-slate-500">
+                      <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      {projectTasks.filter(pt => scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length} scheduled
+                    </span>
+                    <span className="text-[10px] text-gray-300 dark:text-slate-600">·</span>
+                    <span className="text-[10px] font-medium text-purple-500 dark:text-purple-400">
+                      {projectTasks.filter(pt => !scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length} to schedule
+                    </span>
+                  </div>
                 </div>
                 {Object.keys(groupedSuggestions).length === 0 ? (
                   <div className="px-3 py-4 text-center text-xs text-gray-400 dark:text-slate-500">

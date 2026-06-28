@@ -36,6 +36,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Time estimation and tracking
 - Task assignment to team members — Assigned To card in the task detail modal resolves the UUID to the member's name and avatar from `assignableMembers`
 - **Assigned-to-me YOU badge** — in the Create New Task title dropdown, tasks assigned to the logged-in user show a solid green "YOU" pill badge and float to the top of their project group; the project colour indicator is a thin vertical bar so it cannot be confused with the badge
+- **Scheduled / to-schedule counter** — the dropdown header shows "X scheduled · Y to schedule" counts at a glance; tasks already on the board show a grey ✓ Scheduled pill and dimmed text; remaining tasks show in full colour
 - `createdBy` stamped on every new task; hydrated from `created_by` DB column on load
 
 ### Multiple View Modes
