@@ -973,7 +973,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
               <p className="text-sm text-gray-400 dark:text-slate-500">No tasks yet. Add tasks to get started.</p>
             </div>
           ) : (
-            [...project.tasks].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((task) => {
+            <>
+            {[...project.tasks].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((task) => {
               const assignee = task.assignedTo ? assignableMembers.find((p) => p.id === task.assignedTo) : null;
               const pc = priorityConfig[task.priority];
               return (
@@ -1081,7 +1082,21 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                   </div>
                 </div>
               );
-            })
+            })}
+            {/* Quick-add row at the bottom of the list */}
+            <button
+              onClick={() => { setShowAddTask(true); setTimeout(() => addTaskInputRef.current?.focus(), 50); }}
+              className={clsx(
+                'w-full flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed',
+                'border-gray-200 dark:border-slate-700 text-gray-400 dark:text-slate-500',
+                'hover:border-purple-400 hover:text-purple-500 dark:hover:border-purple-500 dark:hover:text-purple-400',
+                'transition-colors text-sm font-medium'
+              )}
+            >
+              <Plus size={15} />
+              Add a task
+            </button>
+            </>
           )}
         </div>
       </div>
