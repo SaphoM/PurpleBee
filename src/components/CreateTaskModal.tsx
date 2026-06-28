@@ -197,18 +197,36 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
           <div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">Create New Task</h2>
             <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Fill in the details for your new task</p>
-            {projectTasks.length > 0 && (
-              <div className="flex items-center gap-2 mt-2">
-                <span className="flex items-center gap-1 text-xs font-medium text-gray-400 dark:text-slate-500">
-                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                  {projectTasks.filter(pt => scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length} scheduled
-                </span>
-                <span className="text-xs text-gray-300 dark:text-slate-600">·</span>
-                <span className="text-xs font-medium text-purple-500 dark:text-purple-400">
-                  {projectTasks.filter(pt => !scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length} to schedule
-                </span>
-              </div>
-            )}
+            {projectTasks.length > 0 && (() => {
+              const myScheduled = boardTasks.filter(t => !!user?.id && t.assignedTo === user.id).length;
+              const myUnscheduled = projectTasks.filter(pt => !!user?.id && pt.assignedTo === user.id && !scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length;
+              const allScheduled = projectTasks.filter(pt => scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length;
+              const allUnscheduled = projectTasks.filter(pt => !scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length;
+              return (
+                <div className="mt-2 space-y-1">
+                  {/* All-project row */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold text-gray-300 dark:text-slate-600 uppercase tracking-wide w-14">All</span>
+                    <span className="flex items-center gap-1 text-xs font-medium text-gray-400 dark:text-slate-500">
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      {allScheduled} scheduled
+                    </span>
+                    <span className="text-xs text-gray-300 dark:text-slate-600">·</span>
+                    <span className="text-xs font-medium text-purple-500 dark:text-purple-400">{allUnscheduled} to schedule</span>
+                  </div>
+                  {/* My tasks row */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold text-gray-300 dark:text-slate-600 uppercase tracking-wide w-14">Mine</span>
+                    <span className="flex items-center gap-1 text-xs font-medium text-emerald-500 dark:text-emerald-400">
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      {myScheduled} scheduled
+                    </span>
+                    <span className="text-xs text-gray-300 dark:text-slate-600">·</span>
+                    <span className="text-xs font-medium text-amber-500 dark:text-amber-400">{myUnscheduled} to schedule</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
           <button
             onClick={onClose}
