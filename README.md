@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.3.0
+# PurpleBee - AI-Powered Productivity Dashboard · v1.4.0
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -35,7 +35,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - File attachments
 - Time estimation and tracking
 - Task assignment to team members — Assigned To card in the task detail modal resolves the UUID to the member's name and avatar from `assignableMembers`
-- **Assigned-to-me indicator in task title dropdown** — when typing in the Create Task modal's title field, project task suggestions assigned to the logged-in user show a green dot + "You" label and a light green row background, making it instant to spot your own tasks in the list
+- **Assigned-to-me YOU badge** — in the Create New Task title dropdown, tasks assigned to the logged-in user show a solid green "YOU" pill badge and float to the top of their project group; the project colour indicator is a thin vertical bar so it cannot be confused with the badge
 - `createdBy` stamped on every new task; hydrated from `created_by` DB column on load
 
 ### Multiple View Modes
@@ -46,6 +46,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 ### Project Management
 - Project templates (Web App, Mobile, Marketing, API, Design System, Training, Services, Cybersecurity, Cloud Computing, Support, Custom)
 - Project task breakdown with suggested tasks per template
+- **Bulk-assign on project creation** — step 3 of the Create Project modal has an "Assign all to" dropdown that fills every task's individual assignment select with one click; individual dropdowns remain editable afterwards for overrides
 - Team member assignment per project task — triggers instant `task-assigned` notification to the assignee (live mode)
 - Project status tracking (Planning, Active, On Hold, Completed)
 - **Edit projects** — Admin/Manager can update name, description, and status inline via edit modal
@@ -139,7 +140,7 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 | Realtime | Supabase Realtime (`postgres_changes` · Broadcast · Presence) |
 | Hosting | Render (static site, staging branch auto-deploys) |
 | Utilities | clsx, uuid, date-fns |
-| Version | 1.3.0 — sidebar version badge reads from `package.json` at build time |
+| Version | 1.4.0 — sidebar version badge reads from `package.json` at build time |
 
 ## Auth Architecture
 

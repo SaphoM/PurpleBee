@@ -492,6 +492,34 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                 Assign tasks to team members. You can also leave them unassigned and assign later.
               </p>
 
+              {/* Bulk-assign all tasks to one person */}
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+                <span className="text-sm font-medium text-purple-700 dark:text-purple-300 whitespace-nowrap">Assign all to</span>
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const bulk: Record<number, string> = {};
+                    if (template && !isCustom) {
+                      template.tasks.forEach((_, i) => { if (selectedTasks.has(i)) bulk[i] = val; });
+                    }
+                    customTasks.forEach((_, i) => { bulk[1000 + i] = val; });
+                    setAssignments(val ? bulk : {});
+                  }}
+                  className={clsx(
+                    'flex-1 rounded-lg px-3 py-1.5 text-sm',
+                    'bg-white border border-purple-300 text-gray-800',
+                    'dark:bg-slate-700 dark:border-purple-600 dark:text-slate-100',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                  )}
+                >
+                  <option value="">— pick a member —</option>
+                  {assignableMembers.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="space-y-2">
                 {/* Template tasks */}
                 {template && !isCustom && template.tasks.map((task, i) => {
