@@ -679,6 +679,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [removeTaskConfirm, setRemoveTaskConfirm] = useState<{ id: string; title: string } | null>(null);
   const suggestionRef = React.useRef<HTMLDivElement>(null);
   const addTaskInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -1133,8 +1134,9 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
 
                     {canManage && (
                       <button
-                        onClick={() => removeProjectTask(project.id, task.id)}
+                        onClick={() => setRemoveTaskConfirm({ id: task.id, title: task.title })}
                         className="p-2 sm:p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                        title="Remove task"
                       >
                         <Trash2 size={16} className="sm:w-3.5 sm:h-3.5" />
                       </button>
@@ -1160,6 +1162,44 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
           )}
         </div>
       </div>
+
+      {/* Remove project task confirm modal */}
+      {removeTaskConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setRemoveTaskConfirm(null)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm z-10" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <Trash2 size={24} className="text-red-500 dark:text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-slate-100">Remove Task?</h3>
+                <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+                  Are you sure you want to remove <span className="font-semibold text-gray-700 dark:text-slate-200">"{removeTaskConfirm.title}"</span>? This action cannot be undone.
+                </p>
+              </div>
+              <div className="flex gap-3 w-full">
+                <button
+                  onClick={() => setRemoveTaskConfirm(null)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    removeProjectTask(project.id, removeTaskConfirm.id);
+                    addToast({ type: 'success', title: 'Task removed', message: `"${removeTaskConfirm.title}" has been removed from this project.`, duration: 4000 });
+                    setRemoveTaskConfirm(null);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
+                >
+                  Remove Task
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

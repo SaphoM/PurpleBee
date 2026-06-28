@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.4.0
+# PurpleBee - AI-Powered Productivity Dashboard · v1.5.0
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -52,6 +52,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Project status tracking (Planning, Active, On Hold, Completed)
 - **Edit projects** — Admin/Manager can update name, description, and status inline via edit modal
 - Delete projects with confirmation modal
+- **Universal delete confirmation** — every destructive delete action across the app (project tasks, chat messages in both the main Chat page and docked mini-chats) shows a consistent confirmation modal (trash icon, descriptive text, Cancel / Delete buttons) before executing; a success toast appears after the action completes; existing task delete and project delete already had this pattern — now fully consistent across all surfaces
 - Projects persist to Supabase for real users
 - **Drag-to-reorder project grid** — hover any project card to reveal the grip handle (⠿) on the left edge as a visual affordance; drag from anywhere on the card to reorder
 - **Long-press to highlight project cards** — hold a project card for 500 ms to toggle an amber highlight on it; long-press again to deselect; highlighted state persists to `localStorage` keyed by user ID so it survives page refresh; the click-to-open action is suppressed when a long press fires so there is no accidental navigation (the outer card `div` is the drag source — browser drag events do not fire reliably from inside `<button>` elements, so `draggable` is on the card rather than the grip); a `didDragRef` flag prevents the card's click handler from opening the project detail after a drag ends; the dragged card dims and shrinks, the drop target highlights with a purple ring and lifts slightly; order is persisted to `localStorage` keyed by user ID and survives page refresh; new projects append to the end; deleted projects are pruned automatically

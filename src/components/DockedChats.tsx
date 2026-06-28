@@ -17,10 +17,12 @@ import {
   CornerUpLeft,
   Star,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { useChatStore } from '@stores/chatStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
+import { useToastStore } from '@components/Toast';
 import { ConversationType, Attachment, TaskRef, ReplyRef, ChatMessage, Conversation } from '@/types/index';
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
@@ -93,8 +95,10 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
   const typingNames = useChatStore((s) => s.typingUsers[conversationId]?.map((u) => u.name) ?? []);
   const tasks = useTaskStore((s) => s.tasks);
   const { getProjectById } = useProjectStore();
+  const { addToast } = useToastStore();
   const [isExpanded, setIsExpanded] = useState(true);
   const [input, setInput] = useState('');
+  const [deleteMsgConfirm, setDeleteMsgConfirm] = useState<{ messageId: string } | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isDragOverWindow, setIsDragOverWindow] = useState(false);
   const [isDragOverBubble, setIsDragOverBubble] = useState(false);
@@ -514,7 +518,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
               onEdit={() => { setEditingMsgId(contextMenu.msg.id); setEditingText(contextMenu.msg.text); }}
               onInfo={() => setInfoMsgId(infoMsgId === contextMenu.msg.id ? null : contextMenu.msg.id)}
               onStar={() => starMessage(conversationId, contextMenu.msg.id)}
-              onDelete={() => deleteMessage(conversationId, contextMenu.msg.id)}
+              onDelete={() => { setDeleteMsgConfirm({ messageId: contextMenu.msg.id }); setContextMenu(null); }}
               onMore={() => {}}
               onClose={() => setContextMenu(null)}
             />
@@ -540,6 +544,34 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                   ))}
                 </div>
                 <button onClick={() => setForwardMsg(null)} className="mt-2 w-full text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {/* Delete message confirm modal */}
+          {deleteMsgConfirm && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 rounded-2xl backdrop-blur-sm" onClick={() => setDeleteMsgConfirm(null)}>
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-64 p-4" onClick={(e) => e.stopPropagation()}>
+                <div className="flex flex-col items-center text-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                    <Trash2 size={18} className="text-red-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900 dark:text-slate-100">Delete Message?</p>
+                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">This action cannot be undone.</p>
+                  </div>
+                  <div className="flex gap-2 w-full">
+                    <button onClick={() => setDeleteMsgConfirm(null)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors">Cancel</button>
+                    <button
+                      onClick={() => {
+                        deleteMessage(conversationId, deleteMsgConfirm.messageId);
+                        addToast({ type: 'success', title: 'Message deleted', message: 'Your message has been deleted.', duration: 3000 });
+                        setDeleteMsgConfirm(null);
+                      }}
+                      className="flex-1 py-2 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
+                    >Delete</button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

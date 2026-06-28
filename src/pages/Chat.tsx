@@ -22,11 +22,13 @@ import {
   Download,
   SmilePlus,
   CornerUpLeft,
+  Trash2,
 } from 'lucide-react';
 import { useChatStore } from '@stores/chatStore';
 import { ConversationType, Attachment, ReplyRef, ChatMessage } from '@/types/index';
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
+import { useToastStore } from '@components/Toast';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -364,6 +366,7 @@ export const Chat: React.FC = () => {
     activeConversationId ? (s.typingUsers[activeConversationId]?.map((u) => u.name) ?? []) : []
   );
   const typingUsersMap = useChatStore((s) => s.typingUsers);
+  const { addToast } = useToastStore();
 
   const [messageInput, setMessageInput] = useState('');
   const [showNewDM, setShowNewDM] = useState(false);
@@ -377,6 +380,7 @@ export const Chat: React.FC = () => {
   const [editingText, setEditingText] = useState('');
   const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
   const [infoMsgId, setInfoMsgId] = useState<string | null>(null);
+  const [deleteMsgConfirm, setDeleteMsgConfirm] = useState<{ conversationId: string; messageId: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
@@ -1156,7 +1160,7 @@ export const Chat: React.FC = () => {
                   onEdit={() => { setEditingMsgId(contextMenu.msg.id); setEditingText(contextMenu.msg.text); }}
                   onInfo={() => setInfoMsgId(infoMsgId === contextMenu.msg.id ? null : contextMenu.msg.id)}
                   onStar={() => activeConversationId && starMessage(activeConversationId, contextMenu.msg.id)}
-                  onDelete={() => activeConversationId && deleteMessage(activeConversationId, contextMenu.msg.id)}
+                  onDelete={() => { if (activeConversationId) { setDeleteMsgConfirm({ conversationId: activeConversationId, messageId: contextMenu.msg.id }); setContextMenu(null); } }}
                   onMore={() => {}}
                   onClose={() => setContextMenu(null)}
                 />
@@ -1182,6 +1186,34 @@ export const Chat: React.FC = () => {
                       ))}
                     </div>
                     <button onClick={() => setForwardMsg(null)} className="mt-3 w-full text-xs text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 py-1">Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Delete message confirm modal */}
+              {deleteMsgConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setDeleteMsgConfirm(null)}>
+                  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex flex-col items-center text-center gap-4">
+                      <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                        <Trash2 size={24} className="text-red-500 dark:text-red-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-slate-100">Delete Message?</h3>
+                        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Are you sure you want to delete this message? This action cannot be undone.</p>
+                      </div>
+                      <div className="flex gap-3 w-full">
+                        <button onClick={() => setDeleteMsgConfirm(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors">Cancel</button>
+                        <button
+                          onClick={() => {
+                            deleteMessage(deleteMsgConfirm.conversationId, deleteMsgConfirm.messageId);
+                            addToast({ type: 'success', title: 'Message deleted', message: 'Your message has been deleted.', duration: 3000 });
+                            setDeleteMsgConfirm(null);
+                          }}
+                          className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
+                        >Delete Message</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
