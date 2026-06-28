@@ -1262,8 +1262,9 @@ export const Projects: React.FC = () => {
   const canManage = isAdmin() || isManager();
   const globalSearchQuery = useUIStore((s) => s.globalSearchQuery);
   const setGlobalSearchQuery = useUIStore((s) => s.setGlobalSearchQuery);
+  const selectedProjectId = useUIStore((s) => s.activeProjectId);
+  const setSelectedProjectId = useUIStore((s) => s.setActiveProjectId);
   const [showCreate, setShowCreate] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteConfirmInfo, setDeleteConfirmInfo] = useState<{ name: string; taskCount: number } | null>(null);

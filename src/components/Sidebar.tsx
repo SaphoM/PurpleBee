@@ -62,7 +62,7 @@ const bottomItems: NavItem[] = [
 ];
 
 export const Sidebar: React.FC = () => {
-  const { sidebarOpen, toggleSidebar, setSidebarOpen, darkMode, toggleDarkMode, sidebarCollapsed, toggleSidebarCollapse } = useUIStore();
+  const { sidebarOpen, toggleSidebar, setSidebarOpen, darkMode, toggleDarkMode, sidebarCollapsed, toggleSidebarCollapse, setActiveProjectId } = useUIStore();
   const { user, logout } = useUserStore();
   const totalUnread = useChatStore((s) => s.getTotalUnread());
   const projectCount = useProjectStore((s) => s.projects.length);
@@ -137,6 +137,7 @@ export const Sidebar: React.FC = () => {
               const closeMobile = () => {
                 if (window.innerWidth < 1024) setSidebarOpen(false);
                 if (window.innerWidth < 768 && item.tip && showTips) showMobileToast(item.tip);
+                if (item.href === '#projects') setActiveProjectId(null);
               };
               const link = (
                 <a

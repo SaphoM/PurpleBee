@@ -24,6 +24,9 @@ interface UIStore extends UIState {
    */
   taskOwnerFilter: string;
   setTaskOwnerFilter: (f: string) => void;
+  /** ID of the project currently open in the detail view; null = list view */
+  activeProjectId: string | null;
+  setActiveProjectId: (id: string | null) => void;
 }
 
 // Load collapsed preference
@@ -78,4 +81,7 @@ export const useUIStore = create<UIStore>((set) => ({
 
   taskOwnerFilter: 'mine',
   setTaskOwnerFilter: (f) => set({ taskOwnerFilter: f }),
+
+  activeProjectId: null,
+  setActiveProjectId: (id) => set({ activeProjectId: id }),
 }));
