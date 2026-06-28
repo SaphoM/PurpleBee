@@ -279,30 +279,42 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                           {tasks[0].projectIcon} {tasks[0].projectName}
                         </span>
                       </div>
-                      {tasks.map((pt) => (
-                        <button
-                          key={pt.taskId}
-                          type="button"
-                          onClick={() => handleSelectProjectTask(pt)}
-                          onTouchEnd={(e) => { e.preventDefault(); handleSelectProjectTask(pt); }}
-                          className={clsx(
-                            'w-full text-left px-3 py-3 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors',
-                            'active:bg-purple-100 dark:active:bg-purple-900/30',
-                            'flex items-start gap-2'
-                          )}
-                        >
-                          <span
-                            className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5"
-                            style={{ backgroundColor: pt.projectColor }}
-                          />
-                          <div className="min-w-0">
-                            <p className="text-sm text-gray-800 dark:text-slate-200 truncate">{pt.taskTitle}</p>
-                            {pt.taskDescription && (
-                              <p className="text-[10px] text-gray-400 dark:text-slate-500 truncate">{pt.taskDescription}</p>
+                      {tasks.map((pt) => {
+                        const isAssignedToMe = pt.assignedTo === user?.id;
+                        return (
+                          <button
+                            key={pt.taskId}
+                            type="button"
+                            onClick={() => handleSelectProjectTask(pt)}
+                            onTouchEnd={(e) => { e.preventDefault(); handleSelectProjectTask(pt); }}
+                            className={clsx(
+                              'w-full text-left px-3 py-3 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors',
+                              'active:bg-purple-100 dark:active:bg-purple-900/30',
+                              'flex items-start gap-2',
+                              isAssignedToMe && 'bg-emerald-50/60 dark:bg-emerald-900/10'
                             )}
-                          </div>
-                        </button>
-                      ))}
+                          >
+                            <span
+                              className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5"
+                              style={{ backgroundColor: pt.projectColor }}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm text-gray-800 dark:text-slate-200 truncate">{pt.taskTitle}</p>
+                                {isAssignedToMe && (
+                                  <span className="flex items-center gap-1 flex-shrink-0">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0" />
+                                    <span className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">You</span>
+                                  </span>
+                                )}
+                              </div>
+                              {pt.taskDescription && (
+                                <p className="text-[10px] text-gray-400 dark:text-slate-500 truncate">{pt.taskDescription}</p>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   ))
                 )}

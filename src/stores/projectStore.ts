@@ -325,7 +325,7 @@ interface ProjectStore {
   getProjectById: (id: string) => Project | undefined;
   getProjectTasks: (projectId: string) => ProjectTask[];
   getUnassignedTasks: (projectId: string) => ProjectTask[];
-  getAllProjectTaskTitles: () => { projectId: string; projectName: string; projectIcon: string; projectColor: string; taskId: string; taskTitle: string; taskDescription: string }[];
+  getAllProjectTaskTitles: () => { projectId: string; projectName: string; projectIcon: string; projectColor: string; taskId: string; taskTitle: string; taskDescription: string; assignedTo?: string }[];
   clearMockData: () => void;
   restoreMockData: () => void;
   hydrateFromDb: (userId: string) => Promise<void>;
@@ -631,7 +631,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   getAllProjectTaskTitles: () => {
     const projects = get().projects;
-    const results: { projectId: string; projectName: string; projectIcon: string; projectColor: string; taskId: string; taskTitle: string; taskDescription: string }[] = [];
+    const results: { projectId: string; projectName: string; projectIcon: string; projectColor: string; taskId: string; taskTitle: string; taskDescription: string; assignedTo?: string }[] = [];
     projects.forEach((p) => {
       p.tasks.forEach((t) => {
         results.push({
@@ -642,6 +642,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           taskId: t.id,
           taskTitle: t.title,
           taskDescription: t.description,
+          assignedTo: t.assignedTo,
         });
       });
     });

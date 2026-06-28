@@ -35,6 +35,7 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - File attachments
 - Time estimation and tracking
 - Task assignment to team members — Assigned To card in the task detail modal resolves the UUID to the member's name and avatar from `assignableMembers`
+- **Assigned-to-me indicator in task title dropdown** — when typing in the Create Task modal's title field, project task suggestions assigned to the logged-in user show a green dot + "You" label and a light green row background, making it instant to spot your own tasks in the list
 - `createdBy` stamped on every new task; hydrated from `created_by` DB column on load
 
 ### Multiple View Modes
