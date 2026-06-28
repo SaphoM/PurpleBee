@@ -280,7 +280,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                         </span>
                       </div>
                       {tasks.map((pt) => {
-                        const isAssignedToMe = pt.assignedTo === user?.id;
+                        const isAssignedToMe = !!pt.assignedTo && !!user?.id && pt.assignedTo === user?.id;
                         return (
                           <button
                             key={pt.taskId}
