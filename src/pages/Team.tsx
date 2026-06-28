@@ -708,16 +708,21 @@ export const Team: React.FC = () => {
   //            merged with chatStore.teamMembers for online status & chat features
   const membersData: TeamMemberData[] = useMemo(() => {
     if (keepMockData) {
-      // ── Mock mode: use demo team members ──
+      // ── Mock mode: use demo team members, but overlay editable fields from assignableMembers ──
       return teamMembers.map((member) => {
+        const profile = assignableMembers.find((a) => a.id === member.userId);
         const assigned = tasks.filter((t) => t.assignedTo === member.userId);
         const completed = assigned.filter((t) => t.status === 'completed').length;
         const inProgress = assigned.filter((t) => t.status === 'in-progress').length;
         const overdue = assigned.filter((t) => t.dueDate && isPast(new Date(t.dueDate)) && t.status !== 'completed' && !isToday(new Date(t.dueDate))).length;
         const ext = mockExtendedData[member.userId] || { department: 'Engineering', title: 'Team Member', joinedDate: new Date(), email: `${member.name.toLowerCase().replace(' ', '.')}@xspark.co.za` };
+        // Use updated name/role from assignableMembers if available
+        const updatedMember: ChatParticipant = profile
+          ? { ...member, name: profile.name, role: profile.role === 'admin' ? 'admin' : 'member' }
+          : member;
 
         return {
-          member,
+          member: updatedMember,
           tasksAssigned: assigned,
           tasksCompleted: completed,
           tasksInProgress: inProgress,
@@ -726,20 +731,22 @@ export const Team: React.FC = () => {
           completionRate: assigned.length > 0 ? Math.round((completed / assigned.length) * 100) : 0,
           avgProgress: assigned.length > 0 ? Math.round(assigned.reduce((s, t) => s + t.progress, 0) / assigned.length) : 0,
           ...ext,
+          // Overlay editable fields from assignableMembers
+          ...(profile && { department: profile.department || ext.department, title: profile.title || ext.title }),
         };
       });
     }
 
     // ── Real mode: build from assignableMembers (DB profiles) ──
     return assignableMembers.map((profile) => {
-      // Merge online status from chatStore if available
+      // Merge online status from chatStore if available, but always use profile for mutable fields
       const chatMember = teamMembers.find((m) => m.userId === profile.id);
-      const member: ChatParticipant = chatMember || {
+      const member: ChatParticipant = {
         userId: profile.id,
         name: profile.name,
         avatar: profile.avatar,
         role: profile.role === 'admin' ? 'admin' : 'member',
-        online: false,
+        online: chatMember?.online ?? false,
       };
 
       const assigned = tasks.filter((t) => t.assignedTo === profile.id);
