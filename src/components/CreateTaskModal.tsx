@@ -302,7 +302,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                             )}
                           >
                             <span
-                              className="w-2 h-2 rounded-full flex-shrink-0 mt-1.5"
+                              className="w-1.5 h-4 rounded-sm flex-shrink-0 mt-0.5 opacity-70"
                               style={{ backgroundColor: pt.projectColor }}
                             />
                             <div className="min-w-0 flex-1">
