@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.5.0
+# PurpleBee - AI-Powered Productivity Dashboard · v1.6.0
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -38,6 +38,8 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - **Assigned-to-me YOU badge** — in the Create New Task title dropdown, tasks assigned to the logged-in user show a solid green "YOU" pill badge and float to the top of their project group; the project colour indicator is a thin vertical bar so it cannot be confused with the badge
 - **Scheduled / to-schedule counter** — the dropdown header shows "X scheduled · Y to schedule" counts at a glance; tasks already on the board show a grey ✓ Scheduled pill and dimmed text; remaining tasks show in full colour
 - `createdBy` stamped on every new task; hydrated from `created_by` DB column on load
+- **General task notes** — each task has a dedicated "Notes" section in the detail modal (sticky-note icon); click "+ Add note" to open an inline textarea; Save persists via `updateTask({ notes })`; Cancel reverts; displayed text supports clickable URLs; syncs when switching between tasks
+- **Clickable URLs everywhere** — any `http(s)://` URL in a chat message, docked mini-chat message, task description, or task progress note is automatically rendered as a clickable `<a target="_blank">` link via a shared `linkifyText()` utility (`src/utils/linkify.tsx`); no `dangerouslySetInnerHTML` — URL segments are split and wrapped safely
 
 ### Multiple View Modes
 - **Kanban Board** — Drag-and-drop task management; toggle via the view switcher on the Tasks page
@@ -52,7 +54,10 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Project status tracking (Planning, Active, On Hold, Completed)
 - **Edit projects** — Admin/Manager can update name, description, and status inline via edit modal
 - Delete projects with confirmation modal
-- **Universal delete confirmation** — every destructive delete action across the app (project tasks, chat messages in both the main Chat page and docked mini-chats) shows a consistent confirmation modal (trash icon, descriptive text, Cancel / Delete buttons) before executing; a success toast appears after the action completes; existing task delete and project delete already had this pattern — now fully consistent across all surfaces
+- **Universal delete confirmation** — every destructive delete action across the app (tasks, projects, project tasks, chat messages in both the main Chat page and docked mini-chats) shows a consistent confirmation modal: full-screen `bg-black/50 backdrop-blur-sm` overlay, `max-w-md` centred card, `w-16 h-16` red icon circle, `text-xl` bold title, outlined Cancel + solid-red Delete button; a success toast fires after every confirmed delete
+- **Project task description** — when adding a custom task on the project detail page, a description textarea appears below the title input once the user starts typing; description is saved with the task and cleared on Cancel/Escape
+- **Auto-update project status** — the project detail view watches linked board task statuses via a `useEffect` and derives the project status automatically: all linked tasks completed → `completed`; any task in-progress or review → `active`; manual `on-hold` is preserved unless all tasks complete
+- **Projects sidebar always returns to list** — clicking the Projects nav item always resets to the project grid, even when a project detail is open, via `setActiveProjectId(null)` in `uiStore`
 - Projects persist to Supabase for real users
 - **Drag-to-reorder project grid** — hover any project card to reveal the grip handle (⠿) on the left edge as a visual affordance; drag from anywhere on the card to reorder
 - **Long-press to highlight project cards** — hold a project card for 500 ms to toggle an amber highlight on it; long-press again to deselect; highlighted state persists to `localStorage` keyed by user ID so it survives page refresh; the click-to-open action is suppressed when a long press fires so there is no accidental navigation (the outer card `div` is the drag source — browser drag events do not fire reliably from inside `<button>` elements, so `draggable` is on the card rather than the grip); a `didDragRef` flag prevents the card's click handler from opening the project detail after a drag ends; the dragged card dims and shrinks, the drop target highlights with a purple ring and lifts slightly; order is persisted to `localStorage` keyed by user ID and survives page refresh; new projects append to the end; deleted projects are pruned automatically
@@ -60,7 +65,8 @@ A modern, enterprise-grade productivity management platform with advanced task m
 ### Team Collaboration
 - Team invite system (magic link email + shareable URL) — when inviting a member, the Admin selects one or more departments via pill toggles (General, Engineering, Design, Product, QA, DevOps, Marketing, Operations); selected pills show a ✓ and an × to deselect; a **⊕** pill at the end opens an inline input to add any custom department not in the list; multiple selections stored as a comma-separated string (e.g. `"General, DevOps"`) in the `invites.department` column; on invite acceptance (`inviteDb.accept`) the department is written to the new member's `profiles.department`; the invite accept page shows the assigned department to the invitee before they join
 - Role-based access control (Admin, Manager, User)
-- **Edit team members** — Admin/Manager can update name, job title, department, and role; persists to `profiles` + `team_members` in live mode
+- **Edit team members** — Admin/Manager can update name, job title, department, and role; persists to `profiles` + `team_members` in live mode; UI updates immediately in both demo mode (overlays `assignableMembers` onto the card) and live mode (always uses the updated `assignableMembers` entry rather than the stale `chatStore` copy)
+- **Task project label in member detail** — each task listed in the member detail modal shows the project it belongs to (icon + name) in small type below the task title
 - In-app team chat with docked chat windows
 - **Mobile wallet view for multiple docked chats** — on responsive/mobile layouts, docking a single conversation opens it directly in the bottom sheet as before; docking a second (or more) switches the default view to a stacked "wallet" overview (cards fanned like boarding passes), each showing the conversation's avatar, name, and unread count, with the frontmost card also showing a last-message preview; tapping a card **behind** the front one switches in one tap — the tapped card shuffles to the front (both cards flick 40 px left then settle, 150 ms) and the conversation opens immediately in the bottom sheet; tapping the **front** card opens it directly; the wallet strip remains visible below the open bottom sheet at all times (backdrop clips at the wallet's top edge, sheet lifts by the wallet's height so nothing is obscured); swiping the sheet down returns to the wallet stack rather than undocking — only the header's × button actually undocks a conversation; on the **mobile Chat page**, tapping any conversation row routes through the wallet system (calls `dockChat`) rather than the old in-page full-screen overlay, so the wallet/bottom sheet experience is consistent across the whole app
 - Admin "View As" to preview other members' dashboards
@@ -143,7 +149,7 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 | Realtime | Supabase Realtime (`postgres_changes` · Broadcast · Presence) |
 | Hosting | Render (static site, staging branch auto-deploys) |
 | Utilities | clsx, uuid, date-fns |
-| Version | 1.4.0 — sidebar version badge reads from `package.json` at build time |
+| Version | 1.6.0 — sidebar version badge reads from `package.json` at build time |
 
 ## Auth Architecture
 
