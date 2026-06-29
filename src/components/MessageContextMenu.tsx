@@ -30,6 +30,8 @@ interface Props extends ContextMenuState {
   onDelete: () => void;
   onMore: () => void;
   onClose: () => void;
+  /** Whether this message is still within the edit window (or user is admin). */
+  canEdit?: boolean;
 }
 
 const MENU_W = 200;
@@ -43,7 +45,7 @@ interface ItemProps {
 }
 
 const MessageContextMenu: React.FC<Props> = ({
-  x, y, isMe, isDeleted, starred,
+  x, y, isMe, isDeleted, starred, canEdit,
   onReply, onForward, onCopy, onEdit, onInfo, onStar, onDelete, onMore, onClose,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -93,7 +95,19 @@ const MessageContextMenu: React.FC<Props> = ({
       <Item icon={<CornerUpRight size={16} />} label="Forward" onClick={onForward} />
       <Item icon={<Copy size={16} />} label="Copy" onClick={onCopy} />
       {isMe && !isDeleted && (
-        <Item icon={<Pencil size={16} />} label="Edit" onClick={onEdit} />
+        canEdit
+          ? <Item icon={<Pencil size={16} />} label="Edit" onClick={onEdit} />
+          : (
+            <button
+              disabled
+              title="Messages can only be edited within 15 minutes of sending"
+              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-left opacity-35 cursor-not-allowed text-gray-700 dark:text-slate-400"
+            >
+              <span className="flex-shrink-0 text-gray-400 dark:text-slate-500"><Pencil size={16} /></span>
+              <span>Edit</span>
+              <span className="ml-auto text-[10px] text-gray-400 dark:text-slate-500">15 min limit</span>
+            </button>
+          )
       )}
       <Item icon={<Info size={16} />} label="Info" onClick={onInfo} />
       <Item

@@ -24,6 +24,7 @@ import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useToastStore } from '@components/Toast';
 import { linkifyText } from '@/utils/linkify';
+import { useUserStore } from '@stores/userStore';
 import { ConversationType, Attachment, TaskRef, ReplyRef, ChatMessage, Conversation } from '@/types/index';
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
@@ -97,6 +98,11 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
   const tasks = useTaskStore((s) => s.tasks);
   const { getProjectById } = useProjectStore();
   const { addToast } = useToastStore();
+  const { isAdmin } = useUserStore();
+  const EDIT_WINDOW_MS = 15 * 60 * 1000;
+  const msgCanEdit = (msg: { senderId: string; timestamp: Date; isDeleted?: boolean }) =>
+    !msg.isDeleted && msg.senderId === currentUserId &&
+    (isAdmin() || Date.now() - new Date(msg.timestamp).getTime() < EDIT_WINDOW_MS);
   const [isExpanded, setIsExpanded] = useState(true);
   const [input, setInput] = useState('');
   const [deleteMsgConfirm, setDeleteMsgConfirm] = useState<{ messageId: string } | null>(null);
@@ -513,6 +519,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
               isMe={contextMenu.msg.senderId === currentUserId}
               isDeleted={contextMenu.msg.isDeleted}
               starred={contextMenu.msg.starred}
+              canEdit={msgCanEdit(contextMenu.msg)}
               onReply={() => { setPendingReply(contextMenu.msg); setTimeout(() => inputRef.current?.focus(), 50); }}
               onForward={() => setForwardMsg(contextMenu.msg)}
               onCopy={() => navigator.clipboard.writeText(contextMenu.msg.text)}

@@ -25,6 +25,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useChatStore } from '@stores/chatStore';
+import { useUserStore } from '@stores/userStore';
 import { ConversationType, Attachment, ReplyRef, ChatMessage } from '@/types/index';
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
@@ -368,6 +369,11 @@ export const Chat: React.FC = () => {
   );
   const typingUsersMap = useChatStore((s) => s.typingUsers);
   const { addToast } = useToastStore();
+  const { isAdmin } = useUserStore();
+  const EDIT_WINDOW_MS = 15 * 60 * 1000;
+  const msgCanEdit = (msg: { senderId: string; timestamp: Date; isDeleted?: boolean }) =>
+    !msg.isDeleted && msg.senderId === currentUserId &&
+    (isAdmin() || Date.now() - new Date(msg.timestamp).getTime() < EDIT_WINDOW_MS);
 
   const [messageInput, setMessageInput] = useState('');
   const [showNewDM, setShowNewDM] = useState(false);
@@ -1155,6 +1161,7 @@ export const Chat: React.FC = () => {
                   isMe={contextMenu.msg.senderId === currentUserId}
                   isDeleted={contextMenu.msg.isDeleted}
                   starred={contextMenu.msg.starred}
+                  canEdit={msgCanEdit(contextMenu.msg)}
                   onReply={() => { setPendingReply(contextMenu.msg); setTimeout(() => inputRef.current?.focus(), 50); }}
                   onForward={() => setForwardMsg(contextMenu.msg)}
                   onCopy={() => navigator.clipboard.writeText(contextMenu.msg.text)}
