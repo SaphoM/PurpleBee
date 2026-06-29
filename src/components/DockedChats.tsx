@@ -23,6 +23,7 @@ import { useChatStore } from '@stores/chatStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useToastStore } from '@components/Toast';
+import { linkifyText } from '@/utils/linkify';
 import { ConversationType, Attachment, TaskRef, ReplyRef, ChatMessage, Conversation } from '@/types/index';
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
@@ -405,7 +406,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                           </div>
                         ) : (
                           <span>
-                            {msg.text}
+                            {linkifyText(msg.text)}
                             {msg.starred && <Star size={8} className="inline ml-1 fill-amber-400 text-amber-400" />}
                           </span>
                         )}

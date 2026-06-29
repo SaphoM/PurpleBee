@@ -45,6 +45,7 @@ import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
 import { useToastStore } from '@components/Toast';
+import { linkifyText } from '@/utils/linkify';
 import { v4 as uuidv4 } from 'uuid';
 
 interface TaskDetailModalProps {
@@ -530,7 +531,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               />
             ) : (
               <p className="text-sm text-gray-600 dark:text-slate-300 leading-relaxed">
-                {task.description || 'No description provided.'}
+                {task.description ? linkifyText(task.description) : 'No description provided.'}
               </p>
             )}
           </div>
@@ -931,7 +932,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                         {/* Note content */}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">
-                            {note.text}
+                            {linkifyText(note.text)}
                           </p>
                           <div className="flex items-center gap-2 mt-1">
                             <div className="flex items-center gap-1">

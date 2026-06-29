@@ -29,6 +29,7 @@ import { ConversationType, Attachment, ReplyRef, ChatMessage } from '@/types/ind
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
 import { useToastStore } from '@components/Toast';
+import { linkifyText } from '@/utils/linkify';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -934,7 +935,7 @@ export const Chat: React.FC = () => {
                                   </div>
                                 ) : (
                                   <span>
-                                    {msg.text}
+                                    {linkifyText(msg.text)}
                                     {msg.starred && <span className="inline ml-1 text-amber-400">★</span>}
                                   </span>
                                 )}
@@ -1391,7 +1392,7 @@ export const Chat: React.FC = () => {
                               <span className="italic opacity-60">Message deleted</span>
                             ) : (
                               <span>
-                                {msg.text}
+                                {linkifyText(msg.text)}
                                 {msg.starred && <span className="inline ml-1 text-amber-400">★</span>}
                               </span>
                             )}
