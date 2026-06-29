@@ -927,17 +927,21 @@ export const Chat: React.FC = () => {
                                 {msg.isDeleted ? (
                                   <span className="italic opacity-60 text-sm">Message deleted</span>
                                 ) : editingMsgId === msg.id ? (
-                                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                    <input
+                                  <div className="flex flex-col gap-1.5 w-full" onClick={(e) => e.stopPropagation()}>
+                                    <textarea
                                       autoFocus
                                       value={editingText}
-                                      onChange={(e) => setEditingText(e.target.value)}
-                                      onKeyDown={(e) => { if (e.key === 'Enter') confirmEdit(msg.id); if (e.key === 'Escape') { setEditingMsgId(null); setEditingText(''); } }}
-                                      className="flex-1 bg-transparent border-b border-white/50 outline-none text-sm"
+                                      onChange={(e) => { setEditingText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); confirmEdit(msg.id); } if (e.key === 'Escape') { setEditingMsgId(null); setEditingText(''); } }}
+                                      ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                                      rows={1}
+                                      className="w-full bg-transparent border-b border-white/50 outline-none text-sm resize-none overflow-hidden leading-relaxed"
                                     />
-                                    <button onClick={() => confirmEdit(msg.id)} className="p-1 rounded-full bg-white/20 hover:bg-white/30 flex-shrink-0">
-                                      <CheckSquare size={12} />
-                                    </button>
+                                    <div className="flex items-center justify-end gap-2 text-[10px] opacity-70">
+                                      <span>Shift+Enter for new line</span>
+                                      <button onClick={() => { setEditingMsgId(null); setEditingText(''); }} className="px-2 py-0.5 rounded bg-white/20 hover:bg-white/30">Cancel</button>
+                                      <button onClick={() => confirmEdit(msg.id)} className="px-2 py-0.5 rounded bg-white/30 hover:bg-white/40 font-medium">Save</button>
+                                    </div>
                                   </div>
                                 ) : (
                                   <span>
