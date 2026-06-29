@@ -187,11 +187,61 @@ app.post('/api/integrations/whatsapp/verify', async (req: Request, res: Response
 app.post('/api/integrations/telegram/verify', async (req: Request, res: Response) => {
   try {
     const { botToken } = req.body;
-    // Implementation: verify Telegram bot token
-    res.json({ success: true, message: 'Bot verified' });
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+    const data = await response.json() as { ok: boolean; result?: { username: string; first_name: string }; description?: string };
+    if (data.ok) {
+      res.json({ success: true, bot: data.result });
+    } else {
+      res.status(400).json({ success: false, error: data.description || 'Invalid bot token' });
+    }
   } catch (error) {
     res.status(500).json({ success: false, error: 'Verification failed' });
   }
+});
+
+app.post('/api/integrations/telegram/send', async (req: Request, res: Response) => {
+  try {
+    const { chatId, text } = req.body;
+    const botToken = process.env.REACT_APP_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) {
+      return res.status(500).json({ success: false, error: 'Bot token not configured' });
+    }
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+    });
+    const data = await response.json() as { ok: boolean; description?: string };
+    if (!data.ok) throw new Error(data.description || 'Telegram send failed');
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── Telegram Webhook ────────────────────────────────────────────────────
+app.get('/webhook/telegram', (_req: Request, res: Response) => {
+  res.status(200).send('OK');
+});
+
+app.post('/webhook/telegram', (req: Request, res: Response) => {
+  const update = req.body;
+  if (update.message && update.message.text) {
+    const { message } = update;
+    const chatId = String(message.chat.id);
+    const from = message.from || {};
+    const senderName = [from.first_name, from.last_name].filter(Boolean).join(' ') || from.username || 'Telegram User';
+    const username = from.username || '';
+    io.emit('telegram:message', {
+      chatId,
+      senderName,
+      username,
+      text: message.text,
+      messageId: message.message_id,
+      timestamp: new Date(message.date * 1000).toISOString(),
+    });
+  }
+  res.status(200).json({ ok: true });
 });
 
 /**

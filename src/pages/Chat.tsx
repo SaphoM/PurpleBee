@@ -27,6 +27,12 @@ import {
   Download,
   SmilePlus,
 } from 'lucide-react';
+
+const TelegramIcon = ({ size = 16 }: { size?: number }) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" width={size} height={size}>
+    <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+  </svg>
+);
 import { useChatStore } from '@stores/chatStore';
 import { ConversationType, Conversation, ChatParticipant, Attachment } from '@/types/index';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
@@ -240,6 +246,7 @@ const categoryConfig: { value: ConversationType | 'all'; label: string; icon: Re
   { value: 'dm', label: 'Direct', icon: <AtSign size={14} />, color: 'text-blue-600 dark:text-blue-400' },
   { value: 'team', label: 'Teams', icon: <Users size={14} />, color: 'text-emerald-600 dark:text-emerald-400' },
   { value: 'announcement', label: 'Announce', icon: <Megaphone size={14} />, color: 'text-amber-600 dark:text-amber-400' },
+  { value: 'telegram', label: 'Telegram', icon: <TelegramIcon size={14} />, color: 'text-sky-500 dark:text-sky-400' },
 ];
 
 const getConversationIcon = (type: ConversationType) => {
@@ -248,6 +255,7 @@ const getConversationIcon = (type: ConversationType) => {
     case 'dm': return <AtSign size={16} className="text-blue-500" />;
     case 'team': return <Hash size={16} className="text-emerald-500" />;
     case 'announcement': return <Megaphone size={16} className="text-amber-500" />;
+    case 'telegram': return <TelegramIcon size={16} />;
   }
 };
 
@@ -257,6 +265,7 @@ const getTypeBadgeClass = (type: ConversationType) => {
     case 'dm': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300';
     case 'team': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
     case 'announcement': return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+    case 'telegram': return 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300';
   }
 };
 
@@ -573,6 +582,7 @@ export const Chat: React.FC = () => {
                           conv.type === 'task' && 'bg-purple-100 dark:bg-purple-900/30',
                           conv.type === 'team' && 'bg-emerald-100 dark:bg-emerald-900/30',
                           conv.type === 'announcement' && 'bg-amber-100 dark:bg-amber-900/30',
+                          conv.type === 'telegram' && 'bg-sky-100 dark:bg-sky-900/30 text-sky-500',
                         )}>
                           {getConversationIcon(conv.type)}
                         </div>

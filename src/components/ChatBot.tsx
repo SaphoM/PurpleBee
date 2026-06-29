@@ -49,10 +49,10 @@ interface PendingTask {
 
 // Integration status check
 const isWhatsAppConfigured = Boolean(
-  import.meta.env.VITE_WHATSAPP_PHONE_ID || import.meta.env.REACT_APP_WHATSAPP_PHONE_ID
+  import.meta.env.VITE_WHATSAPP_PHONE_ID
 );
 const isTelegramConfigured = Boolean(
-  import.meta.env.VITE_TELEGRAM_BOT_TOKEN || import.meta.env.REACT_APP_TELEGRAM_BOT_TOKEN
+  import.meta.env.VITE_TELEGRAM_BOT_TOKEN
 );
 
 const WhatsAppIcon = () => (

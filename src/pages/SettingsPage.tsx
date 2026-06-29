@@ -145,7 +145,7 @@ export const SettingsPage: React.FC = () => {
     }, 1200);
   };
 
-  const handleConnectTelegram = () => {
+  const handleConnectTelegram = async () => {
     if (telegramEnabled) {
       setTelegramEnabled(false);
       setTelegramUsername('');
@@ -153,10 +153,24 @@ export const SettingsPage: React.FC = () => {
     }
     if (!telegramUsername.trim()) return;
     setTelegramConnecting(true);
-    setTimeout(() => {
-      setTelegramEnabled(true);
+    try {
+      const botToken = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
+      const res = await fetch('http://localhost:3000/api/integrations/telegram/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTelegramEnabled(true);
+      } else {
+        alert('Telegram verification failed: ' + (data.error || 'Invalid token'));
+      }
+    } catch {
+      alert('Could not reach backend. Make sure your backend server is running.');
+    } finally {
       setTelegramConnecting(false);
-    }, 1200);
+    }
   };
 
   // When mock data toggle changes, immediately clear or restore all stores

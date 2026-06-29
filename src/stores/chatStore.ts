@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { io as socketIO } from 'socket.io-client';
 import { Conversation, ChatMessage, ConversationType, ChatParticipant } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
 import { chatDb } from '@/lib/dataService';
@@ -286,10 +287,18 @@ interface ChatStore {
   isDocked: (conversationId: string) => boolean;
   chatBotOpen: boolean;
   setChatBotOpen: (open: boolean) => void;
+  addTelegramMessage: (chatId: string, senderName: string, username: string, text: string, timestamp: string) => void;
   hydrateFromDb: (userId: string) => Promise<void>;
   clearMockData: () => void;
   restoreMockData: (userId: string) => void;
 }
+
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const socket = socketIO(BACKEND_URL, { autoConnect: true, transports: ['websocket', 'polling'] });
+
+socket.on('telegram:message', (payload: { chatId: string; senderName: string; username: string; text: string; timestamp: string }) => {
+  useChatStore.getState().addTelegramMessage(payload.chatId, payload.senderName, payload.username, payload.text, payload.timestamp);
+});
 
 export const useChatStore = create<ChatStore>((set, get) => ({
   conversations: [],
@@ -645,6 +654,62 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   isDocked: (conversationId) => {
     return get().dockedChatIds.includes(conversationId);
+  },
+
+  addTelegramMessage: (chatId, senderName, username, text, timestamp) => {
+    const convId = `telegram-${chatId}`;
+    const msgId = uuidv4();
+
+    const newMsg: ChatMessage = {
+      id: msgId,
+      conversationId: convId,
+      senderId: chatId,
+      senderName: senderName,
+      text,
+      timestamp: new Date(timestamp),
+      readBy: [],
+    };
+
+    set((state) => {
+      const existingConv = state.conversations.find((c) => c.id === convId);
+
+      if (existingConv) {
+        if (!seedMessages[convId]) seedMessages[convId] = [];
+        seedMessages[convId].push(newMsg);
+
+        return {
+          messages: {
+            ...state.messages,
+            [convId]: [...(state.messages[convId] || []), newMsg],
+          },
+          conversations: state.conversations.map((c) =>
+            c.id === convId
+              ? { ...c, lastMessage: newMsg, updatedAt: new Date(), unreadCount: c.unreadCount + 1 }
+              : c
+          ),
+        };
+      }
+
+      const newConv: Conversation = {
+        id: convId,
+        type: 'telegram',
+        name: senderName + (username ? ` (@${username})` : ''),
+        participants: [{ userId: chatId, name: senderName, role: 'member', online: true }],
+        lastMessage: newMsg,
+        unreadCount: 1,
+        pinned: false,
+        createdAt: new Date(timestamp),
+        updatedAt: new Date(timestamp),
+      };
+
+      seedConversations.push(newConv);
+      seedMessages[convId] = [newMsg];
+
+      return {
+        conversations: [newConv, ...state.conversations],
+        messages: { ...state.messages, [convId]: [newMsg] },
+      };
+    });
   },
 
   /**

@@ -303,7 +303,7 @@ export interface UIState {
 }
 
 // Chat Types
-export type ConversationType = 'task' | 'dm' | 'team' | 'announcement';
+export type ConversationType = 'task' | 'dm' | 'team' | 'announcement' | 'telegram';
 
 export interface ChatMessage {
   id: string;
