@@ -453,6 +453,40 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                       {msg.editedAt && !msg.isDeleted && (
                         <p className={clsx('text-[8px] mt-0.5 opacity-50', isMe ? 'text-right' : 'text-left')}>edited</p>
                       )}
+                      {/* Read receipts — only on sent messages */}
+                      {isMe && !msg.isDeleted && (() => {
+                        const readers = (msg.readBy || []).filter((id) => id !== currentUserId);
+                        const isRead = readers.length > 0;
+                        const readerParticipants = readers
+                          .map((id) => conv.participants.find((p) => p.userId === id))
+                          .filter(Boolean);
+                        return (
+                          <div className="mt-0.5 flex items-center justify-end gap-0.5">
+                            <span className={clsx('flex -space-x-0.5', isRead ? 'text-blue-400' : 'text-gray-400/60 dark:text-slate-500/60')}>
+                              <svg width="8" height="6" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              <svg width="8" height="6" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </span>
+                            {readerParticipants.length > 0 && (
+                              <div className="flex -space-x-0.5">
+                                {readerParticipants.slice(0, 3).map((p) => (
+                                  <img
+                                    key={p!.userId}
+                                    src={p!.avatar}
+                                    alt={p!.name}
+                                    title={`Read by ${p!.name}`}
+                                    className="w-3 h-3 rounded-full ring-1 ring-white dark:ring-slate-900"
+                                  />
+                                ))}
+                                {readerParticipants.length > 3 && (
+                                  <span className="w-3 h-3 rounded-full ring-1 ring-white dark:ring-slate-900 bg-gray-300 dark:bg-slate-600 text-[6px] flex items-center justify-center text-gray-600 dark:text-slate-300">
+                                    +{readerParticipants.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {/* Info overlay */}
                       {infoMsgId === msg.id && (
                         <div

@@ -970,6 +970,42 @@ export const Chat: React.FC = () => {
                                   )}
                                 </div>
                               )}
+                              {/* Read receipts — only on sent messages */}
+                              {isMe && !msg.isDeleted && (() => {
+                                const readers = (msg.readBy || []).filter((id) => id !== currentUserId);
+                                const isRead = readers.length > 0;
+                                const readerParticipants = readers
+                                  .map((id) => activeConversation?.participants.find((p) => p.userId === id))
+                                  .filter(Boolean);
+                                return (
+                                  <div className="mt-0.5 flex items-center justify-end gap-1">
+                                    {/* Double ticks */}
+                                    <span className={clsx('flex -space-x-0.5', isRead ? 'text-blue-400' : 'text-gray-400/60 dark:text-slate-500/60')}>
+                                      <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                      <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                    </span>
+                                    {/* Reader avatars */}
+                                    {readerParticipants.length > 0 && (
+                                      <div className="flex -space-x-1">
+                                        {readerParticipants.slice(0, 3).map((p) => (
+                                          <img
+                                            key={p!.userId}
+                                            src={p!.avatar}
+                                            alt={p!.name}
+                                            title={`Read by ${p!.name}`}
+                                            className="w-3.5 h-3.5 rounded-full ring-1 ring-white dark:ring-slate-800"
+                                          />
+                                        ))}
+                                        {readerParticipants.length > 3 && (
+                                          <span className="w-3.5 h-3.5 rounded-full ring-1 ring-white dark:ring-slate-800 bg-gray-300 dark:bg-slate-600 text-[7px] flex items-center justify-center text-gray-600 dark:text-slate-300">
+                                            +{readerParticipants.length - 3}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                               {/* Reaction add button — hover only */}
                               <button
                                 ref={reactionPickerMsgId === msg.id ? reactionBtnRef : undefined}

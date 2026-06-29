@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.6.0
+# PurpleBee - AI-Powered Productivity Dashboard · v1.7.0
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -80,6 +80,10 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - Task card attachments persist to Supabase via `task_ref JSONB` column on the `messages` table; hydrated on load so the card renders correctly after a page refresh — both in docked chat windows and in the full Chat page conversation view
 - **Message actions (long-press or right-click)** — hold any message bubble to reveal the context menu: **Reply** (quoted reply banner above input; sent bubble shows original sender + preview with purple left-border), **Forward** (conversation picker), **Copy** (clipboard), **Edit** (inline text input, persisted to DB; "edited" label shown), **Info** (timestamp tooltip), **Star** (amber ★ marker), **Delete** (soft-delete — bubble shows "Message deleted"; `is_deleted` persisted to DB), **More…** (extensible)
 - **Chat auto-select** — after `hydrateFromDb` loads conversations in live mode, the first conversation in the list is automatically selected so the Chat page is never blank on initial load
+- **Read receipts** — sent messages (isMe) show double-tick indicators below the bubble: grey double-ticks when the message is unread by others, blue double-ticks once at least one other participant has read it; reader avatars appear as a tight stack of tiny circles (max 3 shown, +N overflow) with tooltip names, visible in both the main Chat page and docked mini-chat windows; applies to all conversation types (DM, team, task, announcement)
+- **Inline quick-edit for project tasks** — a pencil button (managers/admins only) on each project task row opens an in-place edit form with fields for title, description, priority, estimated hours, and tags; the row highlights with a purple border while editing; Save calls `updateProjectTask`, Cancel discards; no changes to templates
+- **Editable chat messages (15-minute window)** — users can edit their own messages within 15 minutes of sending via the context menu Edit option; admins can always edit regardless of age; after 15 minutes the Edit item remains visible but is greyed out (opacity-35, cursor-not-allowed) with a "15 min limit" badge and tooltip; the existing "edited" label on the bubble is unchanged (audit log preserved)
+- **Full-message edit textarea** — the edit input is a `<textarea>` that auto-sizes on open to show the entire message and grows as you type; Enter saves, Shift+Enter inserts a newline, Escape cancels; Cancel/Save buttons shown below; applied to both main Chat and docked windows
 - **Real-time message delivery** — inbound messages appear instantly without a page refresh; `chatStore` subscribes to a `postgres_changes` INSERT event on the `messages` table via Supabase Realtime; each new row is fetched with full sender profile, reactions, and attachments via `chatDb.fetchMessageById`, de-duplicated against existing optimistic inserts, and merged into the store — unread count increments for background conversations and auto-clears for the active one; the subscription is started after `hydrateFromDb` and torn down on logout
 - **Typing indicator** — "[Name] is typing…" with an animated three-dot bounce appears above the input in both the docked chat window and the full Chat page when the other participant is composing a message; powered by Supabase Realtime **Broadcast** (`typing:{conversationId}` channel) — ephemeral, never written to a DB table; the indicator clears as soon as the other side sends or pauses typing for 2s, with a 4s auto-expiry safety net in case the "stopped typing" signal is missed (e.g. their tab closes mid-keystroke); only active when Supabase is connected — no-op in offline demo mode since there's no second participant to broadcast to; the channel is reference-counted in `chatStore`, so opening the same conversation in both the docked window and the full Chat page (or any other overlap) shares one connection instead of one view's unmount tearing down the channel out from under the other
 - **Typing status in the conversation list** — the Chat page sidebar subscribes to typing presence for every visible conversation (not just the one currently open), so a row's last-message preview is replaced with "[Name] is typing…" the moment they start composing, reverting to the normal preview when they stop or send; the list's subscribe key is sorted so a conversation jumping to the top from new activity doesn't spuriously tear down and rejoin every channel; joins are staggered (~120ms apart) rather than fired in one burst, and a join that comes back as `TIMED_OUT`/`CHANNEL_ERROR`/`CLOSED` is automatically torn down and retried up to 3 times
@@ -149,7 +153,7 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 | Realtime | Supabase Realtime (`postgres_changes` · Broadcast · Presence) |
 | Hosting | Render (static site, staging branch auto-deploys) |
 | Utilities | clsx, uuid, date-fns |
-| Version | 1.6.0 — sidebar version badge reads from `package.json` at build time |
+| Version | 1.7.0 — sidebar version badge reads from `package.json` at build time |
 
 ## Auth Architecture
 
