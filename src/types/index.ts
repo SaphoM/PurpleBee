@@ -37,6 +37,7 @@ export interface Task {
   attachments?: Attachment[];
   links?: TaskLink[];
   progressNotes?: ProgressNote[];
+  notes?: string;
   isRecurring?: boolean;
   recurringPattern?: RecurringPattern;
   estimatedHours?: number;

@@ -678,6 +678,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   };
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [removeTaskConfirm, setRemoveTaskConfirm] = useState<{ id: string; title: string } | null>(null);
   const suggestionRef = React.useRef<HTMLDivElement>(null);
@@ -737,13 +738,14 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
     if (!newTaskTitle.trim()) return;
     addProjectTask(projectId, {
       title: newTaskTitle.trim(),
-      description: '',
+      description: newTaskDescription.trim(),
       priority: 'medium',
       estimatedHours: 4,
       tags: [],
       order: project.tasks.length + 1,
     });
     setNewTaskTitle('');
+    setNewTaskDescription('');
     setShowAddTask(false);
     setShowSuggestions(false);
   };
@@ -894,7 +896,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                   value={newTaskTitle}
                   onChange={(e) => { setNewTaskTitle(e.target.value); setShowSuggestions(true); }}
                   onFocus={() => setShowSuggestions(true)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.repeat) handleAddTaskToProject(); if (e.key === 'Escape') { setShowAddTask(false); setShowSuggestions(false); } }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.repeat) handleAddTaskToProject(); if (e.key === 'Escape') { setShowAddTask(false); setShowSuggestions(false); setNewTaskDescription(''); } }}
                   placeholder="Type to search suggested tasks..."
                   className={clsx(
                     'w-full rounded-lg px-4 py-2.5 text-sm',
@@ -1003,9 +1005,26 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                   </div>
                 )}
               </div>
-              <button onClick={handleAddTaskToProject} className="px-4 py-2.5 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 transition-colors flex-shrink-0">Add</button>
-              <button onClick={() => { setShowAddTask(false); setShowSuggestions(false); }} className="px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors flex-shrink-0">Cancel</button>
+              <button onClick={handleAddTaskToProject} disabled={!newTaskTitle.trim()} className="px-4 py-2.5 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0">Add</button>
+              <button onClick={() => { setShowAddTask(false); setShowSuggestions(false); setNewTaskDescription(''); }} className="px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors flex-shrink-0">Cancel</button>
             </div>
+            {/* Description field — shown once user has typed a title */}
+            {newTaskTitle.trim() && (
+              <div className="mt-2">
+                <textarea
+                  value={newTaskDescription}
+                  onChange={(e) => setNewTaskDescription(e.target.value)}
+                  rows={2}
+                  placeholder="Task description (optional)…"
+                  className={clsx(
+                    'w-full rounded-lg px-4 py-2.5 text-sm resize-none',
+                    'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
+                    'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                  )}
+                />
+              </div>
+            )}
           </div>
         )}
 

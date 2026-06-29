@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { Task, TaskStatus, TaskPriority, Subtask, Attachment, TaskLink, ProgressNote } from '@/types/index';
 import { PriorityBadge } from './Badge';
@@ -162,6 +162,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState(task?.notes ?? '');
+
+  // Sync notes when task changes (different task opened)
+  useEffect(() => { setNotesValue(task?.notes ?? ''); }, [task?.id]);
 
   // Progress tracking method visibility
   const [showSlider, setShowSlider] = useState(true);
@@ -533,6 +538,57 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               <p className="text-sm text-gray-600 dark:text-slate-300 leading-relaxed">
                 {task.description ? linkifyText(task.description) : 'No description provided.'}
               </p>
+            )}
+          </div>
+
+          {/* General Notes Section */}
+          <div className="bg-gray-50/50 dark:bg-slate-800/30 rounded-xl p-5 border border-gray-100 dark:border-slate-700/30">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <StickyNote size={14} />
+                Notes
+              </h3>
+              {!editingNotes && (
+                <button
+                  onClick={() => setEditingNotes(true)}
+                  className="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium transition-colors"
+                >
+                  {notesValue ? 'Edit' : '+ Add note'}
+                </button>
+              )}
+            </div>
+            {editingNotes ? (
+              <div className="space-y-2">
+                <textarea
+                  autoFocus
+                  value={notesValue}
+                  onChange={(e) => setNotesValue(e.target.value)}
+                  rows={4}
+                  placeholder="Add notes, context, or reminders about this task…"
+                  className={clsx(
+                    'w-full rounded-lg px-3 py-2.5 text-sm resize-none',
+                    'bg-white border border-gray-300 text-gray-800 placeholder-gray-400',
+                    'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                  )}
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => { setNotesValue(task.notes ?? ''); setEditingNotes(false); }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-700 transition-colors"
+                  >Cancel</button>
+                  <button
+                    onClick={() => { updateTask(task.id, { notes: notesValue.trim() || undefined }); setEditingNotes(false); }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white hover:bg-purple-700 transition-colors"
+                  >Save</button>
+                </div>
+              </div>
+            ) : notesValue ? (
+              <p className="text-sm text-gray-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                {linkifyText(notesValue)}
+              </p>
+            ) : (
+              <p className="text-sm text-gray-400 dark:text-slate-500 italic">No notes yet. Click "+ Add note" to add context or reminders.</p>
             )}
           </div>
 
