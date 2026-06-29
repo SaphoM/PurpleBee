@@ -27,6 +27,7 @@ import {
   ShieldCheck,
   Cloud,
   Headphones,
+  Pencil,
 } from 'lucide-react';
 import { useProjectStore, projectTemplates, ProjectTask } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
@@ -660,7 +661,7 @@ const industrySuggestions: Record<string, { title: string; description: string; 
 
 // ── Project Detail View ────────────────────────────────────────────────
 const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ projectId, onBack }) => {
-  const { getProjectById, updateProject, assignProjectTask, removeProjectTask, addProjectTask } = useProjectStore();
+  const { getProjectById, updateProject, assignProjectTask, removeProjectTask, addProjectTask, updateProjectTask } = useProjectStore();
   const { addTask, tasks: boardTasks } = useTaskStore();
   const { isAdmin, isManager } = useUserStore();
   const currentUserId = useUserStore((s) => s.user?.id);
@@ -681,6 +682,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [removeTaskConfirm, setRemoveTaskConfirm] = useState<{ id: string; title: string } | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTaskValues, setEditingTaskValues] = useState<{ title: string; description: string; priority: string; estimatedHours: number; tags: string }>({ title: '', description: '', priority: 'medium', estimatedHours: 4, tags: '' });
   const suggestionRef = React.useRef<HTMLDivElement>(null);
   const addTaskInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -1039,8 +1042,81 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
             {[...project.tasks].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((task) => {
               const assignee = task.assignedTo ? assignableMembers.find((p) => p.id === task.assignedTo) : null;
               const pc = priorityConfig[task.priority];
+              const isEditingThis = editingTaskId === task.id;
               return (
-                <div key={task.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700 hover:shadow-sm transition-shadow">
+                <div key={task.id} className={clsx('flex flex-col gap-3 p-4 rounded-xl bg-white dark:bg-slate-800/50 border transition-shadow', isEditingThis ? 'border-purple-400 dark:border-purple-500 shadow-md' : 'border-gray-200 dark:border-slate-700 hover:shadow-sm sm:flex-row sm:items-center')}>
+                  {isEditingThis ? (
+                    /* ── Inline edit form ── */
+                    <div className="flex-1 space-y-2">
+                      <input
+                        autoFocus
+                        value={editingTaskValues.title}
+                        onChange={(e) => setEditingTaskValues((v) => ({ ...v, title: e.target.value }))}
+                        placeholder="Task title"
+                        className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400"
+                      />
+                      <textarea
+                        value={editingTaskValues.description}
+                        onChange={(e) => setEditingTaskValues((v) => ({ ...v, description: e.target.value }))}
+                        placeholder="Description (optional)"
+                        rows={2}
+                        className="w-full px-3 py-2 rounded-lg text-xs resize-none bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-300 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400"
+                      />
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <select
+                          value={editingTaskValues.priority}
+                          onChange={(e) => setEditingTaskValues((v) => ({ ...v, priority: e.target.value }))}
+                          className="px-2 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+                        >
+                          <option value="low">Low</option>
+                          <option value="medium">Medium</option>
+                          <option value="high">High</option>
+                          <option value="urgent">Urgent</option>
+                        </select>
+                        <div className="flex items-center gap-1">
+                          <Clock size={11} className="text-gray-400" />
+                          <input
+                            type="number"
+                            min={0.5}
+                            step={0.5}
+                            value={editingTaskValues.estimatedHours}
+                            onChange={(e) => setEditingTaskValues((v) => ({ ...v, estimatedHours: parseFloat(e.target.value) || 0 }))}
+                            className="w-16 px-2 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+                          />
+                          <span className="text-xs text-gray-400">h</span>
+                        </div>
+                        <input
+                          value={editingTaskValues.tags}
+                          onChange={(e) => setEditingTaskValues((v) => ({ ...v, tags: e.target.value }))}
+                          placeholder="Tags (comma-separated)"
+                          className="flex-1 min-w-28 px-2 py-1.5 rounded-lg text-xs bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-slate-300 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          onClick={() => setEditingTaskId(null)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-600 transition-colors"
+                        >Cancel</button>
+                        <button
+                          onClick={() => {
+                            if (!editingTaskValues.title.trim()) return;
+                            updateProjectTask(project.id, task.id, {
+                              title: editingTaskValues.title.trim(),
+                              description: editingTaskValues.description.trim(),
+                              priority: editingTaskValues.priority as ProjectTask['priority'],
+                              estimatedHours: editingTaskValues.estimatedHours,
+                              tags: editingTaskValues.tags.split(',').map((t) => t.trim()).filter(Boolean),
+                            });
+                            setEditingTaskId(null);
+                          }}
+                          disabled={!editingTaskValues.title.trim()}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        >Save</button>
+                      </div>
+                    </div>
+                  ) : (
+                  /* ── Read view ── */
+                  <>
                   {/* Task info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5 flex-wrap">
@@ -1153,6 +1229,24 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
 
                     {canManage && (
                       <button
+                        onClick={() => {
+                          setEditingTaskId(task.id);
+                          setEditingTaskValues({
+                            title: task.title,
+                            description: task.description,
+                            priority: task.priority,
+                            estimatedHours: task.estimatedHours,
+                            tags: task.tags.join(', '),
+                          });
+                        }}
+                        className="p-2 sm:p-1.5 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                        title="Edit task"
+                      >
+                        <Pencil size={16} className="sm:w-3.5 sm:h-3.5" />
+                      </button>
+                    )}
+                    {canManage && (
+                      <button
                         onClick={() => setRemoveTaskConfirm({ id: task.id, title: task.title })}
                         className="p-2 sm:p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                         title="Remove task"
@@ -1161,6 +1255,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                       </button>
                     )}
                   </div>
+                  </>
+                  )}
                 </div>
               );
             })}
