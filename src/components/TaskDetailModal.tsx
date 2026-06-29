@@ -44,6 +44,7 @@ import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
+import { useToastStore } from '@components/Toast';
 import { v4 as uuidv4 } from 'uuid';
 
 interface TaskDetailModalProps {
@@ -147,6 +148,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const { updateTask, deleteTask } = useTaskStore();
   const { getProjectById } = useProjectStore();
   const { assignableMembers, user } = useUserStore();
+  const { addToast } = useToastStore();
   const canComplete = user?.role === 'admin' || user?.role === 'manager';
   const project = task?.projectId ? getProjectById(task.projectId) : null;
 
@@ -401,9 +403,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   };
 
   const handleDelete = () => {
+    const title = task.title;
     deleteTask(task.id);
     setShowDeleteConfirm(false);
     onClose();
+    addToast({ type: 'success', title: 'Task deleted', message: `"${title}" has been deleted.`, duration: 4000 });
   };
 
   return (
@@ -1411,30 +1415,26 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
         {/* Delete Confirmation Overlay */}
         {showDeleteConfirm && (
-          <div className="absolute inset-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm rounded-2xl flex items-center justify-center z-10">
-            <div className="text-center p-8">
-              <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-4">
-                <Trash2 size={24} className="text-red-500" />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowDeleteConfirm(false)}>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+            <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 w-full max-w-md z-10 text-center" onClick={(e) => e.stopPropagation()}>
+              <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-5">
+                <Trash2 size={28} className="text-red-500 dark:text-red-400" />
               </div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-slate-100 mb-2">Delete Task?</h3>
-              <p className="text-sm text-gray-500 dark:text-slate-400 mb-6 max-w-sm">
-                Are you sure you want to delete "<strong>{task.title}</strong>"? This action cannot be undone.
+              <h3 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-2">Delete Task?</h3>
+              <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">
+                Are you sure you want to delete "<strong className="text-gray-700 dark:text-slate-200">{task.title}</strong>"? This action cannot be undone.
               </p>
               <div className="flex items-center justify-center gap-3">
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
-                  className={clsx(
-                    'px-5 py-2.5 rounded-lg text-sm font-medium',
-                    'bg-transparent hover:bg-gray-100 text-gray-600 border border-gray-300',
-                    'dark:hover:bg-slate-800 dark:text-slate-300 dark:border-slate-600',
-                    'transition-colors'
-                  )}
+                  className="px-6 py-2.5 rounded-lg text-sm font-medium bg-transparent hover:bg-gray-100 text-gray-600 border border-gray-300 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-600 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="px-5 py-2.5 rounded-lg text-sm font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
+                  className="px-6 py-2.5 rounded-lg text-sm font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
                 >
                   Delete Task
                 </button>

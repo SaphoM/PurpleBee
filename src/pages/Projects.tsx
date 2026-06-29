@@ -1167,35 +1167,31 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       {removeTaskConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setRemoveTaskConfirm(null)}>
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
-          <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm z-10" onClick={(e) => e.stopPropagation()}>
-            <div className="flex flex-col items-center text-center gap-4">
-              <div className="w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                <Trash2 size={24} className="text-red-500 dark:text-red-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-slate-100">Remove Task?</h3>
-                <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
-                  Are you sure you want to remove <span className="font-semibold text-gray-700 dark:text-slate-200">"{removeTaskConfirm.title}"</span>? This action cannot be undone.
-                </p>
-              </div>
-              <div className="flex gap-3 w-full">
-                <button
-                  onClick={() => setRemoveTaskConfirm(null)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    removeProjectTask(project.id, removeTaskConfirm.id);
-                    addToast({ type: 'success', title: 'Task removed', message: `"${removeTaskConfirm.title}" has been removed from this project.`, duration: 4000 });
-                    setRemoveTaskConfirm(null);
-                  }}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
-                >
-                  Remove Task
-                </button>
-              </div>
+          <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 w-full max-w-md z-10 text-center" onClick={(e) => e.stopPropagation()}>
+            <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-5">
+              <Trash2 size={28} className="text-red-500 dark:text-red-400" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-2">Remove Task?</h3>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">
+              Are you sure you want to remove "<strong className="text-gray-700 dark:text-slate-200">{removeTaskConfirm.title}</strong>"? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => setRemoveTaskConfirm(null)}
+                className="px-6 py-2.5 rounded-lg text-sm font-medium bg-transparent hover:bg-gray-100 text-gray-600 border border-gray-300 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  removeProjectTask(project.id, removeTaskConfirm.id);
+                  addToast({ type: 'success', title: 'Task removed', message: `"${removeTaskConfirm.title}" has been removed from this project.`, duration: 4000 });
+                  setRemoveTaskConfirm(null);
+                }}
+                className="px-6 py-2.5 rounded-lg text-sm font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
+              >
+                Remove Task
+              </button>
             </div>
           </div>
         </div>
@@ -1318,6 +1314,7 @@ export const Projects: React.FC = () => {
   const setGlobalSearchQuery = useUIStore((s) => s.setGlobalSearchQuery);
   const selectedProjectId = useUIStore((s) => s.activeProjectId);
   const setSelectedProjectId = useUIStore((s) => s.setActiveProjectId);
+  const { addToast: addToastMain } = useToastStore();
   const [showCreate, setShowCreate] = useState(false);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -1723,44 +1720,33 @@ export const Projects: React.FC = () => {
 
       {/* Delete confirmation modal */}
       {deleteConfirmId && deleteConfirmInfo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => { setDeleteConfirmId(null); setDeleteConfirmInfo(null); }}>
-          <div
-            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 mx-4 max-w-sm w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                <Trash2 size={20} className="text-red-500" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100">Delete Project</h3>
-                <p className="text-xs text-gray-500 dark:text-slate-400">This action cannot be undone</p>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => { setDeleteConfirmId(null); setDeleteConfirmInfo(null); }}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 w-full max-w-md z-10 text-center" onClick={(e) => e.stopPropagation()}>
+            <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-5">
+              <Trash2 size={28} className="text-red-500 dark:text-red-400" />
             </div>
-            <p className="text-sm text-gray-600 dark:text-slate-300 mb-5">
-              Are you sure you want to delete <span className="font-semibold">{deleteConfirmInfo.name}</span> and all its {deleteConfirmInfo.taskCount} tasks?
+            <h3 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-2">Delete Project?</h3>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">
+              Are you sure you want to delete "<strong className="text-gray-700 dark:text-slate-200">{deleteConfirmInfo.name}</strong>" and all its {deleteConfirmInfo.taskCount} tasks? This action cannot be undone.
             </p>
-            <div className="flex gap-3">
+            <div className="flex items-center justify-center gap-3">
               <button
                 onClick={() => { setDeleteConfirmId(null); setDeleteConfirmInfo(null); }}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
+                className="px-6 py-2.5 rounded-lg text-sm font-medium bg-transparent hover:bg-gray-100 text-gray-600 border border-gray-300 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-600 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={() => {
-                  try {
-                    deleteProject(deleteConfirmId);
-                  } catch (err) {
-                    console.error('[Projects] deleteProject error:', err);
-                  } finally {
-                    setDeleteConfirmId(null);
-                    setDeleteConfirmInfo(null);
-                  }
+                  const name = deleteConfirmInfo.name;
+                  try { deleteProject(deleteConfirmId); } catch (err) { console.error('[Projects] deleteProject error:', err); }
+                  setDeleteConfirmId(null); setDeleteConfirmInfo(null);
+                  addToastMain({ type: 'success', title: 'Project deleted', message: `"${name}" has been deleted.`, duration: 4000 });
                 }}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold bg-red-500 text-white hover:bg-red-600 transition-colors"
+                className="px-6 py-2.5 rounded-lg text-sm font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
               >
-                Delete
+                Delete Project
               </button>
             </div>
           </div>

@@ -550,27 +550,24 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
 
           {/* Delete message confirm modal */}
           {deleteMsgConfirm && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 rounded-2xl backdrop-blur-sm" onClick={() => setDeleteMsgConfirm(null)}>
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-64 p-4" onClick={(e) => e.stopPropagation()}>
-                <div className="flex flex-col items-center text-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                    <Trash2 size={18} className="text-red-500" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-gray-900 dark:text-slate-100">Delete Message?</p>
-                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">This action cannot be undone.</p>
-                  </div>
-                  <div className="flex gap-2 w-full">
-                    <button onClick={() => setDeleteMsgConfirm(null)} className="flex-1 py-2 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors">Cancel</button>
-                    <button
-                      onClick={() => {
-                        deleteMessage(conversationId, deleteMsgConfirm.messageId);
-                        addToast({ type: 'success', title: 'Message deleted', message: 'Your message has been deleted.', duration: 3000 });
-                        setDeleteMsgConfirm(null);
-                      }}
-                      className="flex-1 py-2 rounded-lg text-xs font-semibold bg-red-500 hover:bg-red-600 text-white transition-colors"
-                    >Delete</button>
-                  </div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setDeleteMsgConfirm(null)}>
+              <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+              <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 w-full max-w-md z-10 text-center" onClick={(e) => e.stopPropagation()}>
+                <div className="w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mx-auto mb-5">
+                  <Trash2 size={28} className="text-red-500 dark:text-red-400" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-slate-100 mb-2">Delete Message?</h3>
+                <p className="text-sm text-gray-500 dark:text-slate-400 mb-6">Are you sure you want to delete this message? This action cannot be undone.</p>
+                <div className="flex items-center justify-center gap-3">
+                  <button onClick={() => setDeleteMsgConfirm(null)} className="px-6 py-2.5 rounded-lg text-sm font-medium bg-transparent hover:bg-gray-100 text-gray-600 border border-gray-300 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-600 transition-colors">Cancel</button>
+                  <button
+                    onClick={() => {
+                      deleteMessage(conversationId, deleteMsgConfirm.messageId);
+                      addToast({ type: 'success', title: 'Message deleted', message: 'Your message has been deleted.', duration: 3000 });
+                      setDeleteMsgConfirm(null);
+                    }}
+                    className="px-6 py-2.5 rounded-lg text-sm font-medium bg-red-500 hover:bg-red-600 text-white transition-colors"
+                  >Delete Message</button>
                 </div>
               </div>
             </div>
