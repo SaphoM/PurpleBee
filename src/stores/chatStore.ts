@@ -298,6 +298,19 @@ const socket = socketIO(BACKEND_URL, { autoConnect: true, transports: ['websocke
 
 socket.on('telegram:message', (payload: { chatId: string; senderName: string; username: string; text: string; timestamp: string }) => {
   useChatStore.getState().addTelegramMessage(payload.chatId, payload.senderName, payload.username, payload.text, payload.timestamp);
+  // Lazy import to avoid circular dep — import at call time
+  import('@stores/notificationStore').then(({ useNotificationStore }) => {
+    const user = (window as any).__purpleBeeUser;
+    useNotificationStore.getState().addNotification({
+      userId: user?.id || 'system',
+      type: 'mention',
+      title: 'Telegram message',
+      message: `${payload.senderName}: ${payload.text.slice(0, 80)}${payload.text.length > 80 ? '…' : ''}`,
+      conversationId: `telegram-${payload.chatId}`,
+      read: false,
+      channel: 'telegram',
+    });
+  });
 });
 
 export const useChatStore = create<ChatStore>((set, get) => ({

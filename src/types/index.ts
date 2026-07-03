@@ -185,6 +185,7 @@ export interface Notification {
   read: boolean;
   createdAt: Date;
   actionUrl?: string;
+  channel?: 'whatsapp' | 'telegram';
 }
 
 // Integration Types
