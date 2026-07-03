@@ -395,3 +395,24 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     set({ tasks: mockTasks });
   },
 }));
+
+// Listen for tasks created by the Telegram/WhatsApp bot via the backend socket
+import('@/lib/botSocket').then(({ getBotSocket }) => {
+  const socket = getBotSocket();
+  socket.on('task:bot-created', (payload: {
+    id: string; title: string; projectId?: string; assignedTo?: string;
+    priority: string; status: string; sourceChannel: 'telegram' | 'whatsapp';
+    createdAt: string;
+  }) => {
+    useTaskStore.getState().addTask({
+      title: payload.title,
+      status: (payload.status as any) || 'todo',
+      priority: (payload.priority as any) || 'medium',
+      projectId: payload.projectId,
+      assignedTo: payload.assignedTo,
+      sourceChannel: payload.sourceChannel,
+      tags: [],
+      progress: 0,
+    });
+  });
+});

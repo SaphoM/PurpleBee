@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
 import {
   MessageCircle,
@@ -9,8 +9,11 @@ import {
   Plus,
   Zap,
   ArrowRight,
+  FolderKanban,
 } from 'lucide-react';
 import { useTaskStore } from '@stores/taskStore';
+import { useProjectStore } from '@stores/projectStore';
+import { useUserStore } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
 import { TaskPriority, TaskStatus } from '@/types/index';
 
@@ -30,30 +33,24 @@ interface ChatAction {
 
 type ConversationStep =
   | 'idle'
+  | 'ask-project'
+  | 'show-project-tasks'
   | 'ask-title'
-  | 'ask-description'
   | 'ask-priority'
   | 'ask-status'
-  | 'ask-due-date'
-  | 'ask-tags'
   | 'confirm';
 
 interface PendingTask {
   title: string;
-  description: string;
   priority: TaskPriority;
   status: TaskStatus;
-  dueDate: string;
-  tags: string[];
+  projectId: string;
+  projectName: string;
 }
 
 // Integration status check
-const isWhatsAppConfigured = Boolean(
-  import.meta.env.VITE_WHATSAPP_PHONE_ID
-);
-const isTelegramConfigured = Boolean(
-  import.meta.env.VITE_TELEGRAM_BOT_TOKEN
-);
+const isWhatsAppConfigured = Boolean(import.meta.env.VITE_WHATSAPP_PHONE_ID);
+const isTelegramConfigured = Boolean(import.meta.env.VITE_TELEGRAM_BOT_TOKEN);
 
 const WhatsAppIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -66,6 +63,12 @@ const TelegramIcon = () => (
     <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
   </svg>
 );
+
+const channelTag = (channel: 'whatsapp' | 'telegram' | 'in-app') => {
+  if (channel === 'whatsapp') return '🟢 WhatsApp';
+  if (channel === 'telegram') return '✈ Telegram';
+  return '💜 In-App';
+};
 
 export const ChatBot: React.FC = () => {
   const { chatBotOpen: isOpen, setChatBotOpen: setIsOpen } = useChatStore();
@@ -86,8 +89,21 @@ export const ChatBot: React.FC = () => {
   ]);
 
   const { addTask } = useTaskStore();
+  const projects = useProjectStore((s) => s.projects);
+  const user = useUserStore((s) => s.user);
+  const canManageTeam = useUserStore((s) => s.canManageTeam);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Top 3 projects assigned to the current user, ranked by most recently updated
+  const top3Projects = useMemo(() => {
+    const userProjects = canManageTeam()
+      ? projects
+      : projects.filter((p) => p.tasks.some((t) => t.assignedTo === user?.id));
+    return [...userProjects]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 3);
+  }, [projects, user, canManageTeam]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -111,15 +127,60 @@ export const ChatBot: React.FC = () => {
     ]);
   };
 
+  const startNewTaskFlow = () => {
+    setPending({});
+    if (top3Projects.length === 0) {
+      // No projects — skip project step
+      setStep('ask-title');
+      addBotMessage("What's the title for your new task?");
+      return;
+    }
+    setStep('ask-project');
+    addBotMessage(
+      "Which project is this task for? Here are your top assigned projects:",
+      top3Projects.map((p) => ({
+        label: `${p.icon} ${p.name}`,
+        value: `project:${p.id}:${p.name}`,
+        icon: <FolderKanban size={12} />,
+      }))
+    );
+  };
+
+  const handleProjectSelected = (projectId: string, projectName: string) => {
+    setPending((prev) => ({ ...prev, projectId, projectName }));
+
+    // Find tasks in this project assigned to current user
+    const project = projects.find((p) => p.id === projectId);
+    const assignedTasks = project?.tasks.filter((t) => t.assignedTo === user?.id) || [];
+
+    let taskListText = `✅ Project: ${projectName} — ${channelTag('in-app')}\n\n`;
+    if (assignedTasks.length > 0) {
+      taskListText += `Your tasks in this project:\n`;
+      assignedTasks.slice(0, 5).forEach((t, i) => {
+        taskListText += `${i + 1}. ${t.title}\n`;
+      });
+      taskListText += `\nReady to add a new task?`;
+    } else {
+      taskListText += `No existing tasks assigned to you in this project yet.\nReady to add the first one?`;
+    }
+
+    setStep('show-project-tasks');
+    addBotMessage(taskListText, [
+      { label: '+ New Task', value: 'create-task', icon: <Plus size={14} /> },
+      { label: 'Change Project', value: 'change-project', icon: <FolderKanban size={12} /> },
+    ]);
+  };
+
   const createTask = (task: Partial<PendingTask>) => {
     addTask({
       title: task.title || 'Untitled Task',
-      description: task.description || undefined,
       status: task.status || 'todo',
       priority: task.priority || 'medium',
-      dueDate: task.dueDate ? new Date(task.dueDate) : undefined,
-      tags: task.tags || [],
+      tags: [],
       progress: 0,
+      projectId: task.projectId || undefined,
+      assignedTo: user?.id || undefined,
+      sourceChannel: 'in-app',
     });
   };
 
@@ -132,14 +193,8 @@ export const ChatBot: React.FC = () => {
     switch (step) {
       case 'idle': {
         const lower = text.toLowerCase();
-        if (lower.includes('new task') || lower.includes('create') || lower.includes('add task')) {
-          setStep('ask-title');
-          setPending({});
-          addBotMessage("Let's create a task! What's the title?");
-        } else if (lower.includes('quick')) {
-          setStep('ask-title');
-          setPending({});
-          addBotMessage("Quick add mode! Just tell me the task title:");
+        if (lower.includes('new task') || lower.includes('create') || lower.includes('add task') || lower === 'quick') {
+          startNewTaskFlow();
         } else {
           addBotMessage("I can help you create tasks! Try saying 'new task' or click a button below.", [
             { label: 'New Task', value: 'new task', icon: <Plus size={14} /> },
@@ -147,17 +202,50 @@ export const ChatBot: React.FC = () => {
         }
         break;
       }
-      case 'ask-title': {
-        setPending((p) => ({ ...p, title: text }));
-        setStep('ask-description');
-        addBotMessage(`Title: "${text}". Add a description? (or type 'skip')`);
+
+      case 'ask-project': {
+        // Handle project selection via text (e.g., project name or number)
+        if (text.startsWith('project:')) {
+          const [, id, ...nameParts] = text.split(':');
+          handleProjectSelected(id, nameParts.join(':'));
+        } else {
+          // Try to match by name
+          const match = top3Projects.find((p) =>
+            p.name.toLowerCase().includes(text.toLowerCase())
+          );
+          if (match) {
+            handleProjectSelected(match.id, match.name);
+          } else {
+            addBotMessage("Please select one of the projects shown, or type the project name.", [
+              ...top3Projects.map((p) => ({
+                label: `${p.icon} ${p.name}`,
+                value: `project:${p.id}:${p.name}`,
+              })),
+            ]);
+          }
+        }
         break;
       }
-      case 'ask-description': {
-        const desc = text.toLowerCase() === 'skip' ? '' : text;
-        setPending((p) => ({ ...p, description: desc }));
+
+      case 'show-project-tasks': {
+        if (text === 'create-task') {
+          setStep('ask-title');
+          addBotMessage("What's the title for this new task?");
+        } else if (text === 'change-project') {
+          startNewTaskFlow();
+        } else {
+          addBotMessage("Click '+ New Task' to create a task, or 'Change Project' to pick a different project.", [
+            { label: '+ New Task', value: 'create-task', icon: <Plus size={14} /> },
+            { label: 'Change Project', value: 'change-project', icon: <FolderKanban size={12} /> },
+          ]);
+        }
+        break;
+      }
+
+      case 'ask-title': {
+        setPending((p) => ({ ...p, title: text }));
         setStep('ask-priority');
-        addBotMessage('What priority?', [
+        addBotMessage(`Title: "${text}"\n\nWhat priority?`, [
           { label: 'Low', value: 'low' },
           { label: 'Medium', value: 'medium' },
           { label: 'High', value: 'high' },
@@ -165,6 +253,7 @@ export const ChatBot: React.FC = () => {
         ]);
         break;
       }
+
       case 'ask-priority': {
         const priorities: Record<string, TaskPriority> = {
           low: 'low', medium: 'medium', high: 'high', urgent: 'urgent',
@@ -172,52 +261,39 @@ export const ChatBot: React.FC = () => {
         const p = priorities[text.toLowerCase()] || 'medium';
         setPending((prev) => ({ ...prev, priority: p }));
         setStep('ask-status');
-        addBotMessage('Which column should it go in?', [
+        addBotMessage('Which column?', [
           { label: 'To Do', value: 'todo' },
           { label: 'In Progress', value: 'in-progress' },
           { label: 'Review', value: 'review' },
         ]);
         break;
       }
+
       case 'ask-status': {
         const statuses: Record<string, TaskStatus> = {
-          'todo': 'todo', 'to do': 'todo', 'in-progress': 'in-progress',
-          'in progress': 'in-progress', 'review': 'review',
+          'todo': 'todo', 'to do': 'todo',
+          'in-progress': 'in-progress', 'in progress': 'in-progress',
+          'review': 'review',
         };
         const s = statuses[text.toLowerCase()] || 'todo';
-        setPending((prev) => ({ ...prev, status: s }));
-        setStep('ask-due-date');
-        addBotMessage("When is it due? (e.g. '2025-06-01' or 'skip')");
-        break;
-      }
-      case 'ask-due-date': {
-        const due = text.toLowerCase() === 'skip' ? '' : text;
-        setPending((prev) => ({ ...prev, dueDate: due }));
-        setStep('ask-tags');
-        addBotMessage("Any tags? (comma-separated, or 'skip')");
-        break;
-      }
-      case 'ask-tags': {
-        const tags = text.toLowerCase() === 'skip'
-          ? []
-          : text.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean);
-        const finalTask = { ...pending, tags };
+        const finalTask = { ...pending, status: s };
         setPending(finalTask);
         setStep('confirm');
         addBotMessage(
-          `Here's your task:\n• Title: ${finalTask.title}\n• Priority: ${finalTask.priority || 'medium'}\n• Status: ${finalTask.status || 'todo'}\n• Due: ${finalTask.dueDate || 'None'}\n• Tags: ${tags.length ? tags.join(', ') : 'None'}\n\nCreate it?`,
+          `Ready to create:\n• Title: ${finalTask.title}\n• Project: ${finalTask.projectName || 'None'}\n• Priority: ${finalTask.priority || 'medium'}\n• Status: ${s}\n• Channel: ${channelTag('in-app')}\n\nCreate it?`,
           [
-            { label: 'Create', value: 'yes' },
+            { label: 'Create Task', value: 'yes' },
             { label: 'Cancel', value: 'no' },
           ]
         );
         break;
       }
+
       case 'confirm': {
         const lower = text.toLowerCase();
-        if (lower === 'yes' || lower === 'create' || lower === 'confirm') {
+        if (lower === 'yes' || lower === 'create' || lower === 'create task') {
           createTask(pending);
-          addBotMessage("Task created! Want to create another?", [
+          addBotMessage("✅ Task created! It's now on your Tasks page. Want to add another?", [
             { label: 'New Task', value: 'new task', icon: <Plus size={14} /> },
           ]);
         } else {
@@ -239,6 +315,16 @@ export const ChatBot: React.FC = () => {
 
   const handleAction = (value: string) => {
     processInput(value);
+  };
+
+  const inputPlaceholder = () => {
+    switch (step) {
+      case 'ask-project': return 'Type a project name or pick one above...';
+      case 'ask-title': return 'Enter task title...';
+      case 'ask-priority': return 'low / medium / high / urgent';
+      case 'ask-status': return 'todo / in-progress / review';
+      default: return "Type 'new task' to start...";
+    }
   };
 
   return (
@@ -296,10 +382,7 @@ export const ChatBot: React.FC = () => {
                   if (isWhatsAppConfigured) {
                     addBotMessage("WhatsApp is connected! Send '/newtask [title]' to your Purple Bee bot on WhatsApp to create tasks.");
                   } else {
-                    addBotMessage(
-                      "WhatsApp is not connected yet. To set up:\n\n1. Get a Meta Business account\n2. Create a WhatsApp Cloud API app\n3. Add your Phone ID and tokens to .env\n\nOnce configured, you can create tasks by messaging your WhatsApp bot!",
-                      [{ label: 'Setup Guide', value: 'skip' }]
-                    );
+                    addBotMessage("WhatsApp is not connected yet. Add your Phone ID and tokens to .env to enable.");
                   }
                 }}
                 className={clsx(
@@ -317,12 +400,9 @@ export const ChatBot: React.FC = () => {
               <button
                 onClick={() => {
                   if (isTelegramConfigured) {
-                    addBotMessage("Telegram is connected! Send '/newtask [title]' to @PurpleBeeBot on Telegram to create tasks.");
+                    addBotMessage("Telegram is connected! Send '/newtask [title]' to @Purple_BeeBot on Telegram to create tasks.");
                   } else {
-                    addBotMessage(
-                      "Telegram is not connected yet. To set up:\n\n1. Talk to @BotFather on Telegram\n2. Create a new bot and get the token\n3. Add your Bot Token and Username to .env\n\nOnce configured, you can create tasks by messaging your Telegram bot!",
-                      [{ label: 'Setup Guide', value: 'skip' }]
-                    );
+                    addBotMessage("Telegram is not connected yet. Add your Bot Token to .env to enable.");
                   }
                 }}
                 className={clsx(
@@ -348,7 +428,7 @@ export const ChatBot: React.FC = () => {
                     <Bot size={14} className="text-purple-600 dark:text-purple-400" />
                   </div>
                 )}
-                <div className={clsx('max-w-[75%]')}>
+                <div className="max-w-[75%]">
                   <div
                     className={clsx(
                       'px-3 py-2 rounded-2xl text-sm whitespace-pre-line',
@@ -359,7 +439,6 @@ export const ChatBot: React.FC = () => {
                   >
                     {msg.text}
                   </div>
-                  {/* Action Buttons */}
                   {msg.actions && (
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
                       {msg.actions.map((action) => (
@@ -400,13 +479,7 @@ export const ChatBot: React.FC = () => {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
-                placeholder={
-                  step === 'idle'
-                    ? "Type 'new task' to start..."
-                    : step === 'ask-title'
-                      ? 'Enter task title...'
-                      : 'Type your response...'
-                }
+                placeholder={inputPlaceholder()}
                 className={clsx(
                   'flex-1 rounded-full px-4 py-2.5 text-sm',
                   'bg-gray-100 border-none text-gray-800 placeholder-gray-400',

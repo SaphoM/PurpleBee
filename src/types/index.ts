@@ -43,6 +43,7 @@ export interface Task {
   teamId?: string;
   projectId?: string;
   collaborators?: TaskCollaborator[];
+  sourceChannel?: 'whatsapp' | 'telegram' | 'in-app';
 }
 
 export interface TaskCollaborator {
