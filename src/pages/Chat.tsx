@@ -726,6 +726,24 @@ export const Chat: React.FC = () => {
                               : 'No messages yet'}
                           </p>
                         )}
+                        {/* Sent-message read receipt ticks (sidebar) */}
+                        {conv.unreadCount === 0 && conv.lastMessage?.senderId === currentUserId && !conv.lastMessage?.isDeleted && (() => {
+                          const others = conv.participants.filter((p) => p.userId !== currentUserId);
+                          const readByAll = others.length > 0 && others.every((p) => conv.lastMessage!.readBy?.includes(p.userId));
+                          return (
+                            <span className={clsx(
+                              'flex -space-x-0.5 flex-shrink-0 ml-1',
+                              readByAll ? 'text-blue-400' : 'text-gray-400/50 dark:text-slate-600'
+                            )}>
+                              <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                                <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                              <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                                <path d="M1 4L3.5 6.5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            </span>
+                          );
+                        })()}
                         {conv.unreadCount > 0 && (
                           <span className="ml-2 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-purple-600 text-white flex-shrink-0">
                             {conv.unreadCount}
