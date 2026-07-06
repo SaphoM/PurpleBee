@@ -4,8 +4,15 @@
     {
       "name": "frontend",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "--host"],
-      "port": 5173
+      "runtimeArgs": ["vite", "--host", "--port", "5174"],
+      "port": 5174
+    },
+    {
+      "name": "agc-app",
+      "cwd": "/Users/saphomaqhwazima/Documents/agc-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3001
     }
   ]
 }
