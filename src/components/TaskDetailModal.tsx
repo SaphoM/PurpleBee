@@ -375,12 +375,14 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
   const handleRemoveSubtask = (subtaskId: string) => {
     if (!task.subtasks) return;
+    const removed = task.subtasks.find((s) => s.id === subtaskId);
     const updatedSubtasks = task.subtasks.filter((s) => s.id !== subtaskId);
     const updates: Partial<Task> = { subtasks: updatedSubtasks };
     if (updatedSubtasks.length > 0) {
       Object.assign(updates, syncProgressFromSubtasks(updatedSubtasks));
     }
     updateTask(task.id, updates);
+    addToast({ type: 'success', title: 'Mini task deleted', message: removed ? `"${removed.title}" removed.` : 'Mini task removed.', duration: 3000 });
   };
 
   const handleEditSubtask = (subtaskId: string, title: string, description: string) => {
@@ -389,6 +391,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       s.id === subtaskId ? { ...s, title, description: description || undefined } : s
     );
     updateTask(task.id, { subtasks: updatedSubtasks });
+    addToast({ type: 'success', title: 'Mini task updated', message: `"${title}" saved.`, duration: 3000 });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
