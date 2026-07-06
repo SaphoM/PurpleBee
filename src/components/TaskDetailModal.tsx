@@ -173,7 +173,7 @@ const SubtaskItem: React.FC<{
       onTouchEnd={endReveal}
       title={subtask.completed ? 'Hover or hold to read' : undefined}
       className={clsx(
-        'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left',
+        'group w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left',
         'transition-all duration-200',
         subtask.completed
           ? 'bg-emerald-50 dark:bg-emerald-900/10'
