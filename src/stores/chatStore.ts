@@ -621,98 +621,111 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const preview = trimmed.length > 60 ? trimmed.slice(0, 57) + '…' : trimmed;
       const convLabel = conv.type === 'dm' ? currentUserName : `#${conv.name}`;
 
-      if (mock) {
-        const activeId = get().activeConversationId;
+      if (conv.type === 'dm') {
+        // DM: simulate an incoming reply from the other participant after a short
+        // delay. Works in BOTH mock and live mode so the notification flow is
+        // demonstrable regardless of whether the DB is connected. The reply
+        // message and its notification are local-only (never written to DB).
+        const other = conv.participants.find((p) => p.userId !== currentUserId);
+        if (other) {
+          const delay = 1800 + Math.random() * 1500; // 1.8 – 3.3 s
+          setTimeout(() => {
+            const demoReplies = [
+              'Got it, thanks!',
+              'On it. 👍',
+              'Sounds good!',
+              'Will do!',
+              'Sure thing.',
+              'Thanks for the update.',
+              'Noted! 👌',
+              "I'll check now.",
+            ];
+            const replyText = demoReplies[Math.floor(Math.random() * demoReplies.length)];
+            const replyMsg: ChatMessage = {
+              id: uuidv4(),
+              conversationId,
+              senderId: other.userId,
+              senderName: other.name,
+              senderAvatar: other.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${other.name}`,
+              text: replyText,
+              timestamp: new Date(),
+              readBy: [other.userId],
+            };
 
-        if (conv.type === 'dm') {
-          // Demo mode DMs: simulate an incoming reply from the other participant
-          // after a short delay — this creates a real unread badge + bell notification
-          // so the full notification flow is demonstrable in single-user mode.
-          const other = conv.participants.find((p) => p.userId !== currentUserId);
-          if (other) {
-            const delay = 1800 + Math.random() * 1500; // 1.8 – 3.3 s
-            setTimeout(() => {
-              const demoReplies = [
-                'Got it, thanks!',
-                'On it. 👍',
-                'Sounds good!',
-                'Will do!',
-                'Sure thing.',
-                'Thanks for the update.',
-                'Noted! 👌',
-                "I'll check now.",
-              ];
-              const replyText = demoReplies[Math.floor(Math.random() * demoReplies.length)];
-              const replyMsg: ChatMessage = {
-                id: uuidv4(),
-                conversationId,
-                senderId: other.userId,
-                senderName: other.name,
-                senderAvatar: other.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${other.name}`,
-                text: replyText,
-                timestamp: new Date(),
-                readBy: [other.userId],
-              };
-
+            // Persist to seed data only in mock mode
+            if (mock) {
               if (seedMessages[conversationId]) seedMessages[conversationId].push(replyMsg);
               const sc = seedConversations.find((c) => c.id === conversationId);
               if (sc) { sc.lastMessage = replyMsg; sc.updatedAt = new Date(); }
+            }
 
-              const nowActiveId = get().activeConversationId;
-              const stillActive = nowActiveId === conversationId;
+            const nowActiveId = get().activeConversationId;
+            const stillActive = nowActiveId === conversationId;
 
-              set((state) => ({
-                messages: {
-                  ...state.messages,
-                  [conversationId]: [...(state.messages[conversationId] || []), replyMsg],
-                },
-                conversations: state.conversations.map((c) =>
-                  c.id === conversationId
-                    ? { ...c, lastMessage: replyMsg, updatedAt: new Date(), unreadCount: stillActive ? 0 : c.unreadCount + 1 }
-                    : c
-                ),
-              }));
-
-              if (stillActive) {
-                get().markAsRead(conversationId);
-              } else {
-                // Bell notification for the simulated incoming reply
-                useNotificationStore.getState().addNotification({
-                  userId: currentUserId,
-                  type: 'mention',
-                  title: `New message from ${other.name}`,
-                  message: `${other.name}: ${replyText}`,
-                  read: false,
-                  actionUrl: '#/chat',
-                  conversationId,
-                });
-              }
-            }, delay);
-          }
-        } else {
-          // Channels / task conversations: bump unreadCount on non-active conversations
-          // (e.g. forwarded messages) and fire a notification so the bell reflects
-          // new activity in channels the user isn't currently viewing.
-          if (conversationId !== activeId) {
             set((state) => ({
+              messages: {
+                ...state.messages,
+                [conversationId]: [...(state.messages[conversationId] || []), replyMsg],
+              },
               conversations: state.conversations.map((c) =>
-                c.id === conversationId ? { ...c, unreadCount: c.unreadCount + 1 } : c
+                c.id === conversationId
+                  ? { ...c, lastMessage: replyMsg, updatedAt: new Date(), unreadCount: stillActive ? 0 : c.unreadCount + 1 }
+                  : c
               ),
             }));
-            useNotificationStore.getState().addNotification({
-              userId: currentUserId,
-              type: 'mention',
-              title: `New message in ${convLabel}`,
-              message: `${convLabel}: ${preview}`,
-              read: false,
-              actionUrl: '#/chat',
-              conversationId,
-            });
-          }
+
+            if (stillActive) {
+              get().markAsRead(conversationId);
+            } else {
+              // Bell notification: add directly to in-memory state so it works in
+              // both mock and live mode without writing to the DB.
+              const notifPrefs = useNotificationStore.getState().preferences;
+              if (notifPrefs.mentions) {
+                useNotificationStore.setState((state) => ({
+                  notifications: [
+                    {
+                      id: uuidv4(),
+                      userId: currentUserId,
+                      type: 'mention' as const,
+                      title: `New message from ${other.name}`,
+                      message: `${other.name}: ${replyText}`,
+                      read: false,
+                      createdAt: new Date(),
+                      actionUrl: '#/chat',
+                      conversationId,
+                    },
+                    ...state.notifications,
+                  ],
+                  unreadCount: state.unreadCount + 1,
+                }));
+              }
+            }
+          }, delay);
+        }
+      } else if (mock) {
+        // Channels / task conversations in mock mode: bump unreadCount on
+        // non-active conversations (e.g. forwarded messages) and fire a
+        // notification so the bell reflects new activity.
+        const activeId = get().activeConversationId;
+        if (conversationId !== activeId) {
+          set((state) => ({
+            conversations: state.conversations.map((c) =>
+              c.id === conversationId ? { ...c, unreadCount: c.unreadCount + 1 } : c
+            ),
+          }));
+          useNotificationStore.getState().addNotification({
+            userId: currentUserId,
+            type: 'mention',
+            title: `New message in ${convLabel}`,
+            message: `${convLabel}: ${preview}`,
+            read: false,
+            actionUrl: '#/chat',
+            conversationId,
+          });
         }
       } else {
-        // Live mode: notify every other participant via DB; Realtime delivers
-        // the row to their bell without polling.
+        // Live mode channels: notify every other participant via DB; Realtime
+        // delivers the row to their bell without polling.
         for (const participant of conv.participants) {
           if (participant.userId === currentUserId) continue;
           notificationDb.insert(
