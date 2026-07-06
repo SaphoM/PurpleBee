@@ -39,6 +39,7 @@ import {
   ChevronDown,
   ChevronUp,
   FolderKanban,
+  Pencil,
 } from 'lucide-react';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
@@ -81,8 +82,13 @@ const SubtaskItem: React.FC<{
   subtask: { id: string; title: string; description?: string; completed: boolean };
   onToggle: () => void;
   onRemove: (e: React.MouseEvent) => void;
-}> = ({ subtask, onToggle, onRemove }) => {
+  onEdit: (title: string, description: string) => void;
+}> = ({ subtask, onToggle, onRemove, onEdit }) => {
   const [reveal, setReveal] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(subtask.title);
+  const [editDesc, setEditDesc] = useState(subtask.description ?? '');
+  const titleRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startReveal = () => {
@@ -93,6 +99,70 @@ const SubtaskItem: React.FC<{
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     setReveal(false);
   };
+
+  const openEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditTitle(subtask.title);
+    setEditDesc(subtask.description ?? '');
+    setEditing(true);
+    setTimeout(() => titleRef.current?.focus(), 30);
+  };
+
+  const saveEdit = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation();
+    if (editTitle.trim()) onEdit(editTitle.trim(), editDesc.trim());
+    setEditing(false);
+  };
+
+  const cancelEdit = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation();
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div
+        className="w-full px-3 py-2 rounded-lg bg-purple-50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-700/40 space-y-1.5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <input
+          ref={titleRef}
+          value={editTitle}
+          onChange={(e) => setEditTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') saveEdit(e);
+            if (e.key === 'Escape') cancelEdit(e);
+          }}
+          placeholder="Title"
+          className="w-full text-sm bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500/40 text-gray-800 dark:text-slate-200"
+        />
+        <input
+          value={editDesc}
+          onChange={(e) => setEditDesc(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') cancelEdit(e);
+          }}
+          placeholder="Description (optional)"
+          className="w-full text-xs bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500/40 text-gray-600 dark:text-slate-400"
+        />
+        <div className="flex gap-1.5 justify-end">
+          <button
+            onClick={cancelEdit}
+            className="px-2.5 py-1 text-xs rounded-md border border-gray-200 dark:border-slate-600 text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={saveEdit}
+            disabled={!editTitle.trim()}
+            className="px-2.5 py-1 text-xs rounded-md bg-purple-600 hover:bg-purple-700 text-white font-medium transition-colors disabled:opacity-40"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <button
@@ -128,14 +198,27 @@ const SubtaskItem: React.FC<{
           </p>
         )}
       </div>
-      <span
-        role="button"
-        tabIndex={0}
-        onClick={onRemove}
-        onKeyDown={(e) => e.key === 'Enter' && onRemove(e as unknown as React.MouseEvent)}
-        className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-all cursor-pointer"
-      >
-        <X size={12} />
+      <span className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={openEdit}
+          onKeyDown={(e) => e.key === 'Enter' && openEdit(e as unknown as React.MouseEvent)}
+          className="p-1 text-gray-300 hover:text-purple-500 dark:text-slate-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+          title="Edit"
+        >
+          <Pencil size={12} />
+        </span>
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={onRemove}
+          onKeyDown={(e) => e.key === 'Enter' && onRemove(e as unknown as React.MouseEvent)}
+          className="p-1 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+          title="Delete"
+        >
+          <X size={12} />
+        </span>
       </span>
     </button>
   );
@@ -298,6 +381,14 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       Object.assign(updates, syncProgressFromSubtasks(updatedSubtasks));
     }
     updateTask(task.id, updates);
+  };
+
+  const handleEditSubtask = (subtaskId: string, title: string, description: string) => {
+    if (!task.subtasks) return;
+    const updatedSubtasks = task.subtasks.map((s) =>
+      s.id === subtaskId ? { ...s, title, description: description || undefined } : s
+    );
+    updateTask(task.id, { subtasks: updatedSubtasks });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -785,6 +876,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                           subtask={subtask}
                           onToggle={() => handleToggleSubtask(subtask.id)}
                           onRemove={(e) => { e.stopPropagation(); handleRemoveSubtask(subtask.id); }}
+                          onEdit={(title, description) => handleEditSubtask(subtask.id, title, description)}
                         />
                       </li>
                     ))}
