@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
  * This keeps a clean separation: mock operations never touch the DB.
  */
 import { useSettingsStore } from '@stores/settingsStore';
+import { useNotificationStore } from '@stores/notificationStore';
 const isMockMode = () => useSettingsStore.getState().keepMockData;
 
 // Lazy import to avoid circular dependency (userStore → chatStore → userStore)
@@ -614,15 +615,37 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       chatDb.insertAttachments(newMessage.id, attachments, currentUserId, mock);
     }
 
-    // ── Notify other participants of new message (live mode only) ──
-    // Direct notificationDb.insert() avoids the circular require() that
-    // fails in Vite's ESM runtime. The recipient's Realtime subscription
-    // picks up the new row and lights up their bell without any polling.
-    if (!mock) {
-      const conv = get().conversations.find((c) => c.id === conversationId);
-      if (conv) {
-        const preview = trimmed.length > 60 ? trimmed.slice(0, 57) + '…' : trimmed;
-        const convLabel = conv.type === 'dm' ? currentUserName : `#${conv.name}`;
+    // ── Notify other participants of new message ──
+    const conv = get().conversations.find((c) => c.id === conversationId);
+    if (conv) {
+      const preview = trimmed.length > 60 ? trimmed.slice(0, 57) + '…' : trimmed;
+      const convLabel = conv.type === 'dm' ? currentUserName : `#${conv.name}`;
+
+      if (mock) {
+        // Demo mode: fire an in-app notification for the current user so the
+        // bell lights up, and bump unreadCount on non-active conversations
+        // (e.g. forwarded messages) so the sidebar badge reflects new activity.
+        useNotificationStore.getState().addNotification({
+          userId: currentUserId,
+          type: 'mention',
+          title: `New message from ${currentUserName}`,
+          message: `${convLabel}: ${preview}`,
+          read: false,
+          actionUrl: '#/chat',
+          conversationId,
+        });
+
+        const activeId = get().activeConversationId;
+        if (conversationId !== activeId) {
+          set((state) => ({
+            conversations: state.conversations.map((c) =>
+              c.id === conversationId ? { ...c, unreadCount: c.unreadCount + 1 } : c
+            ),
+          }));
+        }
+      } else {
+        // Live mode: notify every other participant via DB; Realtime delivers
+        // the row to their bell without polling.
         for (const participant of conv.participants) {
           if (participant.userId === currentUserId) continue;
           notificationDb.insert(
@@ -633,7 +656,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               title: `New message from ${currentUserName}`,
               message: `${convLabel}: ${preview}`,
               read: false,
-              actionUrl: '#chat',
+              actionUrl: '#/chat',
             },
             false,
           );
