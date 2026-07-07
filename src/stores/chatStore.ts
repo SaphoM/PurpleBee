@@ -677,28 +677,31 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             if (stillActive) {
               get().markAsRead(conversationId);
             } else {
-              // Bell notification: add directly to in-memory state so it works in
-              // both mock and live mode without writing to the DB.
-              const notifPrefs = useNotificationStore.getState().preferences;
-              if (notifPrefs.mentions) {
-                useNotificationStore.setState((state) => ({
-                  notifications: [
-                    {
-                      id: uuidv4(),
-                      userId: currentUserId,
-                      type: 'mention' as const,
-                      title: `New message from ${other.name}`,
-                      message: `${other.name}: ${replyText}`,
-                      read: false,
-                      createdAt: new Date(),
-                      actionUrl: '#/chat',
-                      conversationId,
-                    },
-                    ...state.notifications,
-                  ],
-                  unreadCount: state.unreadCount + 1,
-                }));
-              }
+              // Only bump the sidebar unread badge when the user has navigated away
+              // (handled above in the set() call via unreadCount: stillActive ? 0 : +1)
+            }
+
+            // Bell notification always fires for the incoming reply — the user
+            // should see it regardless of whether they're still in the conversation.
+            const notifPrefs = useNotificationStore.getState().preferences;
+            if (notifPrefs.mentions) {
+              useNotificationStore.setState((state) => ({
+                notifications: [
+                  {
+                    id: uuidv4(),
+                    userId: currentUserId,
+                    type: 'mention' as const,
+                    title: `New message from ${other.name}`,
+                    message: `${other.name}: ${replyText}`,
+                    read: false,
+                    createdAt: new Date(),
+                    actionUrl: '#/chat',
+                    conversationId,
+                  },
+                  ...state.notifications,
+                ],
+                unreadCount: state.unreadCount + 1,
+              }));
             }
           }, delay);
         }
