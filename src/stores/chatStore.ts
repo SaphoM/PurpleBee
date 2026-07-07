@@ -622,17 +622,6 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const convLabel = conv.type === 'dm'
         ? conv.participants.find((p) => p.userId !== currentUserId)?.name || conv.name
         : conv.name;
-      const isActive = get().activeConversationId === conversationId;
-
-      // Bump unread badge only when the user has navigated away from this conversation
-      if (!isActive) {
-        set((state) => ({
-          conversations: state.conversations.map((c) =>
-            c.id === conversationId ? { ...c, unreadCount: c.unreadCount + 1 } : c
-          ),
-        }));
-      }
-
       // Bell notification fires immediately on every sent message
       const notifPrefs = useNotificationStore.getState().preferences;
       if (notifPrefs.mentions) {
@@ -1284,12 +1273,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // Avoid duplicates
           if ((get().messages[convId] || []).some((m) => m.id === msgId)) return;
 
-          // Fetch full message row with sender profile
+          const isActive = activeConversationId === convId;
+
+          // ① Immediately update the in-memory badge from the raw Realtime payload —
+          //    no async wait, so the count appears the moment the message arrives.
+          set((state) => ({
+            conversations: state.conversations.map((c) =>
+              c.id === convId
+                ? { ...c, updatedAt: new Date(), unreadCount: isActive ? 0 : c.unreadCount + 1 }
+                : c
+            ),
+          }));
+
+          if (isActive) get().markAsRead(convId);
+          // Note: DB unread_count is already incremented by the sender's sendMessage.
+          // Calling it here too would cause a double-increment race.
+
+          // ② Fetch full message with sender profile, reactions, attachments
           const data = await chatDb.fetchMessageById(msgId, false);
           if (!data) return;
 
           const newMsg = dbRowToMessage(data);
-          const isActive = activeConversationId === convId;
 
           set((state) => ({
             messages: {
@@ -1297,23 +1301,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               [convId]: [...(state.messages[convId] || []), newMsg],
             },
             conversations: state.conversations.map((c) =>
-              c.id === convId
-                ? {
-                    ...c,
-                    lastMessage: newMsg,
-                    updatedAt: new Date(),
-                    unreadCount: isActive ? 0 : c.unreadCount + 1,
-                  }
-                : c
+              c.id === convId ? { ...c, lastMessage: newMsg } : c
             ),
           }));
-
-          if (isActive) {
-            get().markAsRead(convId);
-          } else {
-            // Persist the incremented unread count to DB so it survives page refresh
-            chatDb.incrementUnreadCount(convId, currentUserId, false);
-          }
         },
       )
       .subscribe();
