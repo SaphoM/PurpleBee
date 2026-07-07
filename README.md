@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.8.0
+# PurpleBee - AI-Powered Productivity Dashboard · v1.9.0
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -71,8 +71,11 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - **Mobile wallet view for multiple docked chats** — on responsive/mobile layouts, docking a single conversation opens it directly in the bottom sheet as before; docking a second (or more) switches the default view to a stacked "wallet" overview (cards fanned like boarding passes), each showing the conversation's avatar, name, and unread count, with the frontmost card also showing a last-message preview; tapping a card **behind** the front one switches in one tap — the tapped card shuffles to the front (both cards flick 40 px left then settle, 150 ms) and the conversation opens immediately in the bottom sheet; tapping the **front** card opens it directly; the wallet strip remains visible below the open bottom sheet at all times (backdrop clips at the wallet's top edge, sheet lifts by the wallet's height so nothing is obscured); swiping the sheet down returns to the wallet stack rather than undocking — only the header's × button actually undocks a conversation; on the **mobile Chat page**, tapping any conversation row routes through the wallet system (calls `dockChat`) rather than the old in-page full-screen overlay, so the wallet/bottom sheet experience is consistent across the whole app
 - Admin "View As" to preview other members' dashboards
 - Smart notifications (assignments, due dates, mentions, AI insights)
-- Chat messages trigger `mention` notifications to all other conversation participants (live mode)
+- Chat messages trigger `mention` notifications to all other conversation participants (live and demo mode)
+- Every sent message immediately rings the bell for the sender and persists to DB for live users (survives page refresh)
+- **Unread counts persist across sessions** — `conversation_participants.unread_count` is written on every incoming message and reset to 0 when a conversation is opened; badge counts are correct on login without needing a Realtime event to fire first
 - Task completion triggers `task-completed` notification to the task creator (live mode)
+- **Bell icon always functional** — the notification bell is always clickable and always shows the Bell icon regardless of in-app preference setting; the `inApp` preference controls notification delivery, not bell visibility
 - **Announcement & team channels visible to all team members** — new members are auto-joined to all `announcement` and `team` type channels on login, so they immediately see all historical messages regardless of when the channel was created
 - **DM creation for non-admin users** — regular users (role: 'user') can now create DMs with any team member; previously the `conversation_participants` INSERT RLS policy only allowed `user_id = auth.uid() OR is_admin_or_manager()`, which caused the batch insert to fail when kamo added nhlakanipho (user_id != auth.uid() and not admin); fixed by updating the policy WITH CHECK to also allow `is_conversation_participant(conversation_id)` — so inserting the current user's row first unlocks adding the peer — and updating `createConversation` in `dataService.ts` to always insert the current user's participant row first
 - **Drag task to chat** — drag any task card from the Kanban board onto a docked chat window or bubble to attach it; a rich task card preview (title, status, priority, progress bar, subtask count, project name) appears in the input area; type an optional comment anchored to the card and send — the task card renders inline at the top of the message bubble with the comment below it
@@ -154,7 +157,7 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 | Realtime | Supabase Realtime (`postgres_changes` · Broadcast · Presence) |
 | Hosting | Render (static site, staging branch auto-deploys) |
 | Utilities | clsx, uuid, date-fns |
-| Version | 1.8.0 — sidebar version badge reads from `package.json` at build time |
+| Version | 1.9.0 — sidebar version badge reads from `package.json` at build time |
 
 ## Auth Architecture
 
