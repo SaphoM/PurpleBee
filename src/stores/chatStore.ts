@@ -677,17 +677,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
 
-      // Live mode channels: also notify other participants via DB
-      if (!mock && conv.type !== 'dm') {
+      // Live mode: increment unread_count and send bell notification for all other participants
+      if (!mock) {
         for (const participant of conv.participants) {
           if (participant.userId === currentUserId) continue;
+          // Bump their unread count in DB so it shows on next login
+          chatDb.incrementUnreadCount(conversationId, participant.userId, false);
+          // Also send them a DB notification (bell)
           notificationDb.insert(
             {
               id: uuidv4(),
               userId: participant.userId,
               type: 'mention',
-              title: `New message from ${currentUserName}`,
-              message: `${convLabel}: ${preview}`,
+              title: conv.type === 'dm' ? `New message from ${currentUserName}` : `New message in ${convLabel}`,
+              message: `${currentUserName}: ${preview}`,
               read: false,
               actionUrl: '#/chat',
             },
@@ -847,6 +850,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ),
       },
     }));
+
+    // For DB users: persist read status so unread count survives page refresh
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(conversationId);
+    if (!isMockMode() && isUuid) {
+      chatDb.markConversationRead(conversationId, currentUserId, false);
+    }
   },
 
   createDM: (participant) => {
@@ -1151,6 +1160,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           convName = other?.name || dbConv.name;
         }
 
+        // Read unread_count from this user's conversation_participants row
+        const myParticipantRow = (dbConv.conversation_participants || []).find(
+          (cp: any) => cp.user_id === userId
+        );
+
         convs.push({
           id: dbConv.id,
           type: dbConv.type,
@@ -1161,7 +1175,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           taskTitle: dbConv.task_title,
           teamId: dbConv.team_id,
           lastMessage: lastMsg,
-          unreadCount: 0,
+          unreadCount: myParticipantRow?.unread_count || 0,
           pinned: dbConv.pinned,
           createdAt: new Date(dbConv.created_at),
           updatedAt: new Date(dbConv.updated_at),
@@ -1294,7 +1308,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             ),
           }));
 
-          if (isActive) get().markAsRead(convId);
+          if (isActive) {
+            get().markAsRead(convId);
+          } else {
+            // Persist the incremented unread count to DB so it survives page refresh
+            chatDb.incrementUnreadCount(convId, currentUserId, false);
+          }
         },
       )
       .subscribe();

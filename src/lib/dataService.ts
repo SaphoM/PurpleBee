@@ -414,6 +414,34 @@ export const chatDb = {
     return data;
   },
 
+  /** Reset unread_count to 0 and update last_read_at for the current user in a conversation */
+  async markConversationRead(conversationId: string, userId: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return;
+    await supabase!
+      .from('conversation_participants')
+      .update({ unread_count: 0, last_read_at: new Date().toISOString() })
+      .eq('conversation_id', conversationId)
+      .eq('user_id', userId);
+  },
+
+  /** Increment unread_count for a specific participant in a conversation */
+  async incrementUnreadCount(conversationId: string, userId: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return;
+    const { data } = await supabase!
+      .from('conversation_participants')
+      .select('unread_count')
+      .eq('conversation_id', conversationId)
+      .eq('user_id', userId)
+      .single();
+    if (data) {
+      await supabase!
+        .from('conversation_participants')
+        .update({ unread_count: (data.unread_count || 0) + 1 })
+        .eq('conversation_id', conversationId)
+        .eq('user_id', userId);
+    }
+  },
+
   /** Fetch a single message by ID, with reactions and attachments */
   async fetchMessageById(messageId: string, mockMode?: boolean) {
     if (!shouldPersist(mockMode)) return null;
