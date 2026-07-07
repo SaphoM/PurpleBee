@@ -636,14 +636,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Bell notification fires immediately on every sent message
       const notifPrefs = useNotificationStore.getState().preferences;
       if (notifPrefs.mentions) {
+        const notifId = uuidv4();
+        const notifTitle = conv.type === 'dm' ? `Message sent to ${convLabel}` : `New message in ${convLabel}`;
+        const notifMessage = `${currentUserName}: ${preview}`;
+
+        // Always add in-memory so the bell rings immediately
         useNotificationStore.setState((state) => ({
           notifications: [
             {
-              id: uuidv4(),
+              id: notifId,
               userId: currentUserId,
               type: 'mention' as const,
-              title: conv.type === 'dm' ? `Message sent to ${convLabel}` : `New message in ${convLabel}`,
-              message: `${currentUserName}: ${preview}`,
+              title: notifTitle,
+              message: notifMessage,
               read: false,
               createdAt: new Date(),
               actionUrl: '#/chat',
@@ -653,6 +658,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           ],
           unreadCount: state.unreadCount + 1,
         }));
+
+        // For DB users (live mode): also persist to DB so it survives page refresh.
+        // The Realtime subscription deduplicates by ID so no double-up occurs.
+        if (!mock) {
+          notificationDb.insert(
+            {
+              id: notifId,
+              userId: currentUserId,
+              type: 'mention',
+              title: notifTitle,
+              message: notifMessage,
+              read: false,
+              actionUrl: '#/chat',
+            },
+            false,
+          );
+        }
       }
 
       // Live mode channels: also notify other participants via DB
