@@ -9,6 +9,7 @@
     <meta name="referrer" content="strict-origin-when-cross-origin" />
   </head>
   <body>
+    <script>if (window.self !== window.top) { window.top.location = window.self.location; }</script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
