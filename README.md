@@ -284,6 +284,16 @@ When missing, the app runs in offline demo mode with mock data.
 - Role-based access control (Admin, Manager, User)
 - Team-scoped data isolation
 - Input validation and XSS protection
+- **HTTP security headers** (configured in `render.yaml` — applied by Render on every response):
+
+| Header | Value |
+|---|---|
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains; preload` |
+| `X-Frame-Options` | `SAMEORIGIN` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | camera, mic, geolocation, payment, usb all disabled |
+| `Content-Security-Policy` | scripts/styles from self + inline; connect to Supabase only; no object embeds |
 
 ## Team
 
