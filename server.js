@@ -34,8 +34,8 @@ app.use((req, res, next) => {
 // Serve Vite build output
 app.use(express.static(DIST));
 
-// SPA fallback — all routes serve index.html
-app.get('*', (req, res) => {
+// SPA fallback — all unmatched routes serve index.html
+app.use((req, res) => {
   res.sendFile(join(DIST, 'index.html'));
 });
 
