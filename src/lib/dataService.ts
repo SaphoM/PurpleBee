@@ -147,20 +147,29 @@ export const taskDb = {
    */
   async fetchAll(userId: string, mockMode?: boolean, teamId?: string | null): Promise<Task[] | null> {
     if (!shouldPersist(mockMode)) return null;
-    let q = supabase!.from('tasks').select('*').order('created_at', { ascending: false });
+    // Single round-trip: join subtasks inline instead of two sequential queries.
+    let q = supabase!
+      .from('tasks')
+      .select('*, subtasks(*)')
+      .order('created_at', { ascending: false })
+      .order('order', { referencedTable: 'subtasks', ascending: true });
     if (teamId) {
-      // Include team tasks AND any tasks the user owns directly (handles cases
-      // where tasks were created before the team was resolved or team changed).
       q = q.or(`team_id.eq.${teamId},assigned_to.eq.${userId},created_by.eq.${userId}`);
     } else {
       q = q.or(`assigned_to.eq.${userId},created_by.eq.${userId}`);
     }
     const { data, error } = await q;
     if (error) { console.error('[dataService] tasks.fetchAll', error); return null; }
-    const tasks = (data as DbTask[]).map(toTask);
-    // Attach subtasks from the subtasks table
-    const subtaskMap = await subtaskDb.fetchForTasks(tasks.map((t) => t.id), mockMode);
-    return tasks.map((t) => ({ ...t, subtasks: subtaskMap.get(t.id) ?? [] }));
+    return (data as (DbTask & { subtasks: { id: string; title: string; description: string | null; completed: boolean; created_at: string }[] })[]).map((row) => ({
+      ...toTask(row),
+      subtasks: (row.subtasks ?? []).map((s) => ({
+        id: s.id,
+        title: s.title,
+        description: s.description ?? undefined,
+        completed: s.completed,
+        createdAt: new Date(s.created_at),
+      })),
+    }));
   },
 
   /** Insert a task — skipped when mock mode is ON */
