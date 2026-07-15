@@ -262,8 +262,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [showAddLink, setShowAddLink] = useState(false);
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
-  const [showAttachments, setShowAttachments] = useState(false);
-  const [attachmentTrigger, setAttachmentTrigger] = useState<string>('');
   const [noteInput, setNoteInput] = useState('');
   const [showAllNotes, setShowAllNotes] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -286,16 +284,12 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   };
 
   // Central progress update — always syncs status
-  const setProgress = (newProgress: number, trigger?: string) => {
+  const setProgress = (newProgress: number) => {
     const clamped = Math.max(0, Math.min(100, newProgress));
     updateTask(task.id, {
       progress: clamped,
       status: getStatusFromProgress(clamped),
     });
-    if (trigger) {
-      setAttachmentTrigger(trigger);
-      setShowAttachments(true);
-    }
   };
 
   // Calculate progress from subtasks and sync
@@ -348,9 +342,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       subtasks: updatedSubtasks,
       ...progressUpdate,
     });
-    const toggled = updatedSubtasks.find((s) => s.id === subtaskId);
-    setAttachmentTrigger(`mini-task: ${toggled?.title || 'task'}`);
-    setShowAttachments(true);
   };
 
   const handleAddMiniTask = () => {
@@ -449,7 +440,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       id: uuidv4(),
       text,
       progress: task.progress,
-      trigger: attachmentTrigger || 'manual',
+      trigger: 'manual',
       createdAt: new Date(),
     };
     updateTask(task.id, {
@@ -748,7 +739,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 max={100}
                 step={1}
                 value={task.progress}
-                onChange={(e) => setProgress(Number(e.target.value), 'drag')}
+                onChange={(e) => setProgress(Number(e.target.value))}
                 className="relative w-full h-3 appearance-none bg-transparent cursor-pointer z-10 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-600 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-grab [&::-webkit-slider-thumb]:active:cursor-grabbing [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-purple-600 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:shadow-md [&::-moz-range-thumb]:cursor-grab [&::-webkit-slider-runnable-track]:bg-transparent [&::-moz-range-track]:bg-transparent"
               />
             </div>
@@ -839,7 +830,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   max={100}
                   step={5}
                   value={task.progress}
-                  onChange={(e) => setProgress(Number(e.target.value), 'slider')}
+                  onChange={(e) => setProgress(Number(e.target.value))}
                   className="w-full h-2 accent-purple-600 cursor-pointer rounded-full"
                 />
               </div>
@@ -956,7 +947,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   {[0, 25, 50, 75, 100].map((val) => (
                     <button
                       key={val}
-                      onClick={() => setProgress(val, `quick-set: ${val}%`)}
+                      onClick={() => setProgress(val)}
                       className={clsx(
                         'flex-1 px-2 py-2 rounded-lg text-xs font-semibold transition-all',
                         task.progress === val
@@ -971,20 +962,14 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               </div>
             )}
 
-            {/* Progress Notes — triggered by progress interactions */}
-            {showAttachments && (
-              <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
+            {/* Progress Notes */}
+            <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                       <MessageSquare size={12} />
                       Progress Notes
                     </h4>
-                    {attachmentTrigger && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
-                        via {attachmentTrigger}
-                      </span>
-                    )}
                     {(task.progressNotes?.length ?? 0) > 0 && (
                       <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300">
                         {task.progressNotes!.length}
@@ -1004,13 +989,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                         )}
                       </button>
                     )}
-                    <button
-                      onClick={() => setShowAttachments(false)}
-                      className="p-1 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
-                      title="Dismiss"
-                    >
-                      <X size={14} />
-                    </button>
                   </div>
                 </div>
 
@@ -1028,7 +1006,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                           handleAddNote();
                         }
                       }}
-                      placeholder={attachmentTrigger ? `Note on ${attachmentTrigger}...` : 'Add a progress note...'}
+                      placeholder="Add a progress note..."
                       className={clsx(
                         'w-full rounded-lg pl-3 pr-10 py-2.5 text-sm',
                         'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
@@ -1036,11 +1014,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                         'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
                       )}
                     />
-                    {attachmentTrigger && (
-                      <div className="absolute right-10 top-1/2 -translate-y-1/2">
-                        {getTriggerIcon(attachmentTrigger)}
-                      </div>
-                    )}
                   </div>
                   <button
                     onClick={handleAddNote}
@@ -1110,23 +1083,16 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     ))}
                   </div>
                 )}
-              </div>
-            )}
+            </div>
 
-            {/* Attachments & Links — triggered by progress interactions */}
-            {showAttachments && (
-              <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
+            {/* Attachments & Links */}
+            <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                       <Paperclip size={12} />
                       Attachments & Links
                     </h4>
-                    {attachmentTrigger && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
-                        via {attachmentTrigger}
-                      </span>
-                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -1156,13 +1122,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                       onChange={handleFileUpload}
                       className="hidden"
                     />
-                    <button
-                      onClick={() => setShowAttachments(false)}
-                      className="p-1 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors"
-                      title="Hide attachments"
-                    >
-                      <X size={14} />
-                    </button>
                   </div>
                 </div>
 
@@ -1340,8 +1299,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     </p>
                   </div>
                 )}
-              </div>
-            )}
+            </div>
           </div>
 
           {/* Info Grid */}

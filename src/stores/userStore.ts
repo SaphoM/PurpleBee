@@ -175,8 +175,9 @@ async function hydrateWithTeam(
 
   // Update task + project store context with the now-resolved teamId so
   // writes are scoped correctly and notifications carry the right sender.
+  const role = useUserStore.getState().user?.role ?? null;
   setTaskUserContext(userId, teamId, userName);
-  setProjectUserContext(userId, teamId);
+  setProjectUserContext(userId, teamId, role);
 
   await Promise.all([
     useTaskStore.getState().hydrateFromDb(userId),

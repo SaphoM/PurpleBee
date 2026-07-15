@@ -15,16 +15,18 @@ const isMockMode = () => useSettingsStore.getState().keepMockData;
  * can attach teamId to writes without a circular require() dep.
  * (require is not defined in Vite's ESM browser runtime.)
  */
-let _ctx: { userId: string | null; teamId: string | null } = {
+let _ctx: { userId: string | null; teamId: string | null; role: string | null } = {
   userId: null,
   teamId: null,
+  role: null,
 };
 
 export function setProjectUserContext(
   userId: string | null,
   teamId: string | null,
+  role?: string | null,
 ) {
-  _ctx = { userId, teamId };
+  _ctx = { userId, teamId, role: role ?? null };
 }
 
 const getTeamContext = () => _ctx;
@@ -679,7 +681,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       await projectDb.claimOrphanedProjects(userId, teamId, false);
     }
 
-    const rows = await projectDb.fetchAll(userId, false, teamId);
+    const { role } = getTeamContext();
+    const rows = await projectDb.fetchAll(userId, false, teamId, role);
     if (rows === null) return; // DB error — keep current state, don't wipe projects
     const mapped: Project[] = (rows as Array<Record<string, any>>).map((r) => ({
       id: r.id,

@@ -54,6 +54,8 @@ export interface DbTask {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  links: import('@/types/index').TaskLink[] | null;
+  attachments: import('@/types/index').Attachment[] | null;
 }
 
 /** Map a Supabase row → app Task */
@@ -75,6 +77,8 @@ const toTask = (row: DbTask): Task => ({
   teamId: row.team_id || undefined,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
+  links: row.links || [],
+  attachments: row.attachments || [],
 });
 
 /** Map an app Task → Supabase insert payload */
@@ -200,6 +204,8 @@ export const taskDb = {
     if (updates.estimatedHours !== undefined) payload.estimated_hours = updates.estimatedHours;
     if (updates.actualHours !== undefined) payload.actual_hours = updates.actualHours;
     if (updates.projectId !== undefined) payload.project_id = updates.projectId || null;
+    if (updates.links !== undefined) payload.links = updates.links;
+    if (updates.attachments !== undefined) payload.attachments = updates.attachments;
 
     // Sync subtasks to their own table (fire-and-forget alongside the main update)
     if (updates.subtasks !== undefined) {
@@ -291,19 +297,22 @@ export const projectDb = {
    * Fetch all projects for the user's team, with their project_tasks nested.
    * Team-scoped so every member sees the shared portfolio.
    */
-  async fetchAll(userId: string, mockMode?: boolean, teamId?: string | null) {
+  async fetchAll(userId: string, mockMode?: boolean, teamId?: string | null, role?: string | null) {
     if (!shouldPersist(mockMode)) return null;
     let q = supabase!
       .from('projects')
       .select('*, project_tasks(*)')
       .order('created_at', { ascending: false })
       .order('order', { referencedTable: 'project_tasks', ascending: true });
-    if (teamId) {
-      // Include team projects AND any projects the user created directly (handles
-      // cases where projects were created before the team resolved or team changed).
-      q = q.or(`team_id.eq.${teamId},created_by.eq.${userId}`);
-    } else {
-      q = q.eq('created_by', userId);
+    // Admins/managers: let RLS is_admin_or_manager() return everything — no client filter.
+    // Regular users: scope to team projects + anything they personally created.
+    const isPrivileged = role === 'admin' || role === 'manager';
+    if (!isPrivileged) {
+      if (teamId) {
+        q = q.or(`team_id.eq.${teamId},created_by.eq.${userId}`);
+      } else {
+        q = q.eq('created_by', userId);
+      }
     }
     const { data, error } = await q;
     if (error) { console.error('[dataService] projects.fetchAll', error); return null; }
