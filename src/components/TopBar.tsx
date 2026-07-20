@@ -1,6 +1,6 @@
 import React from 'react';
 import clsx from 'clsx';
-import { Search, Bell, Settings, Shield, Crown, User, ArrowRightLeft, Eye, X, Check, CheckCheck, Trash2, BellOff, MessageCircle, FileText, FolderKanban, Users } from 'lucide-react';
+import { Search, Bell, Settings, Shield, Crown, User, ArrowRightLeft, Eye, X, Check, CheckCheck, Trash2, BellOff, MessageCircle, FileText, FolderKanban, Users, Megaphone, Send } from 'lucide-react';
 import { useNotificationStore, notificationCategoryConfig } from '@stores/notificationStore';
 import { useUserStore } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
@@ -8,8 +8,10 @@ import { useSettingsStore } from '@stores/settingsStore';
 import { useUIStore } from '@stores/uiStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
+import { notificationDb } from '@/lib/dataService';
 import { Notification } from '@/types/index';
 import { Tip } from '@components/Tip';
+import { v4 as uuidv4 } from 'uuid';
 
 // ── Search result types ───────────────────────────────────────────────
 interface SearchResult {
@@ -59,6 +61,11 @@ export const TopBar: React.FC = () => {
   const teamMembersChat = useChatStore((s) => s.teamMembers);
   const assignableMembers = useUserStore((s) => s.assignableMembers);
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const [showBroadcast, setShowBroadcast] = React.useState(false);
+  const [broadcastTitle, setBroadcastTitle] = React.useState('');
+  const [broadcastMsg, setBroadcastMsg] = React.useState('');
+  const [broadcastSending, setBroadcastSending] = React.useState(false);
+  const [broadcastSent, setBroadcastSent] = React.useState(false);
   // Refresh from DB each time the bell is opened in live mode
   React.useEffect(() => {
     if (showNotifications && !keepMockData && user?.id) {
@@ -177,6 +184,28 @@ export const TopBar: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleBroadcast = async () => {
+    if (!broadcastTitle.trim() || !broadcastMsg.trim()) return;
+    setBroadcastSending(true);
+    const recipients = assignableMembers.length > 0 ? assignableMembers : [];
+    const sends = recipients.map((m) =>
+      notificationDb.insert({
+        id: uuidv4(),
+        userId: m.id,
+        type: 'update',
+        title: broadcastTitle.trim(),
+        message: broadcastMsg.trim(),
+        read: false,
+      }, keepMockData)
+    );
+    await Promise.all(sends);
+    setBroadcastSending(false);
+    setBroadcastSent(true);
+    setBroadcastTitle('');
+    setBroadcastMsg('');
+    setTimeout(() => { setBroadcastSent(false); setShowBroadcast(false); }, 1800);
+  };
 
   // Grouped & filtered notifications
   const grouped = getGroupedNotifications();
@@ -336,6 +365,22 @@ export const TopBar: React.FC = () => {
                       )}
                     </div>
                     <div className="flex items-center gap-1">
+                      {canManageTeam() && (
+                        <Tip content="Send a notification to all team members" position="bottom">
+                          <button
+                            onClick={() => { setShowBroadcast((v) => !v); setBroadcastSent(false); }}
+                            className={clsx(
+                              'p-1.5 rounded-lg transition-colors',
+                              showBroadcast
+                                ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
+                                : 'text-gray-400 hover:text-purple-600 hover:bg-purple-50 dark:text-slate-500 dark:hover:text-purple-400 dark:hover:bg-purple-900/20'
+                            )}
+                            title="Broadcast to all members"
+                          >
+                            <Megaphone size={14} />
+                          </button>
+                        </Tip>
+                      )}
                       {unreadCount > 0 && (
                         <button
                           onClick={() => markAllAsRead()}
@@ -357,6 +402,43 @@ export const TopBar: React.FC = () => {
                       )}
                     </div>
                   </div>
+
+                  {/* Broadcast compose — admin/manager only */}
+                  {showBroadcast && canManageTeam() && (
+                    <div className="mb-3 p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700/40">
+                      <p className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <Megaphone size={10} /> Broadcast to all {assignableMembers.length} members
+                      </p>
+                      <input
+                        type="text"
+                        value={broadcastTitle}
+                        onChange={(e) => setBroadcastTitle(e.target.value)}
+                        placeholder="Title"
+                        maxLength={80}
+                        className="w-full mb-1.5 px-2.5 py-1.5 rounded-lg text-xs border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-purple-400"
+                      />
+                      <textarea
+                        value={broadcastMsg}
+                        onChange={(e) => setBroadcastMsg(e.target.value)}
+                        placeholder="Message…"
+                        maxLength={280}
+                        rows={2}
+                        className="w-full mb-2 px-2.5 py-1.5 rounded-lg text-xs border border-purple-200 dark:border-purple-700/50 bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:border-purple-400 resize-none"
+                      />
+                      <button
+                        onClick={handleBroadcast}
+                        disabled={broadcastSending || !broadcastTitle.trim() || !broadcastMsg.trim()}
+                        className={clsx(
+                          'w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                          broadcastSent
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                            : 'bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                        )}
+                      >
+                        {broadcastSent ? <><Check size={12} /> Sent!</> : broadcastSending ? 'Sending…' : <><Send size={11} /> Send to team</>}
+                      </button>
+                    </div>
+                  )}
 
                   {/* Filter tabs */}
                   <div className="flex gap-1 bg-gray-100 dark:bg-slate-700/50 rounded-lg p-0.5">
