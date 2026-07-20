@@ -640,7 +640,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               message: notifMessage,
               read: false,
               createdAt: new Date(),
-              actionUrl: '#/chat',
+              actionUrl: '#chat',
               conversationId,
             },
             ...state.notifications,
@@ -659,7 +659,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               title: notifTitle,
               message: notifMessage,
               read: false,
-              actionUrl: '#/chat',
+              actionUrl: '#chat',
+              conversationId,
             },
             false,
           );
@@ -672,7 +673,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           if (participant.userId === currentUserId) continue;
           // Bump their unread count in DB so it shows on next login
           chatDb.incrementUnreadCount(conversationId, participant.userId, false);
-          // Also send them a DB notification (bell)
+          // Also send them a DB notification (bell) — carry conversationId so
+          // clicking it deep-links to the exact conversation and message thread.
           notificationDb.insert(
             {
               id: uuidv4(),
@@ -681,7 +683,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               title: conv.type === 'dm' ? `New message from ${currentUserName}` : `New message in ${convLabel}`,
               message: `${currentUserName}: ${preview}`,
               read: false,
-              actionUrl: '#/chat',
+              actionUrl: '#chat',
+              conversationId,
             },
             false,
           );

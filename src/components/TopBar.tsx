@@ -518,7 +518,9 @@ export const TopBar: React.FC = () => {
                                   markAsRead(notif.id);
                                   setShowNotifications(false);
                                   if (notif.conversationId) {
-                                    // Navigate to Chat page and select the conversation
+                                    // Navigate to Chat page and select the exact conversation.
+                                    // Chat.tsx reacts to activeConversationId — opens the thread
+                                    // and scrolls to the newest message automatically.
                                     import('@stores/chatStore').then(({ useChatStore }) => {
                                       useChatStore.getState().setActiveConversation(notif.conversationId!);
                                     });
@@ -526,7 +528,14 @@ export const TopBar: React.FC = () => {
                                   } else if (notif.taskId) {
                                     window.location.hash = `tasks?taskId=${notif.taskId}`;
                                   } else if (notif.actionUrl) {
-                                    window.location.hash = notif.actionUrl.replace(/^#/, '');
+                                    // Deep-link to a specific project when the actionUrl carries a projectId
+                                    const projectMatch = notif.actionUrl.match(/[?&]projectId=([^&]+)/);
+                                    if (projectMatch) {
+                                      useUIStore.getState().setActiveProjectId(decodeURIComponent(projectMatch[1]));
+                                      window.location.hash = 'projects';
+                                    } else {
+                                      window.location.hash = notif.actionUrl.replace(/^#\/?/, '');
+                                    }
                                   }
                                 }}
                               >

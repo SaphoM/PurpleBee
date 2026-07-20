@@ -607,7 +607,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
             title: "You've been assigned a task",
             message: `${project.name}: ${task.title}`,
             read: false,
-            actionUrl: '#projects',
+            actionUrl: `#projects?projectId=${projectId}`,
           },
           false,
         ).catch(() => {});

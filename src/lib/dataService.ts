@@ -289,6 +289,13 @@ export const notificationDb = {
     return true;
   },
 
+  async delete(id: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('notifications').delete().eq('id', id);
+    if (error) { console.error('[dataService] notifications.delete', error); return false; }
+    return true;
+  },
+
   async deleteAll(userId: string, mockMode?: boolean) {
     if (!shouldPersist(mockMode)) return true;
     const { error } = await supabase!.from('notifications').delete().eq('user_id', userId);

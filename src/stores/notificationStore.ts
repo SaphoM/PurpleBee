@@ -354,12 +354,14 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
 
   removeNotification: (id) => {
     set((state) => {
-      const notification = state.notifications.find((n) => n.id === id);
+      const notifications = state.notifications.filter((n) => n.id !== id);
       return {
-        notifications: state.notifications.filter((n) => n.id !== id),
-        unreadCount: notification && !notification.read ? state.unreadCount - 1 : state.unreadCount,
+        notifications,
+        unreadCount: notifications.filter((n) => !n.read).length,
       };
     });
+    // Persist the dismissal so it doesn't reappear on refresh (live mode only)
+    notificationDb.delete(id, isMockMode());
   },
 
   markAsRead: (id) => {
@@ -403,6 +405,9 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   clearRead: () => {
+    // Persist removal of read notifications so they don't reappear on refresh
+    const readIds = get().notifications.filter((n) => n.read).map((n) => n.id);
+    readIds.forEach((id) => notificationDb.delete(id, isMockMode()));
     set((state) => ({
       notifications: state.notifications.filter((n) => !n.read),
     }));
@@ -507,10 +512,49 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
           // added optimistically (same-user actions)
           set((state) => {
             if (state.notifications.some((n) => n.id === incoming.id)) return state;
+            const notifications = [incoming, ...state.notifications];
             return {
-              notifications: [incoming, ...state.notifications],
-              unreadCount: state.unreadCount + (incoming.read ? 0 : 1),
+              notifications,
+              unreadCount: notifications.filter((n) => !n.read).length,
             };
+          });
+        }
+      )
+      // UPDATE — keeps read/unread state in sync across browser tabs and devices.
+      // When one tab marks a notification read, every other open session updates too.
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const r = payload.new as Record<string, any>;
+          set((state) => {
+            const notifications = state.notifications.map((n) =>
+              n.id === r.id ? { ...n, read: !!r.read } : n
+            );
+            return { notifications, unreadCount: notifications.filter((n) => !n.read).length };
+          });
+        }
+      )
+      // DELETE — removes dismissed/cleared notifications in every open session.
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const removedId = (payload.old as Record<string, any>)?.id;
+          if (!removedId) return;
+          set((state) => {
+            const notifications = state.notifications.filter((n) => n.id !== removedId);
+            return { notifications, unreadCount: notifications.filter((n) => !n.read).length };
           });
         }
       )
