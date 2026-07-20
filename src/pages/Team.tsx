@@ -764,7 +764,7 @@ export const Team: React.FC = () => {
         completionRate: assigned.length > 0 ? Math.round((completed / assigned.length) * 100) : 0,
         avgProgress: assigned.length > 0 ? Math.round(assigned.reduce((s, t) => s + t.progress, 0) / assigned.length) : 0,
         department: profile.department || 'General',
-        title: profile.title || 'Team Member',
+        title: profile.title || (profile.role === 'admin' ? 'Admin' : profile.role === 'manager' ? 'Manager' : 'Team Member'),
         joinedDate: new Date(),
         email: profile.email || `${profile.name.toLowerCase().replace(' ', '.')}@company.com`,
       };
