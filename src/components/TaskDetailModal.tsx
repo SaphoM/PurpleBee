@@ -45,6 +45,7 @@ import {
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
+import { useUserStore } from '@stores/userStore';
 import { v4 as uuidv4 } from 'uuid';
 
 interface TaskDetailModalProps {
@@ -74,7 +75,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 }) => {
   const { updateTask, deleteTask } = useTaskStore();
   const { getProjectById } = useProjectStore();
+  const { user } = useUserStore();
   const project = task?.projectId ? getProjectById(task.projectId) : null;
+  // Only the person who created the task may delete it. Tasks with no
+  // tracked creator (legacy/unattributed) remain deletable by anyone.
+  const canDelete = !task?.createdBy || task.createdBy === user?.id;
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -317,9 +322,9 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   };
 
   const handleDelete = () => {
-    deleteTask(task.id);
+    const deleted = deleteTask(task.id, user?.id);
     setShowDeleteConfirm(false);
-    onClose();
+    if (deleted) onClose();
   };
 
   return (
@@ -405,13 +410,15 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 <Edit3 size={18} />
               </button>
             )}
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="p-2 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 dark:text-slate-400 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors"
-              title="Delete task"
-            >
-              <Trash2 size={18} />
-            </button>
+            {canDelete && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="p-2 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 dark:text-slate-400 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors"
+                title="Delete task"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-300 transition-colors"

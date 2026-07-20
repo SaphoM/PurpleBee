@@ -117,6 +117,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
       description: description.trim() || undefined,
       status,
       priority,
+      createdBy: user?.id,
       dueDate: dueDate ? new Date(dueDate) : undefined,
       estimatedHours: estimatedHours ? Number(estimatedHours) : undefined,
       tags,

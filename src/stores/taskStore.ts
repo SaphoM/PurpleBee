@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Task, TaskStatus, TaskPriority, TaskCollaborator } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
-import { taskDb } from '@/lib/dataService';
+import { taskDb, botTaskDb } from '@/lib/dataService';
 
 /**
  * Helper: read keepMockData at call-time.
@@ -23,9 +23,18 @@ interface TaskStore {
   sortBy: 'dueDate' | 'priority' | 'created';
 
   // Actions
-  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  // forcedId lets bot-created tasks (WhatsApp/Telegram) use the ID the
+  // backend already generated for its confirmation link, instead of a
+  // second, different ID being minted here. skipPersist is set when the
+  // backend already wrote this task directly to Supabase (bot "database
+  // mode") — avoids a duplicate-key insert error from writing it again here.
+  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>, forcedId?: string, skipPersist?: boolean) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
-  deleteTask: (id: string) => void;
+  // requestingUserId enforces creator-only deletion: if the task has a
+  // createdBy and it doesn't match, the delete is refused (returns false).
+  // Tasks with no createdBy (e.g. legacy/unattributed) are always deletable —
+  // there's nothing to check against.
+  deleteTask: (id: string, requestingUserId?: string) => boolean;
   selectTask: (id: string | null) => void;
   setFilter: (filter: Partial<TaskStore['filter']>) => void;
   setSortBy: (sortBy: TaskStore['sortBy']) => void;
@@ -62,6 +71,7 @@ const mockTasks: Task[] = [
     estimatedHours: 12,
     actualHours: 8,
     projectId: 'proj-3',
+    createdBy: 'user-1', // self-created
   },
   {
     id: '2',
@@ -77,6 +87,7 @@ const mockTasks: Task[] = [
     progress: 0,
     estimatedHours: 10,
     projectId: 'proj-3',
+    createdBy: 'user-1', // admin assigned this to user-3 — user-3 cannot delete it
   },
   {
     id: '3',
@@ -93,6 +104,7 @@ const mockTasks: Task[] = [
     estimatedHours: 6,
     actualHours: 5,
     projectId: 'proj-1',
+    createdBy: 'user-4', // self-created
   },
   {
     id: '4',
@@ -108,6 +120,7 @@ const mockTasks: Task[] = [
     progress: 0,
     estimatedHours: 16,
     projectId: 'proj-3',
+    createdBy: 'user-1', // admin assigned this to user-5 — user-5 cannot delete it
   },
   {
     id: '5',
@@ -124,6 +137,7 @@ const mockTasks: Task[] = [
     estimatedHours: 14,
     actualHours: 12,
     projectId: 'proj-2',
+    createdBy: 'user-2', // self-created
   },
   {
     id: '6',
@@ -140,6 +154,7 @@ const mockTasks: Task[] = [
     estimatedHours: 20,
     actualHours: 8,
     projectId: 'proj-1',
+    createdBy: 'user-4', // manager assigned this to user-2 — user-2 cannot delete it
   },
   {
     id: '7',
@@ -155,6 +170,7 @@ const mockTasks: Task[] = [
     progress: 0,
     estimatedHours: 18,
     projectId: 'proj-2',
+    createdBy: 'user-2', // self-created
   },
   {
     id: '8',
@@ -171,6 +187,7 @@ const mockTasks: Task[] = [
     estimatedHours: 8,
     actualHours: 6,
     projectId: 'proj-3',
+    createdBy: 'user-4', // self-created
   },
   {
     id: '9',
@@ -187,6 +204,7 @@ const mockTasks: Task[] = [
     estimatedHours: 16,
     actualHours: 4,
     projectId: 'proj-3',
+    createdBy: 'user-5', // self-created
   },
   {
     id: '10',
@@ -203,6 +221,7 @@ const mockTasks: Task[] = [
     estimatedHours: 8,
     actualHours: 7,
     projectId: 'proj-3',
+    createdBy: 'user-3', // self-created
   },
 ];
 
@@ -212,16 +231,21 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   filter: {},
   sortBy: 'dueDate',
 
-  addTask: (taskData) => {
+  addTask: (taskData, forcedId, skipPersist) => {
     const newTask: Task = {
       ...taskData,
-      id: uuidv4(),
+      id: forcedId || uuidv4(),
       createdAt: new Date(),
       updatedAt: new Date(),
     };
     set((state) => ({ tasks: [newTask, ...state.tasks] }));
-    // Persist to DB only when mock mode is OFF (fire-and-forget)
-    taskDb.insert(newTask, taskData.assignedTo, isMockMode());
+    // Persist to DB only when mock mode is OFF (fire-and-forget), and only
+    // if it wasn't already written directly by the backend (bot "database
+    // mode") — otherwise this would be a duplicate insert of the same id.
+    // created_by is the real creator (newTask.createdBy) — previously this
+    // was passed as the assignee, which conflated "assigned to" with "who
+    // made this", making creator-only deletion impossible to enforce.
+    if (!skipPersist) taskDb.insert(newTask, newTask.createdBy, isMockMode());
   },
 
   updateTask: (id, updates) => {
@@ -235,12 +259,18 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     taskDb.update(id, updates, isMockMode());
   },
 
-  deleteTask: (id) => {
+  deleteTask: (id, requestingUserId) => {
+    const task = get().tasks.find((t) => t.id === id);
+    if (!task) return false;
+    if (requestingUserId && task.createdBy && task.createdBy !== requestingUserId) {
+      return false; // not the creator — refuse, even if called directly
+    }
     set((state) => ({
-      tasks: state.tasks.filter((task) => task.id !== id),
+      tasks: state.tasks.filter((t) => t.id !== id),
       selectedTaskId: state.selectedTaskId === id ? null : state.selectedTaskId,
     }));
     taskDb.delete(id, isMockMode());
+    return true;
   },
 
   selectTask: (id) => set({ selectedTaskId: id }),
@@ -378,9 +408,14 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   hydrateFromDb: async (userId: string) => {
     const mock = isMockMode();
     if (mock) return; // Mock mode ON → don't touch DB
-    const dbTasks = await taskDb.fetchAll(userId, false);
-    if (dbTasks !== null) {
-      set({ tasks: dbTasks });
+    const [dbTasks, botTasks] = await Promise.all([
+      taskDb.fetchAll(userId, false),
+      botTaskDb.fetchAllForUser(userId, false),
+    ]);
+    if (dbTasks !== null || botTasks !== null) {
+      // bot_tasks and tasks use disjoint id spaces (both UUID, generated
+      // independently) — a plain concat is safe, no dedupe needed.
+      set({ tasks: [...(dbTasks || []), ...(botTasks || [])] });
     }
   },
 
@@ -396,23 +431,94 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 }));
 
-// Listen for tasks created by the Telegram/WhatsApp bot via the backend socket
+// Listen for tasks created/deleted by the Telegram/WhatsApp bot via the
+// backend socket, and push a live task snapshot so the bot can show real
+// tasks (never hardcoded/hallucinated ones) for its Delete Task flow.
 import('@/lib/botSocket').then(({ getBotSocket }) => {
   const socket = getBotSocket();
+
   socket.on('task:bot-created', (payload: {
-    id: string; title: string; projectId?: string; assignedTo?: string;
-    priority: string; status: string; sourceChannel: 'telegram' | 'whatsapp';
+    id: string; title: string; description?: string; projectId?: string; assignedTo?: string;
+    createdBy?: string;
+    priority: string; status: string; dueDate?: string; estimatedHours?: number;
+    tags?: string[]; subtasks?: { id: string; title: string; completed: boolean; createdAt: string }[];
+    sourceChannel: 'telegram' | 'whatsapp';
     createdAt: string;
+    persisted?: boolean; // true when the backend already wrote this directly (bot "database mode")
   }) => {
     useTaskStore.getState().addTask({
       title: payload.title,
+      description: payload.description,
       status: (payload.status as any) || 'todo',
       priority: (payload.priority as any) || 'medium',
       projectId: payload.projectId,
       assignedTo: payload.assignedTo,
+      createdBy: payload.createdBy,
+      dueDate: payload.dueDate ? new Date(payload.dueDate) : undefined,
+      estimatedHours: payload.estimatedHours,
       sourceChannel: payload.sourceChannel,
-      tags: [],
+      tags: payload.tags || [],
+      subtasks: (payload.subtasks || []).map((s) => ({ ...s, createdAt: new Date(s.createdAt) })),
       progress: 0,
-    });
+    }, payload.id, payload.persisted);
+    // Confirm back to the bot that this task was actually persisted, so its
+    // confirmation message (and task link) is only sent once this succeeds.
+    // (Harmless no-op from the bot's perspective in "database mode", where
+    // it already knows the write succeeded and isn't waiting on this ack.)
+    socket.emit('task:bot-created:ack', { id: payload.id });
   });
+
+  socket.on('task:bot-updated', (payload: {
+    id: string; description?: string; status?: string; priority?: string; dueDate?: string;
+    estimatedHours?: number; tags?: string[]; progress?: number;
+    subtasksToAdd?: string[]; // reset mode: raw titles to append to the existing task
+    subtasks?: { id: string; title: string; completed: boolean; createdAt: string }[]; // database mode: already-merged final array
+    persisted?: boolean;
+  }) => {
+    const state = useTaskStore.getState();
+    const existing = state.tasks.find((t) => t.id === payload.id);
+    if (!existing) return;
+
+    const mergedSubtasks = payload.persisted
+      ? (payload.subtasks || []).map((s) => ({ ...s, createdAt: new Date(s.createdAt) }))
+      : [
+          ...(existing.subtasks || []),
+          ...(payload.subtasksToAdd || []).map((title, i) => ({
+            id: `chat-sub-${Date.now()}-${i}`,
+            title,
+            completed: false,
+            createdAt: new Date(),
+          })),
+        ];
+
+    state.updateTask(payload.id, {
+      description: payload.description,
+      status: (payload.status as any) || existing.status,
+      priority: (payload.priority as any) || existing.priority,
+      dueDate: payload.dueDate ? new Date(payload.dueDate) : existing.dueDate,
+      estimatedHours: payload.estimatedHours,
+      tags: payload.tags || existing.tags,
+      progress: payload.persisted && payload.progress !== undefined ? payload.progress : existing.progress,
+      subtasks: mergedSubtasks,
+    });
+    socket.emit('task:bot-updated:ack', { id: payload.id });
+  });
+
+  socket.on('task:bot-deleted', (payload: { id: string }) => {
+    useTaskStore.getState().deleteTask(payload.id);
+  });
+
+  const pushSnapshot = () => {
+    const tasks = useTaskStore.getState().tasks;
+    socket.emit('tasks:sync', tasks.map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      projectId: t.projectId,
+      assignedTo: t.assignedTo,
+      createdBy: t.createdBy,
+    })));
+  };
+  socket.on('connect', pushSnapshot);
+  useTaskStore.subscribe(pushSnapshot);
 });

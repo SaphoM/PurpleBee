@@ -44,6 +44,7 @@ export interface Task {
   projectId?: string;
   collaborators?: TaskCollaborator[];
   sourceChannel?: 'whatsapp' | 'telegram' | 'in-app';
+  createdBy?: string; // user id of whoever created the task — only they may delete it
 }
 
 export interface TaskCollaborator {

@@ -72,6 +72,7 @@ const toTask = (row: DbTask): Task => ({
   actualHours: row.actual_hours || undefined,
   projectId: row.project_id || undefined,
   teamId: row.team_id || undefined,
+  createdBy: row.created_by || undefined,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -171,6 +172,65 @@ export const taskDb = {
       .or(`assigned_to.eq.${userId},created_by.eq.${userId}`);
     if (error) { console.error('[dataService] tasks.deleteAllForUser', error); return false; }
     return true;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// BOT TASKS
+// ═══════════════════════════════════════════════════════════════════════
+// Telegram/WhatsApp "database mode" tasks live in public.bot_tasks (text
+// user/project ids), separate from public.tasks (UUID FKs to profiles).
+// hydrateFromDb merges these in so bot-created tasks survive a refresh
+// and show up on the Tasks page — see taskStore.ts hydrateFromDb.
+
+interface DbBotTask {
+  id: string;
+  user_id: string;
+  project_id: string | null;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  due_date: string | null;
+  estimated_hours: number | null;
+  tags: string[];
+  subtasks: { id: string; title: string; completed: boolean; createdAt: string }[];
+  progress: number;
+  source_channel: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const toTaskFromBot = (row: DbBotTask): Task => ({
+  id: row.id,
+  title: row.title,
+  description: row.description || undefined,
+  status: row.status,
+  priority: row.priority,
+  assignedTo: row.user_id,
+  createdBy: row.user_id,
+  dueDate: row.due_date ? new Date(row.due_date) : undefined,
+  tags: row.tags || [],
+  progress: row.progress ?? 0,
+  estimatedHours: row.estimated_hours || undefined,
+  projectId: row.project_id || undefined,
+  subtasks: (row.subtasks || []).map((s) => ({ ...s, createdAt: new Date(s.createdAt) })),
+  sourceChannel: row.source_channel as Task['sourceChannel'],
+  createdAt: new Date(row.created_at),
+  updatedAt: new Date(row.updated_at),
+});
+
+export const botTaskDb = {
+  /** Fetch bot-created tasks for a user (merged into the main task list on hydrate) */
+  async fetchAllForUser(userId: string, mockMode?: boolean): Promise<Task[] | null> {
+    if (!shouldPersist(mockMode)) return null;
+    const { data, error } = await supabase!
+      .from('bot_tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) { console.error('[dataService] bot_tasks.fetchAllForUser', error); return null; }
+    return (data as DbBotTask[]).map(toTaskFromBot);
   },
 };
 
