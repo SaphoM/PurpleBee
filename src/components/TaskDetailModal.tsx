@@ -1388,6 +1388,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     <img
                       src={assignee.avatar}
                       alt={assignee.name}
+                      title={assignee.name}
                       className="w-6 h-6 rounded-full object-cover flex-shrink-0"
                     />
                   ) : (

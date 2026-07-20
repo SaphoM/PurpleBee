@@ -403,7 +403,7 @@ const MemberDetailModal: React.FC<{
         {/* Avatar */}
         <div className="px-6 -mt-12">
           <div className="relative inline-block">
-            <img src={member.member.avatar} alt={member.member.name} className="w-24 h-24 rounded-2xl border-4 border-white dark:border-slate-800 shadow-lg" />
+            <img src={member.member.avatar} alt={member.member.name} title={member.member.name} className="w-24 h-24 rounded-2xl border-4 border-white dark:border-slate-800 shadow-lg" />
             <span className={clsx(
               'absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-3 border-white dark:border-slate-800',
               member.member.online ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-slate-600'
@@ -1008,7 +1008,7 @@ export const Team: React.FC = () => {
                 {/* Top */}
                 <div className="flex items-start gap-4 mb-4">
                   <div className="relative flex-shrink-0">
-                    <img src={m.member.avatar} alt={m.member.name} className="w-14 h-14 rounded-xl shadow-sm" />
+                    <img src={m.member.avatar} alt={m.member.name} title={m.member.name} className="w-14 h-14 rounded-xl shadow-sm" />
                     <span className={clsx(
                       'absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white dark:border-slate-800',
                       m.member.online ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-slate-600'

@@ -196,6 +196,7 @@ export const Tasks: React.FC = () => {
                 <img
                   src={member.avatar}
                   alt={member.name}
+                  title={member.name}
                   className="w-4 h-4 rounded-full flex-shrink-0"
                 />
                 {member.name.split(' ')[0]}
