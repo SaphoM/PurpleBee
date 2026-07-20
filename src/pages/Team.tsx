@@ -1127,7 +1127,7 @@ export const Team: React.FC = () => {
                   <div className="flex items-center gap-2 mb-2">
                     <div className="flex -space-x-2">
                       {members.slice(0, 3).map((m) => (
-                        <img key={m.member.userId} src={m.member.avatar} alt={m.member.name} className="w-6 h-6 rounded-full border-2 border-gray-50 dark:border-slate-800" />
+                        <img key={m.member.userId} src={m.member.avatar} alt={m.member.name} title={m.member.name} className="w-6 h-6 rounded-full border-2 border-gray-50 dark:border-slate-800 cursor-pointer" />
                       ))}
                       {members.length > 3 && (
                         <span className="w-6 h-6 rounded-full bg-gray-200 dark:bg-slate-700 border-2 border-gray-50 dark:border-slate-800 flex items-center justify-center text-[9px] font-bold text-gray-500 dark:text-slate-400">
