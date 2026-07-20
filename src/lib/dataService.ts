@@ -252,6 +252,8 @@ export const notificationDb = {
     message: string;
     read: boolean;
     actionUrl?: string;
+    taskId?: string;
+    conversationId?: string;
   }, mockMode?: boolean) {
     if (!shouldPersist(mockMode)) return true;
     const { error } = await supabase!.from('notifications').insert({
@@ -262,6 +264,8 @@ export const notificationDb = {
       message: notification.message,
       read: notification.read,
       action_url: notification.actionUrl || null,
+      task_id: notification.taskId || null,
+      conversation_id: notification.conversationId || null,
     });
     if (error) { console.error('[dataService] notifications.insert', error); return false; }
     return true;

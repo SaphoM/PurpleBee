@@ -48,6 +48,7 @@ function notify(notification: {
   title: string;
   message: string;
   actionUrl?: string;
+  taskId?: string;
 }) {
   if (isMockMode()) return;
   notificationDb.insert(
@@ -59,6 +60,7 @@ function notify(notification: {
       message: notification.message,
       read: false,
       actionUrl: notification.actionUrl,
+      taskId: notification.taskId,
     },
     false,
   ).catch(() => {});
@@ -298,7 +300,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         type: 'task-assigned',
         title: 'New task assigned to you',
         message: `${userName} assigned you "${newTask.title}"`,
-        actionUrl: '#tasks',
+        actionUrl: `#tasks?taskId=${newTask.id}`,
+        taskId: newTask.id,
       });
     }
   },
@@ -329,7 +332,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         type: 'task-assigned',
         title: 'Task assigned to you',
         message: `${userName} assigned you "${taskTitle}"`,
-        actionUrl: '#tasks',
+        actionUrl: `#tasks?taskId=${id}`,
+        taskId: id,
       });
     }
 
@@ -347,7 +351,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         type: 'task-completed',
         title: 'Task completed',
         message: `${completerName} completed "${taskTitle}"`,
-        actionUrl: '#tasks',
+        actionUrl: `#tasks?taskId=${id}`,
+        taskId: id,
       });
     }
   },

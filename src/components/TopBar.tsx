@@ -516,15 +516,17 @@ export const TopBar: React.FC = () => {
                                 )}
                                 onClick={() => {
                                   markAsRead(notif.id);
-                                  if (notif.actionUrl) {
-                                    window.location.hash = notif.actionUrl.replace('#', '');
-                                    setShowNotifications(false);
-                                  } else if (notif.conversationId) {
-                                    dockChat(notif.conversationId);
-                                    setShowNotifications(false);
+                                  setShowNotifications(false);
+                                  if (notif.conversationId) {
+                                    // Navigate to Chat page and select the conversation
+                                    import('@stores/chatStore').then(({ useChatStore }) => {
+                                      useChatStore.getState().setActiveConversation(notif.conversationId!);
+                                    });
+                                    window.location.hash = 'chat';
                                   } else if (notif.taskId) {
                                     window.location.hash = `tasks?taskId=${notif.taskId}`;
-                                    setShowNotifications(false);
+                                  } else if (notif.actionUrl) {
+                                    window.location.hash = notif.actionUrl.replace(/^#/, '');
                                   }
                                 }}
                               >
@@ -584,10 +586,12 @@ export const TopBar: React.FC = () => {
                                     )}
                                     {(notif.actionUrl || notif.conversationId || notif.taskId) && (
                                       <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-purple-500 dark:text-purple-400">
-                                        {notif.conversationId && !notif.actionUrl ? (
+                                        {notif.conversationId ? (
                                           <><MessageCircle size={10} /> Open chat</>
                                         ) : notif.taskId ? (
                                           <><Eye size={10} /> View task</>
+                                        ) : notif.actionUrl?.includes('project') ? (
+                                          <><FolderKanban size={10} /> Open project</>
                                         ) : (
                                           <><Eye size={10} /> Open</>
                                         )}
