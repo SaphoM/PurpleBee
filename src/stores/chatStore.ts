@@ -1267,10 +1267,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // Skip our own optimistically-added messages
           if (payload.new.sender_id === currentUserId) return;
 
-          // Only process conversations we have loaded (user is a participant)
-          if (get().messages[convId] === undefined) return;
+          // Only process conversations the user is a participant in
+          if (!get().conversations.some((c) => c.id === convId)) return;
 
-          // Avoid duplicates
+          // Avoid duplicates (only relevant when messages are already loaded)
           if ((get().messages[convId] || []).some((m) => m.id === msgId)) return;
 
           const isActive = activeConversationId === convId;

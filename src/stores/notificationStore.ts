@@ -380,6 +380,8 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       notifications: state.notifications.map((n) => ({ ...n, read: true })),
       unreadCount: 0,
     }));
+    const userId = get().notifications[0]?.userId;
+    if (userId) notificationDb.markAllRead(userId, isMockMode());
   },
 
   markGroupAsRead: (type) => {
@@ -395,6 +397,8 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   clearAll: () => {
+    const userId = get().notifications[0]?.userId;
+    if (userId) notificationDb.deleteAll(userId, isMockMode());
     set({ notifications: [], unreadCount: 0 });
   },
 

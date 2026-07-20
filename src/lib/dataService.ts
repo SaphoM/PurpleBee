@@ -273,6 +273,24 @@ export const notificationDb = {
     if (error) { console.error('[dataService] notifications.markRead', error); return false; }
     return true;
   },
+
+  async markAllRead(userId: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!
+      .from('notifications')
+      .update({ read: true })
+      .eq('user_id', userId)
+      .eq('read', false);
+    if (error) { console.error('[dataService] notifications.markAllRead', error); return false; }
+    return true;
+  },
+
+  async deleteAll(userId: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('notifications').delete().eq('user_id', userId);
+    if (error) { console.error('[dataService] notifications.deleteAll', error); return false; }
+    return true;
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════
