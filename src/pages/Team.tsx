@@ -565,19 +565,24 @@ const ROLES = [
 
 interface EditMemberModalProps {
   member: { id: string; name: string; title: string; department: string; role: string };
+  availableDepartments: string[];
   onClose: () => void;
   onSave: (id: string, updates: { name: string; title: string; department: string; role: string }) => void;
 }
-const EditMemberModal: React.FC<EditMemberModalProps> = ({ member, onClose, onSave }) => {
+const EditMemberModal: React.FC<EditMemberModalProps> = ({ member, availableDepartments, onClose, onSave }) => {
   const [name, setName] = useState(member.name);
   const [title, setTitle] = useState(member.title);
-  const [department, setDepartment] = useState(member.department);
+  const isCustom = !availableDepartments.includes(member.department);
+  const [department, setDepartment] = useState(isCustom ? '__custom__' : member.department);
+  const [customDept, setCustomDept] = useState(isCustom ? member.department : '');
   const [role, setRole] = useState(member.role);
+
+  const effectiveDepartment = department === '__custom__' ? customDept.trim() : department;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(member.id, { name: name.trim(), title: title.trim(), department: department.trim(), role });
+    onSave(member.id, { name: name.trim(), title: title.trim(), department: effectiveDepartment || 'General', role });
     onClose();
   };
 
@@ -628,18 +633,36 @@ const EditMemberModal: React.FC<EditMemberModalProps> = ({ member, onClose, onSa
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Department</label>
-              <input
-                type="text"
+              <select
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
-                placeholder="e.g. Engineering"
                 className={clsx(
                   'w-full px-3 py-2.5 rounded-xl text-sm border',
                   'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
-                  'border-gray-200 dark:border-slate-600 placeholder-gray-400 dark:placeholder-slate-500',
+                  'border-gray-200 dark:border-slate-600',
                   'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400'
                 )}
-              />
+              >
+                {availableDepartments.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+                <option value="__custom__">Other…</option>
+              </select>
+              {department === '__custom__' && (
+                <input
+                  autoFocus
+                  type="text"
+                  value={customDept}
+                  onChange={(e) => setCustomDept(e.target.value)}
+                  placeholder="Enter department name"
+                  className={clsx(
+                    'mt-2 w-full px-3 py-2.5 rounded-xl text-sm border',
+                    'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                    'border-gray-200 dark:border-slate-600 placeholder-gray-400 dark:placeholder-slate-500',
+                    'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400'
+                  )}
+                />
+              )}
             </div>
           </div>
           {/* Role selector */}
@@ -1175,6 +1198,7 @@ export const Team: React.FC = () => {
               department: md.department,
               role: md.member.role === 'admin' ? 'admin' : (assignableMembers.find((a) => a.id === md.member.userId)?.role ?? 'user'),
             }}
+            availableDepartments={Array.from(new Set([...DEPARTMENTS, ...membersData.map((m) => m.department)]))}
             onClose={() => setEditMemberId(null)}
             onSave={(id, updates) => updateMember(id, updates as any)}
           />
