@@ -518,13 +518,17 @@ export const TopBar: React.FC = () => {
                                   markAsRead(notif.id);
                                   setShowNotifications(false);
                                   if (notif.conversationId) {
-                                    // Navigate to Chat page and select the exact conversation.
-                                    // Chat.tsx reacts to activeConversationId — opens the thread
-                                    // and scrolls to the newest message automatically.
+                                    // Open the exact conversation as a docked mini-chat window.
+                                    // The docked window opens expanded and auto-scrolls to the
+                                    // newest message (the one this notification is about), and
+                                    // we clear that conversation's own unread badge.
+                                    const convId = notif.conversationId;
+                                    dockChat(convId);
                                     import('@stores/chatStore').then(({ useChatStore }) => {
-                                      useChatStore.getState().setActiveConversation(notif.conversationId!);
+                                      const cs = useChatStore.getState();
+                                      cs.setActiveConversation(convId);
+                                      cs.markAsRead(convId);
                                     });
-                                    window.location.hash = 'chat';
                                   } else if (notif.taskId) {
                                     window.location.hash = `tasks?taskId=${notif.taskId}`;
                                   } else if (notif.actionUrl) {
