@@ -729,7 +729,7 @@ export const SettingsPage: React.FC = () => {
     setTelegramConnecting(true);
     try {
       const botToken = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
-      const res = await fetch('http://localhost:3000/api/integrations/telegram/verify', {
+      const res = await fetch(`${API_URL}/api/integrations/telegram/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ botToken }),
