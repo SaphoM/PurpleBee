@@ -45,6 +45,7 @@ export interface Task {
   teamId?: string;
   projectId?: string;
   collaborators?: TaskCollaborator[];
+  sourceChannel?: 'whatsapp' | 'telegram' | 'in-app';
 }
 
 export interface TaskCollaborator {
@@ -188,6 +189,7 @@ export interface Notification {
   read: boolean;
   createdAt: Date;
   actionUrl?: string;
+  channel?: 'whatsapp' | 'telegram';
 }
 
 // Integration Types
@@ -306,7 +308,7 @@ export interface UIState {
 }
 
 // Chat Types
-export type ConversationType = 'task' | 'dm' | 'team' | 'announcement';
+export type ConversationType = 'task' | 'dm' | 'team' | 'announcement' | 'telegram';
 
 export interface TaskRef {
   id: string;

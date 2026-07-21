@@ -111,6 +111,12 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 | Kanban task completed | `task-completed` | Task creator |
 | Chat message sent (DM or channel) | `mention` | All other participants |
 
+### Purple Bee Bot (in-app task assistant)
+- A floating **Purple Bee Bot** assistant (bottom-right) runs a guided **Create / Edit / Delete Task** flow entirely in-app — pick a project (top-3 quick-pick + "show more"), enter title/subtasks/description, and the task is created via the normal `taskStore.addTask` path.
+- Bot-originated tasks (including future Telegram "database mode" tasks) are stored in a separate `public.bot_tasks` table (TEXT `user_id` matching the app's `user-1..user-5` identities, disjoint UUID id-space from `public.tasks`) and are concatenated into the store alongside team tasks on hydration (`botTaskDb.fetchAllForUser`). Project membership for the bot lives in `bot_projects` / `bot_project_members`.
+- **Creator-only deletion**: a task's `createdBy` is stamped on creation; only the creator may delete it (`canDelete` in the task detail modal; `deleteTask(id, requestingUserId)` returns `false` and no-ops for non-creators). Legacy/unattributed tasks remain deletable by anyone.
+- **Deferred — Telegram/WhatsApp channel server**: the frontend bot + `bot_tasks` storage are live, but the standalone Telegram bot **server** (`backend/`, socket.io transport, `telegram-notify` edge function, `chatbot_sessions`/`chatbot_messages` logging tables) is **not yet wired into staging's backend** — it is an architectural fork of the existing livekit token backend and requires a bot token, webhook, and its own deployment before the Telegram channel is functional. The `chatbot_messages` migration is intentionally left unapplied until that server lands.
+
 ### Sample Data Toggle
 - **ON** — all stores use in-memory mock data; DB is never read or written
 - **OFF** — all stores hydrate from Supabase on login; mock data is cleared

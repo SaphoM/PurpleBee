@@ -638,6 +638,16 @@ export const TopBar: React.FC = () => {
                                     <span className="text-[10px] text-gray-400 dark:text-slate-500">
                                       {relativeTime(notif.createdAt)}
                                     </span>
+                                    {notif.channel === 'telegram' && (
+                                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
+                                        ✈ Telegram
+                                      </span>
+                                    )}
+                                    {notif.channel === 'whatsapp' && (
+                                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+                                        📱 WhatsApp
+                                      </span>
+                                    )}
                                     {!notif.read && (
                                       <span className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0" />
                                     )}

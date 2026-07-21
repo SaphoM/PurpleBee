@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
 import { v4 as uuidv4 } from 'uuid';
 import { X, Plus, Trash2, CalendarDays, Clock, Tag, FolderKanban, ChevronDown } from 'lucide-react';
@@ -49,6 +49,16 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const [showTitleDropdown, setShowTitleDropdown] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Top 3 projects by most recently updated (filtered by user assignment for members)
+  const top3Projects = useMemo(() => {
+    const userProjects = canManageTeam()
+      ? projects
+      : projects.filter((p) => p.tasks.some((t) => t.assignedTo === user?.id));
+    return [...userProjects]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 3);
+  }, [projects, user, canManageTeam]);
 
   // Project task suggestions — admins/managers see all, members see their projects
   const allProjectTasks = getAllProjectTaskTitles();
@@ -302,6 +312,40 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                   'rounded-xl shadow-xl max-h-64 overflow-y-auto'
                 )}
               >
+                {/* Top 3 projects quick-pick */}
+                {top3Projects.length > 0 && (
+                  <div className="px-3 py-2 border-b border-gray-100 dark:border-slate-700">
+                    <p className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <FolderKanban size={10} /> Top Projects
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {top3Projects.map((proj) => (
+                        <button
+                          key={proj.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedProjectId(proj.id);
+                            setShowTitleDropdown(false);
+                          }}
+                          className={clsx(
+                            'inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-colors',
+                            selectedProjectId === proj.id
+                              ? 'bg-purple-200 text-purple-800 dark:bg-purple-800/50 dark:text-purple-200'
+                              : 'bg-gray-100 text-gray-600 hover:bg-purple-100 hover:text-purple-700 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-purple-900/30 dark:hover:text-purple-300'
+                          )}
+                        >
+                          <span>{proj.icon}</span>
+                          {proj.name}
+                        </button>
+                      ))}
+                      {projects.length > 3 && (
+                        <span className="inline-flex items-center px-2 py-1 text-[10px] text-gray-400 dark:text-slate-500">
+                          +{projects.length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="px-3 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
                   <p className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
                     <FolderKanban size={10} /> Project Tasks

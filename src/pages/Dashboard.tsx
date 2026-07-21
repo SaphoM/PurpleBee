@@ -75,13 +75,19 @@ export const Dashboard: React.FC = () => {
 
   const hasTasks = tasks.length > 0;
 
-  // Derive priority distribution from actual tasks
-  const priorityDistribution = hasTasks
+  // Active tasks — excludes Completed (and anything else outside the 3
+  // working columns) so the dashboard reflects what's still in flight,
+  // not historical/finished work.
+  const activeTasks = tasks.filter((t) => t.status === 'todo' || t.status === 'in-progress' || t.status === 'review');
+  const allCaughtUp = hasTasks && activeTasks.length === 0;
+
+  // Derive priority distribution from active tasks only
+  const priorityDistribution = activeTasks.length > 0
     ? [
-        { name: 'Urgent', value: tasks.filter((t) => t.priority === 'urgent').length, fill: '#ef4444' },
-        { name: 'High', value: tasks.filter((t) => t.priority === 'high').length, fill: '#f97316' },
-        { name: 'Medium', value: tasks.filter((t) => t.priority === 'medium').length, fill: '#eab308' },
-        { name: 'Low', value: tasks.filter((t) => t.priority === 'low').length, fill: '#6366f1' },
+        { name: 'Urgent', value: activeTasks.filter((t) => t.priority === 'urgent').length, fill: '#ef4444' },
+        { name: 'High', value: activeTasks.filter((t) => t.priority === 'high').length, fill: '#f97316' },
+        { name: 'Medium', value: activeTasks.filter((t) => t.priority === 'medium').length, fill: '#eab308' },
+        { name: 'Low', value: activeTasks.filter((t) => t.priority === 'low').length, fill: '#6366f1' },
       ].filter((d) => d.value > 0)
     : [];
 
@@ -333,6 +339,11 @@ export const Dashboard: React.FC = () => {
                   ))}
                 </div>
               </>
+            ) : allCaughtUp ? (
+              <div className="flex flex-col items-center justify-center h-[300px] text-gray-400 dark:text-slate-500">
+                <CheckCircle size={32} className="mb-2 opacity-40" />
+                <p className="text-sm font-medium">You're all caught up! No active tasks right now.</p>
+              </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-[300px] text-gray-400 dark:text-slate-500">
                 <AlertCircle size={32} className="mb-2 opacity-40" />

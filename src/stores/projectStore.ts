@@ -717,3 +717,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({ projects: mapped });
   },
 }));
+
+// Push a live project snapshot to the backend so the WhatsApp/Telegram bot
+// can show real projects (never hardcoded/hallucinated ones).
+import('@/lib/botSocket').then(({ getBotSocket }) => {
+  const socket = getBotSocket();
+  const pushSnapshot = () => {
+    const projects = useProjectStore.getState().projects;
+    socket.emit('projects:sync', projects.map((p) => ({
+      id: p.id,
+      name: p.name,
+      icon: p.icon,
+      updatedAt: new Date(p.updatedAt).toISOString(),
+    })));
+  };
+  socket.on('connect', pushSnapshot);
+  useProjectStore.subscribe(pushSnapshot);
+});
