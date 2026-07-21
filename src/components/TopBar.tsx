@@ -42,6 +42,44 @@ const relativeTime = (date: Date): string => {
   return `${days}d ago`;
 };
 
+// ── Resolve which conversation a chat notification refers to ──────────────
+// New notifications carry conversationId directly. Older ones (created before
+// conversationId was persisted) have it null — so we recover the target from
+// the title/message by matching the sender or channel name against the user's
+// loaded conversations. Returns a conversation id or null.
+const resolveConversationId = (
+  notif: Notification,
+  conversations: { id: string; type: string; name: string; participants: { userId: string; name: string }[] }[],
+  currentUserId: string,
+): string | null => {
+  if (notif.conversationId) return notif.conversationId;
+
+  const title = notif.title || '';
+  let name: string | null = null;
+  let m: RegExpMatchArray | null;
+  if ((m = title.match(/^New message from (.+)$/))) name = m[1];
+  else if ((m = title.match(/^Message sent to (.+)$/))) name = m[1];
+  else if ((m = title.match(/^New message in (.+)$/))) name = m[1];
+  else if ((m = title.match(/mentioned you in #?(.+?):/))) name = m[1];
+  // Fallback: notification message is formatted "<Sender>: <preview>"
+  if (!name) {
+    const mm = (notif.message || '').match(/^([^:]+):/);
+    if (mm) name = mm[1].trim();
+  }
+  if (!name) return null;
+  const target = name.trim();
+
+  // Prefer a channel/team conversation whose name matches
+  const channel = conversations.find((c) => c.type !== 'dm' && c.name === target);
+  if (channel) return channel.id;
+
+  // Otherwise a DM whose other participant's name matches
+  const dm = conversations.find(
+    (c) => c.type === 'dm' && c.participants.some((p) => p.userId !== currentUserId && p.name === target),
+  );
+  return dm ? dm.id : null;
+};
+
 // ── Group order for notification panel ─────────────────────────────────
 const groupOrder = ['Tasks', 'Social', 'AI', 'System'];
 
@@ -55,7 +93,6 @@ export const TopBar: React.FC = () => {
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const setGlobalSearchQuery = useUIStore((s) => s.setGlobalSearchQuery);
   const keepMockData = useSettingsStore((s) => s.keepMockData);
-  const dockChat = useChatStore((s) => s.dockChat);
   const tasks = useTaskStore((s) => s.tasks);
   const projects = useProjectStore((s) => s.projects);
   const teamMembersChat = useChatStore((s) => s.teamMembers);
@@ -517,19 +554,26 @@ export const TopBar: React.FC = () => {
                                 onClick={() => {
                                   markAsRead(notif.id);
                                   setShowNotifications(false);
-                                  if (notif.conversationId) {
-                                    // Open the exact conversation as a docked mini-chat window.
-                                    // The docked window opens expanded and auto-scrolls to the
-                                    // newest message (the one this notification is about), and
-                                    // we clear that conversation's own unread badge.
-                                    const convId = notif.conversationId;
-                                    dockChat(convId);
-                                    import('@stores/chatStore').then(({ useChatStore }) => {
-                                      const cs = useChatStore.getState();
-                                      cs.setActiveConversation(convId);
-                                      cs.markAsRead(convId);
-                                    });
-                                  } else if (notif.taskId) {
+                                  // Chat notifications: ALWAYS open a docked mini-chat window on
+                                  // the current page — never navigate. Resolve the conversation
+                                  // from conversationId, or (for older rows where it's null) from
+                                  // the sender/channel name in the title.
+                                  const isChat = notif.type === 'mention' || !!notif.conversationId;
+                                  if (isChat) {
+                                    const chat = useChatStore.getState();
+                                    const convId = resolveConversationId(
+                                      notif,
+                                      chat.conversations as any,
+                                      chat.currentUserId || '',
+                                    );
+                                    if (convId) {
+                                      chat.dockChat(convId);
+                                      chat.setActiveConversation(convId);
+                                      chat.markAsRead(convId);
+                                    }
+                                    return;
+                                  }
+                                  if (notif.taskId) {
                                     window.location.hash = `tasks?taskId=${notif.taskId}`;
                                   } else if (notif.actionUrl) {
                                     // Deep-link to a specific project when the actionUrl carries a projectId
