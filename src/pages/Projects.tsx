@@ -82,6 +82,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [selectedTasks, setSelectedTasks] = useState<Set<number>>(new Set());
   const [customTaskInput, setCustomTaskInput] = useState('');
+  const [customTaskDescription, setCustomTaskDescription] = useState('');
   const [customTasks, setCustomTasks] = useState<{ title: string; description: string; priority: 'low' | 'medium' | 'high' | 'urgent'; estimatedHours: number; tags: string[] }[]>([]);
   const [assignments, setAssignments] = useState<Record<number, string>>({});
 
@@ -95,6 +96,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     setSelectedTemplate(null);
     setSelectedTasks(new Set());
     setCustomTaskInput('');
+    setCustomTaskDescription('');
     setCustomTasks([]);
     setAssignments({});
   };
@@ -121,9 +123,10 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     if (!customTaskInput.trim()) return;
     setCustomTasks([
       ...customTasks,
-      { title: customTaskInput.trim(), description: '', priority: 'medium', estimatedHours: 4, tags: [] },
+      { title: customTaskInput.trim(), description: customTaskDescription.trim(), priority: 'medium', estimatedHours: 4, tags: [] },
     ]);
     setCustomTaskInput('');
+    setCustomTaskDescription('');
   };
 
   const removeCustomTask = (i: number) => {
@@ -432,7 +435,10 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                     type="text"
                     value={customTaskInput}
                     onChange={(e) => setCustomTaskInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); addCustomTask(); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); addCustomTask(); }
+                      if (e.key === 'Escape') setCustomTaskDescription('');
+                    }}
                     placeholder="Type a task title and press Enter..."
                     className={clsx(
                       'flex-1 rounded-lg px-4 py-2.5 text-sm',
@@ -448,15 +454,37 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                     <Plus size={16} />
                   </button>
                 </div>
+                {/* Description field — shown once a title has been typed */}
+                {customTaskInput.trim() && (
+                  <div className="mt-2">
+                    <textarea
+                      value={customTaskDescription}
+                      onChange={(e) => setCustomTaskDescription(e.target.value)}
+                      rows={2}
+                      placeholder="Task description (optional)…"
+                      className={clsx(
+                        'w-full rounded-lg px-4 py-2.5 text-sm resize-none',
+                        'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
+                        'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                        'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                      )}
+                    />
+                  </div>
+                )}
                 {customTasks.length > 0 && (
                   <div className="mt-2 space-y-1.5">
                     {customTasks.map((ct, i) => (
-                      <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
-                        <div className="w-5 h-5 rounded-md bg-purple-600 text-white flex items-center justify-center flex-shrink-0">
+                      <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+                        <div className="w-5 h-5 rounded-md bg-purple-600 text-white flex items-center justify-center flex-shrink-0 mt-0.5">
                           <Check size={12} />
                         </div>
-                        <span className="flex-1 text-sm text-gray-800 dark:text-slate-200">{ct.title}</span>
-                        <button onClick={() => removeCustomTask(i)} className="text-gray-400 hover:text-red-500 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm text-gray-800 dark:text-slate-200">{ct.title}</span>
+                          {ct.description && (
+                            <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{ct.description}</p>
+                          )}
+                        </div>
+                        <button onClick={() => removeCustomTask(i)} className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0">
                           <Trash2 size={14} />
                         </button>
                       </div>

@@ -32,6 +32,17 @@
         "dev:frontend"
       ],
       "port": 5173
+    },
+    {
+      "name": "beehive-backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/saphomaqhwazima/Documents/X SPARK/Honey Com",
+        "run",
+        "start"
+      ],
+      "port": 3001
     }
   ]
 }
