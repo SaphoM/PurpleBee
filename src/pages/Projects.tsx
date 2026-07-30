@@ -30,6 +30,7 @@ import {
   Pencil,
   ArrowUp,
   ArrowDown,
+  ChevronDown,
 } from 'lucide-react';
 import { useProjectStore, projectTemplates, ProjectTask } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
@@ -1503,6 +1504,24 @@ export const Projects: React.FC = () => {
     try { localStorage.setItem(sortStorageKey, JSON.stringify({ sortBy, sortDir })); } catch {}
   }, [sortBy, sortDir, sortStorageKey]);
 
+  const sortLabels: Record<ProjectSortBy, string> = {
+    custom: 'Custom Order',
+    createdAt: 'Date Created',
+    updatedAt: 'Date Updated',
+    name: 'Name',
+  };
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
+        setShowSortMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // ── Drag-to-reorder state ──────────────────────────────────────────────
   const storageKey = `project-order-${currentUserId}`;
   const [projectOrder, setProjectOrder] = useState<string[]>(() => {
@@ -1671,21 +1690,50 @@ export const Projects: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as ProjectSortBy)}
-              className={clsx(
-                'rounded-xl px-3 py-2 text-sm font-medium',
-                'bg-white border border-gray-200 text-gray-700',
-                'dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200',
-                'focus:outline-none focus:border-purple-500 cursor-pointer'
+            <div ref={sortMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSortMenu((v) => !v)}
+                className={clsx(
+                  'flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                  'bg-white border border-gray-200 text-gray-700',
+                  'dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200',
+                  'hover:border-purple-400 dark:hover:border-purple-500',
+                  showSortMenu && 'border-purple-500 dark:border-purple-500'
+                )}
+              >
+                {sortLabels[sortBy]}
+                <ChevronDown size={14} className={clsx('transition-transform', showSortMenu && 'rotate-180')} />
+              </button>
+
+              {showSortMenu && (
+                <div className={clsx(
+                  'absolute top-full left-0 mt-2 w-44 rounded-xl shadow-xl overflow-hidden z-50 py-1',
+                  'bg-white border border-gray-200',
+                  'dark:bg-slate-800 dark:border-slate-700'
+                )}>
+                  {(Object.keys(sortLabels) as ProjectSortBy[]).map((key) => {
+                    const isSelected = sortBy === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => { setSortBy(key); setShowSortMenu(false); }}
+                        className={clsx(
+                          'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
+                          isSelected
+                            ? 'bg-purple-50 text-purple-700 font-semibold dark:bg-purple-900/20 dark:text-purple-300'
+                            : 'text-gray-700 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-700/50'
+                        )}
+                      >
+                        <Check size={14} className={clsx(isSelected ? 'opacity-100' : 'opacity-0', 'flex-shrink-0')} />
+                        {sortLabels[key]}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            >
-              <option value="custom">Custom Order</option>
-              <option value="createdAt">Date Created</option>
-              <option value="updatedAt">Date Updated</option>
-              <option value="name">Name</option>
-            </select>
+            </div>
 
             {sortBy !== 'custom' && (
               <button
