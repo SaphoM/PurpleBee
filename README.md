@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.9.0
+# PurpleBee - AI-Powered Productivity Dashboard · v1.10.0
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -163,7 +163,7 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 | Realtime | Supabase Realtime (`postgres_changes` · Broadcast · Presence) |
 | Hosting | Render (static site, staging branch auto-deploys) |
 | Utilities | clsx, uuid, date-fns |
-| Version | 1.9.0 — sidebar version badge reads from `package.json` at build time |
+| Version | 1.10.0 — sidebar version badge reads from `package.json` at build time |
 
 ## Auth Architecture
 
