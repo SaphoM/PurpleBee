@@ -28,6 +28,8 @@ import {
   Cloud,
   Headphones,
   Pencil,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { useProjectStore, projectTemplates, ProjectTask } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
@@ -1488,6 +1490,19 @@ export const Projects: React.FC = () => {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
   };
 
+  // ── Sort state — persisted per user; 'custom' defers to drag order ─────
+  const sortStorageKey = `project-sort-${currentUserId}`;
+  type ProjectSortBy = 'custom' | 'createdAt' | 'updatedAt' | 'name';
+  const [sortBy, setSortBy] = useState<ProjectSortBy>(() => {
+    try { return JSON.parse(localStorage.getItem(sortStorageKey) || 'null')?.sortBy || 'custom'; } catch { return 'custom'; }
+  });
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => {
+    try { return JSON.parse(localStorage.getItem(sortStorageKey) || 'null')?.sortDir || 'desc'; } catch { return 'desc'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(sortStorageKey, JSON.stringify({ sortBy, sortDir })); } catch {}
+  }, [sortBy, sortDir, sortStorageKey]);
+
   // ── Drag-to-reorder state ──────────────────────────────────────────────
   const storageKey = `project-order-${currentUserId}`;
   const [projectOrder, setProjectOrder] = useState<string[]>(() => {
@@ -1582,11 +1597,18 @@ export const Projects: React.FC = () => {
       })
     : projects;
 
-  // Apply user's custom order to the (possibly filtered) list
+  // Apply the selected sort to the (possibly filtered) list.
+  // 'custom' defers to the user's drag order; date/name sorts respect sortDir.
   const orderedProjects = [...filteredProjects].sort((a, b) => {
-    const ai = projectOrder.indexOf(a.id);
-    const bi = projectOrder.indexOf(b.id);
-    return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+    if (sortBy === 'custom') {
+      const ai = projectOrder.indexOf(a.id);
+      const bi = projectOrder.indexOf(b.id);
+      return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+    }
+    const cmp = sortBy === 'name'
+      ? a.name.localeCompare(b.name)
+      : new Date(a[sortBy]).getTime() - new Date(b[sortBy]).getTime();
+    return sortDir === 'asc' ? cmp : -cmp;
   });
 
   if (selectedProjectId) {
@@ -1619,32 +1641,66 @@ export const Projects: React.FC = () => {
         )}
       </div>
 
-      {/* Search bar — synced with TopBar global search */}
+      {/* Search + sort — search synced with TopBar global search */}
       {projects.length > 0 && (
-        <div className="relative max-w-sm">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
-          <input
-            type="text"
-            value={globalSearchQuery}
-            onChange={(e) => setGlobalSearchQuery(e.target.value)}
-            placeholder="Search projects..."
-            className={clsx(
-              'w-full pl-9 pr-9 py-2 text-sm rounded-xl border',
-              'bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100',
-              'border-gray-200 dark:border-slate-700',
-              'placeholder-gray-400 dark:placeholder-slate-500',
-              'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 dark:focus:border-purple-500',
-              'transition-all'
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative max-w-sm w-full sm:flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+            <input
+              type="text"
+              value={globalSearchQuery}
+              onChange={(e) => setGlobalSearchQuery(e.target.value)}
+              placeholder="Search projects..."
+              className={clsx(
+                'w-full pl-9 pr-9 py-2 text-sm rounded-xl border',
+                'bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100',
+                'border-gray-200 dark:border-slate-700',
+                'placeholder-gray-400 dark:placeholder-slate-500',
+                'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 dark:focus:border-purple-500',
+                'transition-all'
+              )}
+            />
+            {globalSearchQuery && (
+              <button
+                onClick={() => setGlobalSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300"
+              >
+                <X size={14} />
+              </button>
             )}
-          />
-          {globalSearchQuery && (
-            <button
-              onClick={() => setGlobalSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300"
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as ProjectSortBy)}
+              className={clsx(
+                'rounded-xl px-3 py-2 text-sm font-medium',
+                'bg-white border border-gray-200 text-gray-700',
+                'dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200',
+                'focus:outline-none focus:border-purple-500 cursor-pointer'
+              )}
             >
-              <X size={14} />
-            </button>
-          )}
+              <option value="custom">Custom Order</option>
+              <option value="createdAt">Date Created</option>
+              <option value="updatedAt">Date Updated</option>
+              <option value="name">Name</option>
+            </select>
+
+            {sortBy !== 'custom' && (
+              <button
+                onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+                title={sortDir === 'asc' ? 'Ascending — click for descending' : 'Descending — click for ascending'}
+                className={clsx(
+                  'p-2 rounded-xl border transition-colors',
+                  'bg-white border-gray-200 text-gray-600 hover:border-purple-400 hover:text-purple-600',
+                  'dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:border-purple-500 dark:hover:text-purple-400'
+                )}
+              >
+                {sortDir === 'asc' ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1687,7 +1743,7 @@ export const Projects: React.FC = () => {
             return (
               <div
                 key={project.id}
-                draggable
+                draggable={sortBy === 'custom'}
                 onDragStart={(e) => handleDragStart(e, project.id)}
                 onDragOver={(e) => handleDragOver(e, project.id)}
                 onDrop={(e) => handleDrop(e, project.id)}
@@ -1700,7 +1756,8 @@ export const Projects: React.FC = () => {
                 onTouchEnd={cancelLongPress}
                 onTouchMove={cancelLongPress}
                 className={clsx(
-                  'relative rounded-2xl border text-left transition-all duration-150 group cursor-grab active:cursor-grabbing',
+                  'relative rounded-2xl border text-left transition-all duration-150 group',
+                  sortBy === 'custom' && 'cursor-grab active:cursor-grabbing',
                   isHighlighted
                     ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/40 shadow-lg shadow-amber-500/10'
                     : 'bg-white dark:bg-slate-800/50',
@@ -1711,9 +1768,11 @@ export const Projects: React.FC = () => {
                 )}
               >
                 {/* Grip handle — visual affordance only; dragging is handled by the card div */}
-                <div className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 dark:text-slate-600 z-10 select-none pointer-events-none">
-                  <GripVertical size={16} />
-                </div>
+                {sortBy === 'custom' && (
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 dark:text-slate-600 z-10 select-none pointer-events-none">
+                    <GripVertical size={16} />
+                  </div>
+                )}
               <button
                 onClick={() => { if (didDragRef.current) return; if (longPressTriggered.current) { longPressTriggered.current = false; return; } setSelectedProjectId(project.id); }}
                 className="w-full p-5 pl-7 text-left cursor-inherit"
