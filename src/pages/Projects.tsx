@@ -32,7 +32,7 @@ import {
   ArrowDown,
   ChevronDown,
 } from 'lucide-react';
-import { useProjectStore, projectTemplates, ProjectTask } from '@stores/projectStore';
+import { useProjectStore, projectTemplates, ProjectTask, Project } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useNotificationStore } from '@stores/notificationStore';
@@ -1493,7 +1493,7 @@ export const Projects: React.FC = () => {
 
   // ── Sort state — persisted per user; 'custom' defers to drag order ─────
   const sortStorageKey = `project-sort-${currentUserId}`;
-  type ProjectSortBy = 'custom' | 'createdAt' | 'updatedAt' | 'name';
+  type ProjectSortBy = 'custom' | 'highlighted' | 'createdAt' | 'updatedAt' | 'name';
   const [sortBy, setSortBy] = useState<ProjectSortBy>(() => {
     try { return JSON.parse(localStorage.getItem(sortStorageKey) || 'null')?.sortBy || 'custom'; } catch { return 'custom'; }
   });
@@ -1506,6 +1506,7 @@ export const Projects: React.FC = () => {
 
   const sortLabels: Record<ProjectSortBy, string> = {
     custom: 'Custom Order',
+    highlighted: 'Highlighted First',
     createdAt: 'Date Created',
     updatedAt: 'Date Updated',
     name: 'Name',
@@ -1617,12 +1618,20 @@ export const Projects: React.FC = () => {
     : projects;
 
   // Apply the selected sort to the (possibly filtered) list.
-  // 'custom' defers to the user's drag order; date/name sorts respect sortDir.
+  // 'custom' defers to the user's drag order; 'highlighted' pins highlighted
+  // projects to the top (custom order as tie-breaker within each group);
+  // date/name sorts respect sortDir.
+  const customOrderCompare = (a: Project, b: Project) => {
+    const ai = projectOrder.indexOf(a.id);
+    const bi = projectOrder.indexOf(b.id);
+    return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+  };
   const orderedProjects = [...filteredProjects].sort((a, b) => {
-    if (sortBy === 'custom') {
-      const ai = projectOrder.indexOf(a.id);
-      const bi = projectOrder.indexOf(b.id);
-      return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+    if (sortBy === 'custom') return customOrderCompare(a, b);
+    if (sortBy === 'highlighted') {
+      const ah = highlightedProjects.has(a.id) ? 0 : 1;
+      const bh = highlightedProjects.has(b.id) ? 0 : 1;
+      return ah !== bh ? ah - bh : customOrderCompare(a, b);
     }
     const cmp = sortBy === 'name'
       ? a.name.localeCompare(b.name)
@@ -1735,7 +1744,7 @@ export const Projects: React.FC = () => {
               )}
             </div>
 
-            {sortBy !== 'custom' && (
+            {sortBy !== 'custom' && sortBy !== 'highlighted' && (
               <button
                 onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
                 title={sortDir === 'asc' ? 'Ascending — click for descending' : 'Descending — click for ascending'}
