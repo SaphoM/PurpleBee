@@ -231,7 +231,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
 
       const projectName = name.trim();
 
-      createProject({
+      const projectId = createProject({
         name: projectName,
         description: description.trim(),
         templateId: selectedTemplate || 'custom',
@@ -244,7 +244,9 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
         links: refLinks.length > 0 ? refLinks : undefined,
       });
 
-      // Send project-invite notifications to each assigned member
+      // Members with a task assigned to them get the richer "assigned you N
+      // tasks" notification; every other team member still gets a plainer
+      // "new project" announcement so nobody misses that it was created.
       const assignedMembers = new Map<string, number>(); // userId → task count
       taskList.forEach((t) => {
         if (t.assignedTo && t.assignedTo !== user.id) {
@@ -259,9 +261,22 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
           title: 'Added to project',
           message: `${user.name} created "${projectName}" and assigned you ${taskCount} task${taskCount > 1 ? 's' : ''}`,
           read: false,
-          actionUrl: '#projects',
+          actionUrl: `#projects?projectId=${projectId}`,
         });
       });
+
+      assignableMembers
+        .filter((m) => m.id !== user.id && !assignedMembers.has(m.id))
+        .forEach((member) => {
+          addNotification({
+            userId: member.id,
+            type: 'project-updated',
+            title: 'New project',
+            message: `${user.name} created a new project — "${projectName}"`,
+            read: false,
+            actionUrl: `#projects?projectId=${projectId}`,
+          });
+        });
     } catch (err) {
       console.error('[Projects] handleCreate error:', err);
     } finally {
