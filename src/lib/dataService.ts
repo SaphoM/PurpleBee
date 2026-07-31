@@ -98,6 +98,8 @@ const toDbInsert = (task: Task, createdBy?: string) => ({
   project_id: task.projectId || null,
   team_id: task.teamId || null,
   created_by: createdBy || task.createdBy || null,
+  links: task.links && task.links.length > 0 ? task.links : null,
+  attachments: task.attachments && task.attachments.length > 0 ? task.attachments : null,
 });
 
 // ── Subtask persistence ────────────────────────────────────────────────────────
