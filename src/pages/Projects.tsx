@@ -63,12 +63,17 @@ const getTemplateIcon = (templateId: string, size: number = 24) => {
 };
 
 /** Renders a project's uploaded company logo (data URL stored in project.icon)
- *  when present, falling back to the template's outline icon otherwise. */
-const renderProjectIcon = (project: { icon: string; templateId: string }, size: number = 24) => {
-  if (project.icon && project.icon.startsWith('data:image')) {
-    return <img src={project.icon} alt="" className="w-full h-full object-cover rounded-lg" />;
-  }
-  return getTemplateIcon(project.templateId, size);
+ *  as a circular badge, or null when no logo was uploaded. Shown alongside
+ *  (not instead of) the template's outline icon. */
+const renderProjectLogo = (project: { icon: string }, sizeClass: string = 'w-10 h-10') => {
+  if (!project.icon || !project.icon.startsWith('data:image')) return null;
+  return (
+    <img
+      src={project.icon}
+      alt="Company logo"
+      className={clsx(sizeClass, 'rounded-full object-cover border-2 border-white dark:border-slate-800 shadow-sm flex-shrink-0')}
+    />
+  );
 };
 
 // ── Status config ──────────────────────────────────────────────────────
@@ -960,8 +965,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
         </div>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="flex items-start gap-3">
-            <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 flex-shrink-0 overflow-hidden">
-              {renderProjectIcon(project, 28)}
+            <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 flex-shrink-0">
+              {getTemplateIcon(project.templateId, 28)}
             </span>
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-slate-100">{project.name}</h1>
@@ -980,7 +985,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {renderProjectLogo(project, 'w-11 h-11')}
             <span className={clsx('px-3 py-1 rounded-full text-xs font-semibold', sc.bg, sc.color)}>
               {sc.label}
             </span>
@@ -1961,10 +1967,10 @@ export const Projects: React.FC = () => {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden"
+                      className="w-10 h-10 rounded-xl flex items-center justify-center"
                       style={{ backgroundColor: `${project.color}15`, color: project.color }}
                     >
-                      {renderProjectIcon(project, 20)}
+                      {getTemplateIcon(project.templateId, 20)}
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
@@ -1975,7 +1981,8 @@ export const Projects: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
+                    {renderProjectLogo(project, 'w-9 h-9')}
                     {canManage && (
                       <>
                         {/* Edit button */}
