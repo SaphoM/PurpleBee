@@ -1485,19 +1485,49 @@ const PROJECT_STATUSES = [
 ] as const;
 
 interface EditProjectModalProps {
-  project: { id: string; name: string; description?: string; status: string };
+  project: { id: string; name: string; description?: string; status: string; icon: string; templateId: string };
   onClose: () => void;
-  onSave: (id: string, updates: { name: string; description: string; status: string }) => void;
+  onSave: (id: string, updates: { name: string; description: string; status: string; icon: string }) => void;
 }
 const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, onSave }) => {
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description || '');
   const [status, setStatus] = useState(project.status);
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(
+    project.icon && project.icon.startsWith('data:image') ? project.icon : null
+  );
+  const [logoError, setLogoError] = useState('');
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const MAX_LOGO_BYTES = 1024 * 1024; // 1MB — keeps the DB row small since it's stored as a data URL
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoError('');
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Please choose an image file.');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setLogoError('Logo must be under 1MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setLogoDataUrl(reader.result as string);
+    reader.readAsDataURL(file);
+    if (logoInputRef.current) logoInputRef.current.value = '';
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(project.id, { name: name.trim(), description: description.trim(), status });
+    const fallbackIcon = projectTemplates.find((t) => t.id === project.templateId)?.icon || '🔧';
+    onSave(project.id, {
+      name: name.trim(),
+      description: description.trim(),
+      status,
+      icon: logoDataUrl || fallbackIcon,
+    });
     onClose();
   };
 
@@ -1544,6 +1574,60 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
               )}
               placeholder="What is this project about?"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">
+              Company Logo <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+            </label>
+            <div className="flex items-center gap-3">
+              <div
+                onClick={() => logoInputRef.current?.click()}
+                className={clsx(
+                  'w-14 h-14 rounded-xl flex items-center justify-center cursor-pointer overflow-hidden flex-shrink-0 border-2 border-dashed transition-colors',
+                  logoDataUrl
+                    ? 'border-transparent'
+                    : 'border-gray-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-700/50 bg-gray-50 dark:bg-slate-800/50'
+                )}
+              >
+                {logoDataUrl ? (
+                  <img src={logoDataUrl} alt="Logo preview" className="w-full h-full object-cover" />
+                ) : (
+                  <Building2 size={20} className="text-gray-300 dark:text-slate-600" />
+                )}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-700/50 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    <ImageIcon size={12} />
+                    {logoDataUrl ? 'Change logo' : 'Upload logo'}
+                  </button>
+                  {logoDataUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setLogoDataUrl(null)}
+                      className="text-xs text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+                  Shown as a circular badge on this project's cards. PNG/JPG, up to 1MB.
+                </p>
+                {logoError && <p className="text-[11px] text-red-500 mt-1">{logoError}</p>}
+              </div>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleLogoUpload}
+                className="hidden"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Status</label>
@@ -2148,7 +2232,7 @@ export const Projects: React.FC = () => {
         const proj = projects.find((p) => p.id === editProjectId);
         return proj ? (
           <EditProjectModal
-            project={{ id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active' }}
+            project={{ id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active', icon: proj.icon, templateId: proj.templateId }}
             onClose={() => setEditProjectId(null)}
             onSave={(id, updates) => updateProject(id, updates as any)}
           />
