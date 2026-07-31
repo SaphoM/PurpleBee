@@ -680,6 +680,129 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             )}
           </div>
 
+          {/* Progress Notes */}
+          <div className="bg-gray-50/50 dark:bg-slate-800/30 rounded-xl p-5 border border-gray-100 dark:border-slate-700/30">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <MessageSquare size={14} />
+                  Progress Notes
+                </h3>
+                {(task.progressNotes?.length ?? 0) > 0 && (
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300">
+                    {task.progressNotes!.length}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {(task.progressNotes?.length ?? 0) > 3 && (
+                  <button
+                    onClick={() => setShowAllNotes(!showAllNotes)}
+                    className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium transition-colors"
+                  >
+                    {showAllNotes ? (
+                      <>Show less <ChevronUp size={12} /></>
+                    ) : (
+                      <>Show all ({task.progressNotes!.length}) <ChevronDown size={12} /></>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Note input */}
+            <div className="flex gap-2 mb-3">
+              <div className="relative flex-1">
+                <input
+                  ref={noteInputRef}
+                  type="text"
+                  value={noteInput}
+                  onChange={(e) => setNoteInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddNote();
+                    }
+                  }}
+                  placeholder="Add a progress note..."
+                  className={clsx(
+                    'w-full rounded-lg pl-3 pr-10 py-2.5 text-sm',
+                    'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
+                    'dark:bg-slate-800/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                  )}
+                />
+              </div>
+              <button
+                onClick={handleAddNote}
+                disabled={!noteInput.trim()}
+                className={clsx(
+                  'px-3 py-2.5 rounded-lg transition-all',
+                  noteInput.trim()
+                    ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm shadow-purple-500/20'
+                    : 'bg-gray-100 text-gray-300 dark:bg-slate-700/30 dark:text-slate-600 cursor-not-allowed'
+                )}
+              >
+                <Send size={16} />
+              </button>
+            </div>
+
+            {/* Notes list */}
+            {task.progressNotes && task.progressNotes.length > 0 && (
+              <div className="space-y-2">
+                {(showAllNotes ? task.progressNotes : task.progressNotes.slice(0, 3)).map((note) => (
+                  <div
+                    key={note.id}
+                    className="group flex gap-3 px-3 py-2.5 rounded-lg bg-white/60 hover:bg-white dark:bg-slate-800/30 dark:hover:bg-slate-800/50 transition-colors"
+                  >
+                    {/* Progress badge */}
+                    <div className="flex-shrink-0 pt-0.5">
+                      <div className={clsx(
+                        'w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border-2',
+                        note.progress >= 100
+                          ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-700/30'
+                          : note.progress >= 75
+                            ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-700/30'
+                            : note.progress > 0
+                              ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-700/30'
+                              : 'bg-gray-50 text-gray-500 border-gray-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600'
+                      )}>
+                        {note.progress}%
+                      </div>
+                    </div>
+
+                    {/* Note content */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">
+                        {linkifyText(note.text)}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-1">
+                          {getTriggerIcon(note.trigger)}
+                          <span className="text-[10px] text-gray-400 dark:text-slate-500 capitalize">
+                            {note.trigger}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-300 dark:text-slate-600">•</span>
+                        <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                          {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Delete */}
+                    <button
+                      onClick={() => handleRemoveNote(note.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-all flex-shrink-0 self-start"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Progress Section */}
           <div className="bg-gray-50/50 dark:bg-slate-800/30 rounded-xl p-5 border border-gray-100 dark:border-slate-700/30">
             {/* Header with info & settings toggles */}
@@ -964,129 +1087,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 </div>
               </div>
             )}
-
-            {/* Progress Notes */}
-            <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <MessageSquare size={12} />
-                      Progress Notes
-                    </h4>
-                    {(task.progressNotes?.length ?? 0) > 0 && (
-                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300">
-                        {task.progressNotes!.length}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {(task.progressNotes?.length ?? 0) > 3 && (
-                      <button
-                        onClick={() => setShowAllNotes(!showAllNotes)}
-                        className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium transition-colors"
-                      >
-                        {showAllNotes ? (
-                          <>Show less <ChevronUp size={12} /></>
-                        ) : (
-                          <>Show all ({task.progressNotes!.length}) <ChevronDown size={12} /></>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Note input */}
-                <div className="flex gap-2 mb-3">
-                  <div className="relative flex-1">
-                    <input
-                      ref={noteInputRef}
-                      type="text"
-                      value={noteInput}
-                      onChange={(e) => setNoteInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddNote();
-                        }
-                      }}
-                      placeholder="Add a progress note..."
-                      className={clsx(
-                        'w-full rounded-lg pl-3 pr-10 py-2.5 text-sm',
-                        'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
-                        'dark:bg-slate-800/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
-                        'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
-                      )}
-                    />
-                  </div>
-                  <button
-                    onClick={handleAddNote}
-                    disabled={!noteInput.trim()}
-                    className={clsx(
-                      'px-3 py-2.5 rounded-lg transition-all',
-                      noteInput.trim()
-                        ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm shadow-purple-500/20'
-                        : 'bg-gray-100 text-gray-300 dark:bg-slate-700/30 dark:text-slate-600 cursor-not-allowed'
-                    )}
-                  >
-                    <Send size={16} />
-                  </button>
-                </div>
-
-                {/* Notes list */}
-                {task.progressNotes && task.progressNotes.length > 0 && (
-                  <div className="space-y-2">
-                    {(showAllNotes ? task.progressNotes : task.progressNotes.slice(0, 3)).map((note) => (
-                      <div
-                        key={note.id}
-                        className="group flex gap-3 px-3 py-2.5 rounded-lg bg-white/60 hover:bg-white dark:bg-slate-800/30 dark:hover:bg-slate-800/50 transition-colors"
-                      >
-                        {/* Progress badge */}
-                        <div className="flex-shrink-0 pt-0.5">
-                          <div className={clsx(
-                            'w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border-2',
-                            note.progress >= 100
-                              ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-700/30'
-                              : note.progress >= 75
-                                ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-700/30'
-                                : note.progress > 0
-                                  ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-700/30'
-                                  : 'bg-gray-50 text-gray-500 border-gray-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600'
-                          )}>
-                            {note.progress}%
-                          </div>
-                        </div>
-
-                        {/* Note content */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">
-                            {linkifyText(note.text)}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className="flex items-center gap-1">
-                              {getTriggerIcon(note.trigger)}
-                              <span className="text-[10px] text-gray-400 dark:text-slate-500 capitalize">
-                                {note.trigger}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-gray-300 dark:text-slate-600">•</span>
-                            <span className="text-[10px] text-gray-400 dark:text-slate-500">
-                              {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Delete */}
-                        <button
-                          onClick={() => handleRemoveNote(note.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-all flex-shrink-0 self-start"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-            </div>
 
             {/* Attachments & Links */}
             <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
