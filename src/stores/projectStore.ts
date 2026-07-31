@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import { projectDb, notificationDb, type DbProjectTaskInsert } from '@/lib/dataService';
 import { useSettingsStore } from '@stores/settingsStore';
+import type { Attachment, TaskLink } from '@/types/index';
 
 /**
  * Returns true when mock/sample data mode is active.
@@ -316,6 +317,9 @@ export interface Project {
   updatedAt: Date;
   /** Optional product name for Product Sales projects (and any project where it's relevant) */
   productName?: string;
+  /** Project References — supporting material for the project as a whole (discovery meetings, requirements, scope docs, screenshots, etc.), distinct from any individual task's own attachments/links. */
+  attachments?: Attachment[];
+  links?: TaskLink[];
 }
 
 // ─── Store ─────────────────────────────────────────────────────────────
@@ -333,6 +337,8 @@ interface ProjectStore {
     tasks: Omit<ProjectTask, 'id'>[];
     createdBy: string;
     productName?: string;
+    attachments?: Attachment[];
+    links?: TaskLink[];
   }) => string; // returns project id
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
@@ -489,6 +495,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       createdAt: new Date(),
       updatedAt: new Date(),
       productName: data.productName || undefined,
+      attachments: data.attachments || undefined,
+      links: data.links || undefined,
     };
     set((state) => {
       const next = [project, ...state.projects];
@@ -511,6 +519,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         team_id: teamId || null,
         created_by: data.createdBy,
         product_name: project.productName || null,
+        attachments: project.attachments && project.attachments.length > 0 ? project.attachments : null,
+        links: project.links && project.links.length > 0 ? project.links : null,
       },
       project.tasks.map((t) => toDbProjectTask(project.id, t)),
       isMockMode(),
@@ -535,6 +545,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.color !== undefined) payload.color = updates.color;
     if (updates.status !== undefined) payload.status = updates.status;
     if (updates.productName !== undefined) payload.product_name = updates.productName || null;
+    if (updates.attachments !== undefined) payload.attachments = updates.attachments && updates.attachments.length > 0 ? updates.attachments : null;
+    if (updates.links !== undefined) payload.links = updates.links && updates.links.length > 0 ? updates.links : null;
     if (Object.keys(payload).length > 0) {
       payload.updated_at = new Date().toISOString();
       projectDb.update(id, payload, isMockMode());
@@ -721,6 +733,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       createdAt: new Date(r.created_at),
       updatedAt: new Date(r.updated_at),
       productName: r.product_name || undefined,
+      attachments: r.attachments || [],
+      links: r.links || [],
       tasks: ((r.project_tasks as Array<Record<string, any>>) || [])
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((t) => ({

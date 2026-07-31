@@ -73,6 +73,8 @@ export interface Attachment {
   size: number;
   previewUrl?: string;
   uploadedAt: Date;
+  uploadedBy?: string;      // user id of the uploader
+  uploadedByName?: string;  // denormalized display name, shown in upload history
 }
 
 export interface TaskLink {

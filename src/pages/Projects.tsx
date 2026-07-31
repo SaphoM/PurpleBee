@@ -43,6 +43,8 @@ import { useChatStore } from '@stores/chatStore';
 import { useToastStore } from '@components/Toast';
 import { useUIStore } from '@stores/uiStore';
 import { MemberTooltip, MemberInfo } from '@components/MemberTooltip';
+import { ReferencesSection } from '@components/shared/ReferencesSection';
+import type { Attachment, TaskLink } from '@/types/index';
 
 const getTemplateIcon = (templateId: string, size: number = 24) => {
   const icons: Record<string, React.ReactNode> = {
@@ -110,6 +112,9 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [logoError, setLogoError] = useState('');
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [refAttachments, setRefAttachments] = useState<Attachment[]>([]);
+  const [refLinks, setRefLinks] = useState<TaskLink[]>([]);
+  const [showReferences, setShowReferences] = useState(false);
 
   const template = projectTemplates.find((t) => t.id === selectedTemplate);
   const isCustom = selectedTemplate === 'custom';
@@ -128,6 +133,9 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     setProductName('');
     setLogoDataUrl(null);
     setLogoError('');
+    setRefAttachments([]);
+    setRefLinks([]);
+    setShowReferences(false);
   };
 
   const MAX_LOGO_BYTES = 1024 * 1024; // 1MB — keeps the DB row small since it's stored as a data URL
@@ -232,6 +240,8 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
         tasks: taskList,
         createdBy: user.id,
         productName: isProductSales ? productName.trim() || undefined : undefined,
+        attachments: refAttachments.length > 0 ? refAttachments : undefined,
+        links: refLinks.length > 0 ? refLinks : undefined,
       });
 
       // Send project-invite notifications to each assigned member
@@ -403,6 +413,45 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                     className="hidden"
                   />
                 </div>
+              </div>
+
+              {/* Project References — optional, collapsed by default so it doesn't clutter the wizard */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowReferences(!showReferences)}
+                  className="flex items-center justify-between w-full text-left group"
+                >
+                  <span className="text-sm font-medium text-gray-700 dark:text-slate-300">
+                    Project References <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+                    {(refAttachments.length + refLinks.length) > 0 && (
+                      <span className="ml-1.5 text-xs text-purple-600 dark:text-purple-400 font-normal">
+                        {refAttachments.length + refLinks.length} added
+                      </span>
+                    )}
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className={clsx(
+                      'text-gray-400 dark:text-slate-500 group-hover:text-purple-500 transition-transform',
+                      showReferences && 'rotate-180'
+                    )}
+                  />
+                </button>
+                {showReferences && (
+                  <div className="mt-2 p-3 rounded-xl bg-gray-50/50 dark:bg-slate-800/20 border border-gray-200 dark:border-slate-700/50">
+                    <ReferencesSection
+                      attachments={refAttachments}
+                      onAttachmentsChange={setRefAttachments}
+                      links={refLinks}
+                      onLinksChange={setRefLinks}
+                      enablePaste={false}
+                      currentUserId={user?.id}
+                      currentUserName={user?.name}
+                      emptyHint="Add discovery meeting notes, requirements, proposals, wireframes, Figma/GitHub links, and more — before the project is even created"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Template cards */}
@@ -1033,6 +1082,20 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
         </div>
       </div>
 
+      {/* Project References */}
+      <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+        <ReferencesSection
+          attachments={project.attachments || []}
+          onAttachmentsChange={(next) => updateProject(project.id, { attachments: next })}
+          links={project.links || []}
+          onLinksChange={(next) => updateProject(project.id, { links: next })}
+          title="Project References"
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          emptyHint="Discovery meetings, requirements, proposals, scope docs, wireframes, Figma/GitHub links, screenshots, and more — managed here without leaving the project"
+        />
+      </div>
+
       {/* Task list */}
       <div>
         <div className="flex items-center justify-between mb-4 gap-3">
@@ -1485,11 +1548,12 @@ const PROJECT_STATUSES = [
 ] as const;
 
 interface EditProjectModalProps {
-  project: { id: string; name: string; description?: string; status: string; icon: string; templateId: string };
+  project: { id: string; name: string; description?: string; status: string; icon: string; templateId: string; attachments?: Attachment[]; links?: TaskLink[] };
   onClose: () => void;
-  onSave: (id: string, updates: { name: string; description: string; status: string; icon: string }) => void;
+  onSave: (id: string, updates: { name: string; description: string; status: string; icon: string; attachments?: Attachment[]; links?: TaskLink[] }) => void;
 }
 const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, onSave }) => {
+  const user = useUserStore((s) => s.user);
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description || '');
   const [status, setStatus] = useState(project.status);
@@ -1498,6 +1562,8 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
   );
   const [logoError, setLogoError] = useState('');
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [refAttachments, setRefAttachments] = useState<Attachment[]>(project.attachments || []);
+  const [refLinks, setRefLinks] = useState<TaskLink[]>(project.links || []);
 
   const MAX_LOGO_BYTES = 1024 * 1024; // 1MB — keeps the DB row small since it's stored as a data URL
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1527,6 +1593,8 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
       description: description.trim(),
       status,
       icon: logoDataUrl || fallbackIcon,
+      attachments: refAttachments,
+      links: refLinks,
     });
     onClose();
   };
@@ -1626,6 +1694,24 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
                 accept="image/*"
                 onChange={handleLogoUpload}
                 className="hidden"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">
+              Project References <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+            </label>
+            <div className="p-3 rounded-xl bg-gray-50/50 dark:bg-slate-800/20 border border-gray-200 dark:border-slate-700/50">
+              <ReferencesSection
+                attachments={refAttachments}
+                onAttachmentsChange={setRefAttachments}
+                links={refLinks}
+                onLinksChange={setRefLinks}
+                enablePaste={false}
+                currentUserId={user?.id}
+                currentUserName={user?.name}
+                title="Files & Links"
+                emptyHint="Upload docs, screenshots, or link Discovery Meetings, Figma, GitHub, and more"
               />
             </div>
           </div>
@@ -2231,7 +2317,7 @@ export const Projects: React.FC = () => {
         const proj = projects.find((p) => p.id === editProjectId);
         return proj ? (
           <EditProjectModal
-            project={{ id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active', icon: proj.icon, templateId: proj.templateId }}
+            project={{ id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active', icon: proj.icon, templateId: proj.templateId, attachments: proj.attachments, links: proj.links }}
             onClose={() => setEditProjectId(null)}
             onSave={(id, updates) => updateProject(id, updates as any)}
           />
