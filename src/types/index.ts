@@ -202,7 +202,7 @@ export interface PriorityDistribution {
 }
 
 // Notification Types
-export type NotificationType = 'task-assigned' | 'task-due' | 'task-completed' | 'mention' | 'update' | 'ai-insight' | 'project-invite';
+export type NotificationType = 'task-assigned' | 'task-due' | 'task-completed' | 'task-reopened' | 'task-updated' | 'attachment-added' | 'project-updated' | 'mention' | 'update' | 'ai-insight' | 'project-invite';
 
 export interface Notification {
   id: string;

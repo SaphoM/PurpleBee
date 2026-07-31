@@ -257,7 +257,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
           userId: memberId,
           type: 'project-invite',
           title: 'Added to project',
-          message: `You've been added to "${projectName}" — ${taskCount} task${taskCount > 1 ? 's' : ''} assigned to you`,
+          message: `${user.name} created "${projectName}" and assigned you ${taskCount} task${taskCount > 1 ? 's' : ''}`,
           read: false,
           actionUrl: '#projects',
         });
@@ -908,7 +908,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
     const allCompleted = linked.every((t) => t.status === 'completed');
     const anyActive = linked.some((t) => t.status === 'in-progress' || t.status === 'review');
     const derived = allCompleted ? 'completed' : anyActive ? 'active' : project.status === 'on-hold' ? 'on-hold' : linked.length > 0 ? 'planning' : project.status;
-    if (derived !== project.status) updateProject(project.id, { status: derived as any });
+    if (derived !== project.status) updateProject(project.id, { status: derived as any }, false);
   }, [boardTasks, project.tasks, project.id]);
 
   // Build suggestions: template tasks + industry tasks that haven't been added yet
@@ -987,7 +987,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
         userId: pt.assignedTo,
         type: 'task-assigned',
         title: 'New task on your board',
-        message: `${currentUserName.split(' ')[0]} added "${pt.title}" to your Tasks board`,
+        message: `${currentUserName.split(' ')[0]} added "${pt.title}" to your Tasks board from ${project.name}`,
         read: false,
         actionUrl: '#tasks',
       });

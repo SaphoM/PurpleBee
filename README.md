@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.12.0
+# PurpleBee - AI-Powered Productivity Dashboard · v1.13.0
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -110,6 +110,13 @@ A modern, enterprise-grade productivity management platform with advanced task m
 
 ### Notifications (Live Mode)
 All notifications are written directly to Supabase via `notificationDb.insert` and delivered in real-time to the recipient's bell via Supabase Realtime (`postgres_changes` on the `notifications` table filtered by `user_id`). Mock mode uses in-memory notifications only.
+- **Central notify helper** — every store creates notifications through `src/lib/notify.ts`'s `notifyUser`/`notifyUsers` instead of duplicating the insert logic per store; handles the self-notification guard (never notify the actor) in one place
+- **New notification triggers** — task reopened (status moved away from completed), due date changed, priority changed, attachment added (assignee notified when someone else adds a file), project status changed (notifies every user with a task assigned in that project — silent when the status change is system-derived from linked task progress, not a real edit), project task reassigned via the generic `updateProjectTask` path (previously only the dedicated `assignProjectTask` action notified)
+- **Contextual message text** — notifications now read who/what/where, e.g. `"Sapho assigned "Prepare quarterly report" to you in Client Portal"` instead of a bare title
+- **Chat @mentions** — sending a message that contains `@FirstName` gives that specific participant a distinct "X mentioned you" notification instead of the generic "new message" one everyone else gets
+- **`markGroupAsRead` now persists** — previously local-state-only; marking a notification group read now writes through to Supabase like `markAsRead` already did, so it survives a reload and syncs across tabs/devices
+- **Cross-device notification preferences** — `profiles.notification_preferences` (jsonb) syncs the per-category and delivery toggles to the account, not just localStorage on one browser; read on `hydrateFromDb`, written on every `updatePreferences` call
+- **Real email delivery (stub, Resend)** — `supabase/functions/send-email-notification` fires off an `AFTER INSERT ON notifications` trigger (`pg_net.http_post`, async, never blocks the in-app notification if delivery fails), respects the recipient's email + per-category preferences, and sends a branded HTML email via Resend. Safe to deploy as-is: with no `RESEND_API_KEY` secret set it logs and no-ops. Mirrors the shape of the existing (also unwired) `telegram-notify` function
 
 | Trigger | Type | Recipient |
 |---|---|---|

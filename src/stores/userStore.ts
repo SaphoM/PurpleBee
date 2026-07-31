@@ -149,7 +149,7 @@ function hydrateStores(userId: string, userName: string) {
   // attach teamId/userId to writes. Updated again by hydrateWithTeam once
   // the real team resolves (live mode).
   setTaskUserContext(userId, null, userName);
-  setProjectUserContext(userId, null);
+  setProjectUserContext(userId, null, null, userName);
 
   if (keepMockData) {
     useNotificationStore.getState().restoreMockData(userId, userName);
@@ -177,7 +177,7 @@ async function hydrateWithTeam(
   // writes are scoped correctly and notifications carry the right sender.
   const role = useUserStore.getState().user?.role ?? null;
   setTaskUserContext(userId, teamId, userName);
-  setProjectUserContext(userId, teamId, role);
+  setProjectUserContext(userId, teamId, role, userName);
 
   await Promise.all([
     useTaskStore.getState().hydrateFromDb(userId),

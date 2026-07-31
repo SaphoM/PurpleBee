@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { projectDb, notificationDb, type DbProjectTaskInsert } from '@/lib/dataService';
+import { projectDb, type DbProjectTaskInsert } from '@/lib/dataService';
+import { notifyUser, notifyUsers } from '@/lib/notify';
 import { useSettingsStore } from '@stores/settingsStore';
 import type { Attachment, TaskLink } from '@/types/index';
 
@@ -16,18 +17,20 @@ const isMockMode = () => useSettingsStore.getState().keepMockData;
  * can attach teamId to writes without a circular require() dep.
  * (require is not defined in Vite's ESM browser runtime.)
  */
-let _ctx: { userId: string | null; teamId: string | null; role: string | null } = {
+let _ctx: { userId: string | null; teamId: string | null; role: string | null; userName: string } = {
   userId: null,
   teamId: null,
   role: null,
+  userName: 'Someone',
 };
 
 export function setProjectUserContext(
   userId: string | null,
   teamId: string | null,
   role?: string | null,
+  userName?: string,
 ) {
-  _ctx = { userId, teamId, role: role ?? null };
+  _ctx = { userId, teamId, role: role ?? null, userName: userName || _ctx.userName };
 }
 
 const getTeamContext = () => _ctx;
@@ -340,7 +343,8 @@ interface ProjectStore {
     attachments?: Attachment[];
     links?: TaskLink[];
   }) => string; // returns project id
-  updateProject: (id: string, updates: Partial<Project>) => void;
+  /** `notify` (default true) — pass false for system-derived updates (e.g. auto status derivation from linked task progress) so they don't spam project members with a notification for something nobody actively did. */
+  updateProject: (id: string, updates: Partial<Project>, notify?: boolean) => void;
   deleteProject: (id: string) => void;
   selectProject: (id: string | null) => void;
 
@@ -529,7 +533,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return id;
   },
 
-  updateProject: (id, updates) => {
+  updateProject: (id, updates, notify = true) => {
+    const prevProject = get().projects.find((p) => p.id === id);
     set((state) => {
       const next = state.projects.map((p) =>
         p.id === id ? { ...p, ...updates, updatedAt: new Date() } : p
@@ -550,6 +555,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (Object.keys(payload).length > 0) {
       payload.updated_at = new Date().toISOString();
       projectDb.update(id, payload, isMockMode());
+    }
+
+    // ── Notify everyone with a task assigned in this project when its status actually changes ──
+    if (notify && updates.status !== undefined && prevProject && updates.status !== prevProject.status) {
+      const { userId: currentUserId, userName } = getTeamContext();
+      const recipients = Array.from(
+        new Set(prevProject.tasks.map((t) => t.assignedTo).filter((uid): uid is string => !!uid))
+      );
+      notifyUsers(recipients, {
+        actorId: currentUserId,
+        type: 'project-updated',
+        title: 'Project updated',
+        message: `${userName} changed "${prevProject.name}" status to ${updates.status}`,
+        actionUrl: `#projects?projectId=${id}`,
+      });
     }
   },
 
@@ -596,6 +616,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   updateProjectTask: (projectId, taskId, updates) => {
+    const prevProject = get().projects.find((p) => p.id === projectId);
+    const prevTask = prevProject?.tasks.find((t) => t.id === taskId);
     set((state) => {
       const next = state.projects.map((p) =>
         p.id === projectId
@@ -621,35 +643,31 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (Object.keys(payload).length > 0) {
       projectDb.updateTask(taskId, payload, isMockMode());
     }
+
+    // ── Notify the assignee whenever a project task is (re)assigned — the
+    // single source of truth for this, so assignProjectTask (which just
+    // delegates here) doesn't need its own duplicate notify logic. ──
+    if (
+      updates.assignedTo !== undefined &&
+      updates.assignedTo !== prevTask?.assignedTo &&
+      updates.assignedTo &&
+      isValidUuid(updates.assignedTo)
+    ) {
+      const { userId: currentUserId, userName } = getTeamContext();
+      const taskTitle = updates.title || prevTask?.title || 'a task';
+      notifyUser({
+        actorId: currentUserId,
+        recipientId: updates.assignedTo,
+        type: 'task-assigned',
+        title: 'Task assigned to you',
+        message: `${userName} assigned "${taskTitle}" to you${prevProject ? ` in ${prevProject.name}` : ''}`,
+        actionUrl: `#projects?projectId=${projectId}`,
+      });
+    }
   },
 
   assignProjectTask: (projectId, taskId, userId) => {
     get().updateProjectTask(projectId, taskId, { assignedTo: userId });
-
-    // Notify the newly-assigned user (live mode only, skip self-assignment and demo IDs)
-    const { userId: currentUserId } = getTeamContext();
-    if (
-      !isMockMode() &&
-      isValidUuid(userId) &&
-      userId !== currentUserId
-    ) {
-      const project = get().projects.find((p) => p.id === projectId);
-      const task = project?.tasks.find((t) => t.id === taskId);
-      if (project && task) {
-        notificationDb.insert(
-          {
-            id: uuidv4(),
-            userId,
-            type: 'task-assigned',
-            title: "You've been assigned a task",
-            message: `${project.name}: ${task.title}`,
-            read: false,
-            actionUrl: `#projects?projectId=${projectId}`,
-          },
-          false,
-        ).catch(() => {});
-      }
-    }
   },
 
   linkProjectTask: (projectId, projectTaskId, linkedTaskId) => {

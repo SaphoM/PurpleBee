@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { Task, TaskStatus, TaskPriority, TaskCollaborator } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
-import { taskDb, notificationDb, botTaskDb, taskActivityDb } from '@/lib/dataService';
+import { taskDb, botTaskDb, taskActivityDb } from '@/lib/dataService';
+import { notifyUser } from '@/lib/notify';
 
 import { useSettingsStore } from '@stores/settingsStore';
+import { useProjectStore } from '@stores/projectStore';
 
 /**
  * Returns true when mock/sample data mode is active.
@@ -36,40 +38,14 @@ export function setTaskUserContext(
 
 const getTeamContext = () => _ctx;
 
-/**
- * Write a notification to the DB for the given recipient.
- * In mock mode: skipped (DB not used; bell shows pre-loaded mock data).
- * In live mode: inserts directly via notificationDb — avoids the
- * circular require() that fails in Vite's browser ESM context.
- */
-function notify(notification: {
-  userId: string;
-  type: import('@/types/index').NotificationType;
-  title: string;
-  message: string;
-  actionUrl?: string;
-  taskId?: string;
-}) {
-  if (isMockMode()) return;
-  notificationDb.insert(
-    {
-      id: uuidv4(),
-      userId: notification.userId,
-      type: notification.type,
-      title: notification.title,
-      message: notification.message,
-      read: false,
-      actionUrl: notification.actionUrl,
-      taskId: notification.taskId,
-    },
-    false,
-  ).catch(() => {});
-}
+/** Looks up the parent project's name for a task, for contextual notification messages. Returns undefined if the task has no project or it can't be found. */
+const getProjectName = (projectId?: string): string | undefined =>
+  projectId ? useProjectStore.getState().getProjectById(projectId)?.name : undefined;
 
 /**
  * Append an immutable activity-log entry for a task field change, upload,
- * link, or lifecycle event. Fire-and-forget, mirrors notify() above — never
- * blocks or fails the action that triggered it. No-op in mock mode.
+ * link, or lifecycle event. Fire-and-forget, same pattern as notifyUser() —
+ * never blocks or fails the action that triggered it. No-op in mock mode.
  */
 function logActivity(entry: {
   taskId: string;
@@ -348,11 +324,13 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
     // Notify the assignee if they're someone other than the creator
     if (newTask.assignedTo && newTask.assignedTo !== userId) {
-      notify({
-        userId: newTask.assignedTo,
+      const projectName = getProjectName(newTask.projectId);
+      notifyUser({
+        actorId: userId,
+        recipientId: newTask.assignedTo,
         type: 'task-assigned',
         title: 'New task assigned to you',
-        message: `${userName} assigned you "${newTask.title}"`,
+        message: `${userName} assigned "${newTask.title}" to you${projectName ? ` in ${projectName}` : ''}`,
         actionUrl: `#tasks?taskId=${newTask.id}`,
         taskId: newTask.id,
       });
@@ -373,6 +351,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     taskDb.update(id, updates, isMockMode());
 
     const { userId, userName } = getTeamContext();
+    const projectName = getProjectName(prevTask?.projectId);
 
     // ── Notify assignee when the task is (re)assigned ──
     if (
@@ -382,11 +361,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       updates.assignedTo !== userId
     ) {
       const taskTitle = updates.title || prevTask?.title || 'a task';
-      notify({
-        userId: updates.assignedTo,
+      notifyUser({
+        actorId: userId,
+        recipientId: updates.assignedTo,
         type: 'task-assigned',
         title: 'Task assigned to you',
-        message: `${userName} assigned you "${taskTitle}"`,
+        message: `${userName} assigned "${taskTitle}" to you${projectName ? ` in ${projectName}` : ''}`,
         actionUrl: `#tasks?taskId=${id}`,
         taskId: id,
       });
@@ -400,15 +380,71 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       prevTask.createdBy !== userId
     ) {
       const taskTitle = prevTask.title;
-      const completerName = userName;
-      notify({
-        userId: prevTask.createdBy,
+      notifyUser({
+        actorId: userId,
+        recipientId: prevTask.createdBy,
         type: 'task-completed',
         title: 'Task completed',
-        message: `${completerName} completed "${taskTitle}"`,
+        message: `${userName} completed "${taskTitle}"${projectName ? ` in ${projectName}` : ''}`,
         actionUrl: `#tasks?taskId=${id}`,
         taskId: id,
       });
+    }
+
+    // ── Notify creator (and assignee, if different) when a completed task is reopened ──
+    if (
+      updates.status !== undefined &&
+      updates.status !== 'completed' &&
+      prevTask?.status === 'completed'
+    ) {
+      const taskTitle = updates.title || prevTask.title;
+      const recipients = [prevTask.createdBy, prevTask.assignedTo].filter(
+        (uid): uid is string => !!uid
+      );
+      recipients.forEach((recipientId) => {
+        notifyUser({
+          actorId: userId,
+          recipientId,
+          type: 'task-reopened',
+          title: 'Task reopened',
+          message: `${userName} reopened "${taskTitle}"${projectName ? ` in ${projectName}` : ''}`,
+          actionUrl: `#tasks?taskId=${id}`,
+          taskId: id,
+        });
+      });
+    }
+
+    // ── Notify assignee when due date or priority changes (not on the assignee's own edit) ──
+    if (prevTask?.assignedTo && prevTask.assignedTo !== userId) {
+      const taskTitle = updates.title || prevTask.title;
+      if (
+        updates.dueDate !== undefined &&
+        updates.dueDate?.getTime() !== prevTask.dueDate?.getTime()
+      ) {
+        const formattedDate = updates.dueDate
+          ? updates.dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : 'no due date';
+        notifyUser({
+          actorId: userId,
+          recipientId: prevTask.assignedTo,
+          type: 'task-updated',
+          title: 'Due date changed',
+          message: `${userName} moved the due date for "${taskTitle}" to ${formattedDate}`,
+          actionUrl: `#tasks?taskId=${id}`,
+          taskId: id,
+        });
+      }
+      if (updates.priority !== undefined && updates.priority !== prevTask.priority) {
+        notifyUser({
+          actorId: userId,
+          recipientId: prevTask.assignedTo,
+          type: 'task-updated',
+          title: 'Priority changed',
+          message: `${userName} changed the priority of "${taskTitle}" to ${updates.priority}`,
+          actionUrl: `#tasks?taskId=${id}`,
+          taskId: id,
+        });
+      }
     }
 
     // ── Activity log — diff each field the caller actually touched ──
@@ -430,10 +466,26 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       if (updates.attachments !== undefined) {
         const prevIds = new Set((prevTask.attachments || []).map((a) => a.id));
         const nextIds = new Set(updates.attachments.map((a) => a.id));
-        updates.attachments.filter((a) => !prevIds.has(a.id)).forEach((a) =>
+        const added = updates.attachments.filter((a) => !prevIds.has(a.id));
+        added.forEach((a) =>
           logActivity({ taskId: id, taskTitle, action: 'attachment_added', newValue: a.name }));
         (prevTask.attachments || []).filter((a) => !nextIds.has(a.id)).forEach((a) =>
           logActivity({ taskId: id, taskTitle, action: 'attachment_removed', oldValue: a.name }));
+
+        // Notify the assignee (if someone else added it) so they don't have to re-open the task to notice
+        if (added.length > 0 && prevTask.assignedTo && prevTask.assignedTo !== userId) {
+          notifyUser({
+            actorId: userId,
+            recipientId: prevTask.assignedTo,
+            type: 'attachment-added',
+            title: 'New attachment',
+            message: added.length === 1
+              ? `${userName} added "${added[0].name}" to "${taskTitle}"`
+              : `${userName} added ${added.length} attachments to "${taskTitle}"`,
+            actionUrl: `#tasks?taskId=${id}`,
+            taskId: id,
+          });
+        }
       }
       if (updates.links !== undefined) {
         const prevIds = new Set((prevTask.links || []).map((l) => l.id));

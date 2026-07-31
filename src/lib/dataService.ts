@@ -966,6 +966,14 @@ export const authDb = {
     return true;
   },
 
+  /** Persist notification preferences (in-app/email/per-category toggles) so they follow the account across devices, not just localStorage on one browser. */
+  async updateNotificationPreferences(userId: string, preferences: Record<string, unknown>) {
+    if (!isDbConnected()) return false;
+    const { error } = await supabase!.from('profiles').update({ notification_preferences: preferences }).eq('id', userId);
+    if (error) { console.error('[dataService] auth.updateNotificationPreferences', error); return false; }
+    return true;
+  },
+
   /** Get the team a user belongs to.
    *  Deterministic selection: a user may belong to several teams (their own
    *  auto-created one plus any they were invited to). We prefer a team the

@@ -649,10 +649,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ? conv.participants.find((p) => p.userId !== currentUserId)?.name || conv.name
         : conv.name;
 
+      // Detect @Name mentions against this conversation's participants — used
+      // to give the specifically-addressed person a clearer, distinct
+      // notification instead of the generic "new message" one everyone gets.
+      const lowerText = trimmed.toLowerCase();
+      const mentionedIds = new Set<string>();
+      if (lowerText.includes('@')) {
+        for (const participant of conv.participants) {
+          if (participant.userId === currentUserId) continue;
+          const firstName = participant.name.split(' ')[0].toLowerCase();
+          if (firstName && lowerText.includes(`@${firstName}`)) {
+            mentionedIds.add(participant.userId);
+          }
+        }
+      }
+
       for (const participant of conv.participants) {
         if (participant.userId === currentUserId) continue;
         // Bump their unread count in DB so it shows on next login
         chatDb.incrementUnreadCount(conversationId, participant.userId, false);
+        const isMentioned = mentionedIds.has(participant.userId);
         // Send them a DB notification (bell). Delivery is unconditional — the
         // recipient's own notification preferences are applied at display time,
         // not delivery time. Carries conversationId so clicking it deep-links
@@ -662,8 +678,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             id: uuidv4(),
             userId: participant.userId,
             type: 'mention',
-            title: conv.type === 'dm' ? `New message from ${currentUserName}` : `New message in ${convLabel}`,
-            message: `${currentUserName}: ${preview}`,
+            title: isMentioned
+              ? `${currentUserName} mentioned you`
+              : conv.type === 'dm' ? `New message from ${currentUserName}` : `New message in ${convLabel}`,
+            message: isMentioned
+              ? `${currentUserName} mentioned you in ${convLabel}: "${preview}"`
+              : `${currentUserName}: ${preview}`,
             read: false,
             actionUrl: '#chat',
             conversationId,
