@@ -17,7 +17,7 @@
  */
 
 import { supabase, isDbConnected } from './supabase';
-import type { Task, TaskStatus, TaskPriority, Subtask } from '@/types/index';
+import type { Task, TaskStatus, TaskPriority, Subtask, TaskActivityEntry, TaskActivityAction } from '@/types/index';
 
 // ── Central gate ──────────────────────────────────────────────────────
 // We can't import useSettingsStore here (circular), so every public
@@ -286,6 +286,83 @@ export const botTaskDb = {
       .order('created_at', { ascending: false });
     if (error) { console.error('[dataService] bot_tasks.fetchAllForUser', error); return null; }
     return (data as DbBotTask[]).map(toTaskFromBot);
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// TASK ACTIVITY — append-only audit log (who/when/what changed)
+// ═══════════════════════════════════════════════════════════════════════
+
+interface DbTaskActivity {
+  id: string;
+  task_id: string | null;
+  task_title: string;
+  team_id: string | null;
+  actor_id: string;
+  actor_name: string;
+  action: string;
+  field: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
+}
+
+const toTaskActivity = (row: DbTaskActivity): TaskActivityEntry => ({
+  id: row.id,
+  taskId: row.task_id,
+  taskTitle: row.task_title,
+  teamId: row.team_id,
+  actorId: row.actor_id,
+  actorName: row.actor_name,
+  action: row.action as TaskActivityAction,
+  field: row.field || undefined,
+  oldValue: row.old_value || undefined,
+  newValue: row.new_value || undefined,
+  createdAt: new Date(row.created_at),
+});
+
+export const taskActivityDb = {
+  /** Fire-and-forget insert — never blocks the UI action that triggered it */
+  async insert(entry: {
+    taskId: string;
+    taskTitle: string;
+    teamId?: string | null;
+    actorId: string;
+    actorName: string;
+    action: TaskActivityAction;
+    field?: string;
+    oldValue?: string;
+    newValue?: string;
+  }, mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('task_activity').insert({
+      task_id: entry.taskId,
+      task_title: entry.taskTitle,
+      team_id: entry.teamId || null,
+      actor_id: entry.actorId,
+      actor_name: entry.actorName,
+      action: entry.action,
+      field: entry.field || null,
+      old_value: entry.oldValue ?? null,
+      new_value: entry.newValue ?? null,
+    });
+    if (error) { console.error('[dataService] task_activity.insert', error); return false; }
+    return true;
+  },
+
+  /** Paginated fetch, newest first. Pass `before` (an ISO timestamp) to load older pages. */
+  async fetchForTask(taskId: string, opts: { limit?: number; before?: string } = {}, mockMode?: boolean): Promise<TaskActivityEntry[] | null> {
+    if (!shouldPersist(mockMode)) return null;
+    let q = supabase!
+      .from('task_activity')
+      .select('*')
+      .eq('task_id', taskId)
+      .order('created_at', { ascending: false })
+      .limit(opts.limit ?? 20);
+    if (opts.before) q = q.lt('created_at', opts.before);
+    const { data, error } = await q;
+    if (error) { console.error('[dataService] task_activity.fetchForTask', error); return null; }
+    return (data as DbTaskActivity[]).map(toTaskActivity);
   },
 };
 

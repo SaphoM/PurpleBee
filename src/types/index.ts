@@ -79,8 +79,32 @@ export interface TaskLink {
   id: string;
   title: string;
   url: string;
-  type: 'link' | 'figma' | 'github' | 'notion' | 'google-doc' | 'other';
+  type:
+    | 'link' | 'figma' | 'github' | 'notion' | 'google-doc' | 'other'
+    // Project Reference categories
+    | 'google-drive' | 'sharepoint' | 'onedrive' | 'loom' | 'youtube' | 'vimeo'
+    | 'discovery-meeting' | 'wireframe' | 'requirements' | 'scope-doc';
   addedAt: Date;
+}
+
+export type TaskActivityAction =
+  | 'created' | 'updated' | 'deleted'
+  | 'attachment_added' | 'attachment_removed'
+  | 'link_added' | 'link_removed'
+  | 'subtask_changed';
+
+export interface TaskActivityEntry {
+  id: string;
+  taskId: string | null; // null once the source task has been deleted
+  taskTitle: string;      // denormalized snapshot — survives task deletion
+  teamId: string | null;
+  actorId: string;
+  actorName: string;
+  action: TaskActivityAction;
+  field?: string;       // e.g. 'status', 'priority', 'title', 'description', 'assignedTo', 'dueDate'
+  oldValue?: string;
+  newValue?: string;
+  createdAt: Date;
 }
 
 export interface ProgressNote {

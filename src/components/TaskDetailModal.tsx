@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
-import { Task, TaskStatus, TaskPriority, Subtask, Attachment, TaskLink, ProgressNote } from '@/types/index';
+import { Task, TaskStatus, TaskPriority, Subtask, Attachment, TaskLink, ProgressNote, TaskActivityEntry } from '@/types/index';
 import { PriorityBadge } from './Badge';
 import {
   X,
@@ -40,13 +40,16 @@ import {
   ChevronUp,
   FolderKanban,
   Pencil,
+  History,
 } from 'lucide-react';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
 import { useToastStore } from '@components/Toast';
+import { useSettingsStore } from '@stores/settingsStore';
 import { linkifyText } from '@/utils/linkify';
+import { taskActivityDb } from '@/lib/dataService';
 import { v4 as uuidv4 } from 'uuid';
 
 interface TaskDetailModalProps {
@@ -265,10 +268,39 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [showAddLink, setShowAddLink] = useState(false);
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
+  const [linkCategory, setLinkCategory] = useState<'auto' | TaskLink['type']>('auto');
   const [noteInput, setNoteInput] = useState('');
   const [showAllNotes, setShowAllNotes] = useState(false);
+  const [isDragOverAttachments, setIsDragOverAttachments] = useState(false);
+  const [lightboxAttachment, setLightboxAttachment] = useState<Attachment | null>(null);
+  const [showActivity, setShowActivity] = useState(false);
+  const [activityEntries, setActivityEntries] = useState<TaskActivityEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityHasMore, setActivityHasMore] = useState(true);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const noteInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Collapse/reset the activity timeline when switching to a different task
+  useEffect(() => {
+    setShowActivity(false);
+    setActivityEntries([]);
+    setActivityHasMore(true);
+  }, [task?.id]);
+
+  // Clipboard-paste upload — active only while this modal is mounted (open)
+  useEffect(() => {
+    if (!isOpen || !task) return;
+    const handlePaste = (e: ClipboardEvent) => {
+      const files = e.clipboardData?.files;
+      if (files && files.length > 0) {
+        const images = Array.from(files).filter((f) => f.type.startsWith('image/'));
+        if (images.length > 0) handleFilesAdded(images);
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, task?.id]);
 
   if (!isOpen || !task) return null;
 
@@ -388,9 +420,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     addToast({ type: 'success', title: 'Mini task updated', message: `"${title}" saved.`, duration: 3000 });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
+  // Shared by the file-picker button, drag & drop, and clipboard paste
+  const handleFilesAdded = (files: File[] | FileList) => {
     const newAttachments: Attachment[] = Array.from(files).map((file) => ({
       id: uuidv4(),
       name: file.name,
@@ -403,8 +434,21 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     updateTask(task.id, {
       attachments: [...(task.attachments || []), ...newAttachments],
     });
-    // Reset input
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    handleFilesAdded(files);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleAttachmentsDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOverAttachments(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesAdded(e.dataTransfer.files);
+    }
   };
 
   const handleRemoveAttachment = (attachmentId: string) => {
@@ -419,7 +463,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       id: uuidv4(),
       title: linkTitle.trim() || linkUrl.trim(),
       url: linkUrl.trim().startsWith('http') ? linkUrl.trim() : `https://${linkUrl.trim()}`,
-      type: detectLinkType(linkUrl.trim()),
+      type: linkCategory === 'auto' ? detectLinkType(linkUrl.trim()) : linkCategory,
       addedAt: new Date(),
     };
     updateTask(task.id, {
@@ -427,6 +471,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     });
     setLinkTitle('');
     setLinkUrl('');
+    setLinkCategory('auto');
     setShowAddLink(false);
   };
 
@@ -471,8 +516,35 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     if (url.includes('github.com')) return 'github';
     if (url.includes('notion.so') || url.includes('notion.site')) return 'notion';
     if (url.includes('docs.google.com')) return 'google-doc';
+    if (url.includes('drive.google.com')) return 'google-drive';
+    if (url.includes('sharepoint.com')) return 'sharepoint';
+    if (url.includes('onedrive.live.com') || url.includes('1drv.ms')) return 'onedrive';
+    if (url.includes('loom.com')) return 'loom';
+    if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
+    if (url.includes('vimeo.com')) return 'vimeo';
     return 'link';
   };
+
+  // Categories a user can pick explicitly (Add Link form) — includes ones
+  // that can't be auto-detected from a URL alone (e.g. a Google Doc used as
+  // a requirements doc vs. a scope doc look identical to detectLinkType).
+  const linkCategoryOptions: { value: TaskLink['type']; label: string }[] = [
+    { value: 'discovery-meeting', label: 'Discovery Meeting' },
+    { value: 'requirements', label: 'Requirements' },
+    { value: 'scope-doc', label: 'Scope Document' },
+    { value: 'wireframe', label: 'Wireframe' },
+    { value: 'figma', label: 'Figma' },
+    { value: 'github', label: 'GitHub' },
+    { value: 'notion', label: 'Notion' },
+    { value: 'google-doc', label: 'Google Doc' },
+    { value: 'google-drive', label: 'Google Drive' },
+    { value: 'sharepoint', label: 'SharePoint' },
+    { value: 'onedrive', label: 'OneDrive' },
+    { value: 'loom', label: 'Loom' },
+    { value: 'youtube', label: 'YouTube' },
+    { value: 'vimeo', label: 'Vimeo' },
+    { value: 'other', label: 'Other' },
+  ];
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -492,8 +564,88 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       case 'github': return <span className="text-sm">🐙</span>;
       case 'notion': return <span className="text-sm">📝</span>;
       case 'google-doc': return <span className="text-sm">📄</span>;
+      case 'google-drive': return <span className="text-sm">🗂️</span>;
+      case 'sharepoint': return <span className="text-sm">📁</span>;
+      case 'onedrive': return <span className="text-sm">☁️</span>;
+      case 'loom': return <span className="text-sm">🎥</span>;
+      case 'youtube': return <span className="text-sm">▶️</span>;
+      case 'vimeo': return <span className="text-sm">🎬</span>;
+      case 'discovery-meeting': return <span className="text-sm">🗓️</span>;
+      case 'wireframe': return <span className="text-sm">📐</span>;
+      case 'requirements': return <span className="text-sm">📋</span>;
+      case 'scope-doc': return <span className="text-sm">📜</span>;
       default: return <Link2 size={14} className="text-blue-500" />;
     }
+  };
+
+  // ── Activity Timeline ────────────────────────────────────────────────
+  const ACTIVITY_PAGE_SIZE = 20;
+
+  const loadActivity = async (loadMore = false) => {
+    if (activityLoading) return;
+    const mockMode = useSettingsStore.getState().keepMockData;
+    if (mockMode) { setActivityHasMore(false); return; } // no persisted history in demo mode
+    setActivityLoading(true);
+    const before = loadMore && activityEntries.length > 0
+      ? activityEntries[activityEntries.length - 1].createdAt.toISOString()
+      : undefined;
+    const rows = await taskActivityDb.fetchForTask(task.id, { limit: ACTIVITY_PAGE_SIZE, before }, mockMode);
+    setActivityLoading(false);
+    if (rows === null) { setActivityHasMore(false); return; }
+    setActivityEntries((prev) => (loadMore ? [...prev, ...rows] : rows));
+    setActivityHasMore(rows.length === ACTIVITY_PAGE_SIZE);
+  };
+
+  const handleToggleActivity = () => {
+    const next = !showActivity;
+    setShowActivity(next);
+    if (next && activityEntries.length === 0) loadActivity(false);
+  };
+
+  const resolveUserName = (userId?: string): string => {
+    if (!userId) return 'Unassigned';
+    if (userId === user?.id) return user?.name || 'You';
+    return assignableMembers.find((m) => m.id === userId)?.name || 'Unknown user';
+  };
+
+  const formatActivityValue = (field?: string, value?: string): string => {
+    if (value === undefined) return '—';
+    if (!field) return value;
+    if (field === 'status') return statusConfig.find((s) => s.value === value)?.label || value;
+    if (field === 'priority') return value.charAt(0).toUpperCase() + value.slice(1);
+    if (field === 'assignedTo') return resolveUserName(value);
+    if (field === 'dueDate') { try { return format(new Date(value), 'MMM d, yyyy'); } catch { return value; } }
+    if (field === 'description' || field === 'title') return value.length > 60 ? `${value.slice(0, 60)}…` : value;
+    return value;
+  };
+
+  const activityFieldLabels: Record<string, string> = {
+    title: 'title', description: 'description', status: 'status', priority: 'priority',
+    assignedTo: 'assignee', dueDate: 'due date',
+  };
+
+  const activityActionText = (entry: TaskActivityEntry): string => {
+    switch (entry.action) {
+      case 'created': return 'created this task';
+      case 'deleted': return 'deleted this task';
+      case 'attachment_added': return `uploaded "${entry.newValue}"`;
+      case 'attachment_removed': return `removed "${entry.oldValue}"`;
+      case 'link_added': return `added a reference link "${entry.newValue}"`;
+      case 'link_removed': return `removed a reference link "${entry.oldValue}"`;
+      case 'subtask_changed': return 'updated the subtasks';
+      case 'updated': {
+        const label = entry.field ? (activityFieldLabels[entry.field] || entry.field) : 'a field';
+        const oldVal = formatActivityValue(entry.field, entry.oldValue);
+        const newVal = formatActivityValue(entry.field, entry.newValue);
+        return `changed ${label} from "${oldVal}" to "${newVal}"`;
+      }
+      default: return 'updated this task';
+    }
+  };
+
+  const getActivityAvatar = (entry: TaskActivityEntry): string | undefined => {
+    if (entry.actorId === user?.id) return user?.avatar;
+    return assignableMembers.find((m) => m.id === entry.actorId)?.avatar;
   };
 
   const handleDelete = () => {
@@ -1093,7 +1245,17 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             </div>
 
             {/* Attachments & Links */}
-            <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
+            <div
+              className={clsx(
+                'mt-4 pt-4 border-t rounded-b-xl transition-colors',
+                isDragOverAttachments
+                  ? 'border-purple-300 dark:border-purple-700/50 bg-purple-50/40 dark:bg-purple-900/10'
+                  : 'border-gray-200/50 dark:border-slate-700/30'
+              )}
+              onDragOver={(e) => { e.preventDefault(); setIsDragOverAttachments(true); }}
+              onDragLeave={() => setIsDragOverAttachments(false)}
+              onDrop={handleAttachmentsDrop}
+            >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -1176,6 +1338,22 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                           Add
                         </button>
                       </div>
+                      <select
+                        value={linkCategory}
+                        onChange={(e) => setLinkCategory(e.target.value as typeof linkCategory)}
+                        title="Reference category — auto-detected from the URL by default"
+                        className={clsx(
+                          'w-full rounded-lg px-3 py-1.5 text-xs',
+                          'bg-gray-50 border border-gray-200 text-gray-600',
+                          'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-300',
+                          'focus:outline-none focus:border-purple-500 cursor-pointer'
+                        )}
+                      >
+                        <option value="auto">Category: Auto-detect from URL</option>
+                        {linkCategoryOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>Category: {opt.label}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 )}
@@ -1220,7 +1398,8 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                           .map((attachment) => (
                             <div
                               key={attachment.id}
-                              className="relative group rounded-lg overflow-hidden border border-gray-200 dark:border-slate-700/50 aspect-square"
+                              onClick={() => setLightboxAttachment(attachment)}
+                              className="relative group rounded-lg overflow-hidden border border-gray-200 dark:border-slate-700/50 aspect-square cursor-pointer"
                             >
                               <img
                                 src={attachment.previewUrl || attachment.url}
@@ -1299,13 +1478,94 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   >
                     <Upload size={20} className="mx-auto mb-1.5 text-gray-300 dark:text-slate-600" />
                     <p className="text-xs text-gray-400 dark:text-slate-500">
-                      Drop files here or <span className="text-purple-600 dark:text-purple-400 font-medium">browse</span>
+                      Drop files here, paste, or <span className="text-purple-600 dark:text-purple-400 font-medium">browse</span>
                     </p>
                     <p className="text-[10px] text-gray-300 dark:text-slate-600 mt-0.5">
-                      Attach docs, images, or links related to this progress update
+                      Attach docs, images/screenshots, or reference links (discovery meetings, requirements, wireframes, Figma, GitHub, Drive, and more)
                     </p>
                   </div>
                 )}
+            </div>
+
+            {lightboxAttachment && (
+              <div
+                className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-6"
+                onClick={() => setLightboxAttachment(null)}
+              >
+                <button
+                  onClick={() => setLightboxAttachment(null)}
+                  className="absolute top-4 right-4 p-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+                <img
+                  src={lightboxAttachment.previewUrl || lightboxAttachment.url}
+                  alt={lightboxAttachment.name}
+                  onClick={(e) => e.stopPropagation()}
+                  className="max-w-full max-h-full object-contain rounded-lg"
+                />
+                <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-white/70">{lightboxAttachment.name}</p>
+              </div>
+            )}
+
+            {/* Activity Timeline */}
+            <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
+              <button
+                onClick={handleToggleActivity}
+                className="w-full flex items-center justify-between mb-1 group"
+              >
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <History size={12} />
+                  Activity
+                </h4>
+                {showActivity ? (
+                  <ChevronUp size={14} className="text-gray-400 dark:text-slate-500 group-hover:text-purple-500 transition-colors" />
+                ) : (
+                  <ChevronDown size={14} className="text-gray-400 dark:text-slate-500 group-hover:text-purple-500 transition-colors" />
+                )}
+              </button>
+
+              {showActivity && (
+                <div className="mt-3 space-y-3">
+                  {activityLoading && activityEntries.length === 0 && (
+                    <p className="text-xs text-gray-400 dark:text-slate-500 py-2">Loading activity…</p>
+                  )}
+                  {!activityLoading && activityEntries.length === 0 && (
+                    <p className="text-xs text-gray-400 dark:text-slate-500 py-2">
+                      No activity recorded yet — this history builds up as the task is edited (only tracked in live mode, not demo data).
+                    </p>
+                  )}
+                  {activityEntries.map((entry) => (
+                    <div key={entry.id} className="flex items-start gap-2.5">
+                      {getActivityAvatar(entry) ? (
+                        <img src={getActivityAvatar(entry)} alt={entry.actorName} className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5" />
+                      ) : (
+                        <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <span className="text-[9px] font-bold text-gray-500 dark:text-slate-400">{entry.actorName.charAt(0).toUpperCase()}</span>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-gray-600 dark:text-slate-300">
+                          <span className="font-semibold text-gray-800 dark:text-slate-100">{entry.actorName}</span>{' '}
+                          {activityActionText(entry)}
+                        </p>
+                        <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-0.5">
+                          {formatDistanceToNow(entry.createdAt, { addSuffix: true })}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {activityHasMore && activityEntries.length > 0 && (
+                    <button
+                      onClick={() => loadActivity(true)}
+                      disabled={activityLoading}
+                      className="w-full py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50"
+                    >
+                      {activityLoading ? 'Loading…' : 'Load more'}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

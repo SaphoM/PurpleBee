@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Task, TaskStatus, TaskPriority, TaskCollaborator } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
-import { taskDb, notificationDb, botTaskDb } from '@/lib/dataService';
+import { taskDb, notificationDb, botTaskDb, taskActivityDb } from '@/lib/dataService';
 
 import { useSettingsStore } from '@stores/settingsStore';
 
@@ -61,6 +61,38 @@ function notify(notification: {
       read: false,
       actionUrl: notification.actionUrl,
       taskId: notification.taskId,
+    },
+    false,
+  ).catch(() => {});
+}
+
+/**
+ * Append an immutable activity-log entry for a task field change, upload,
+ * link, or lifecycle event. Fire-and-forget, mirrors notify() above — never
+ * blocks or fails the action that triggered it. No-op in mock mode.
+ */
+function logActivity(entry: {
+  taskId: string;
+  taskTitle: string;
+  action: import('@/types/index').TaskActivityAction;
+  field?: string;
+  oldValue?: string;
+  newValue?: string;
+}) {
+  if (isMockMode()) return;
+  const { userId, teamId, userName } = getTeamContext();
+  if (!userId) return;
+  taskActivityDb.insert(
+    {
+      taskId: entry.taskId,
+      taskTitle: entry.taskTitle,
+      teamId,
+      actorId: userId,
+      actorName: userName,
+      action: entry.action,
+      field: entry.field,
+      oldValue: entry.oldValue,
+      newValue: entry.newValue,
     },
     false,
   ).catch(() => {});
@@ -325,6 +357,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         taskId: newTask.id,
       });
     }
+
+    logActivity({ taskId: newTask.id, taskTitle: newTask.title, action: 'created' });
   },
 
   updateTask: (id, updates) => {
@@ -376,6 +410,43 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         taskId: id,
       });
     }
+
+    // ── Activity log — diff each field the caller actually touched ──
+    if (prevTask) {
+      const taskTitle = updates.title || prevTask.title;
+      const logField = (field: string, oldVal?: string, newVal?: string) => {
+        if (oldVal === newVal) return;
+        logActivity({ taskId: id, taskTitle, action: 'updated', field, oldValue: oldVal, newValue: newVal });
+      };
+      if (updates.title !== undefined) logField('title', prevTask.title, updates.title);
+      if (updates.description !== undefined) logField('description', prevTask.description, updates.description);
+      if (updates.status !== undefined) logField('status', prevTask.status, updates.status);
+      if (updates.priority !== undefined) logField('priority', prevTask.priority, updates.priority);
+      if (updates.assignedTo !== undefined) logField('assignedTo', prevTask.assignedTo, updates.assignedTo);
+      if (updates.dueDate !== undefined) {
+        logField('dueDate', prevTask.dueDate?.toISOString(), updates.dueDate?.toISOString());
+      }
+
+      if (updates.attachments !== undefined) {
+        const prevIds = new Set((prevTask.attachments || []).map((a) => a.id));
+        const nextIds = new Set(updates.attachments.map((a) => a.id));
+        updates.attachments.filter((a) => !prevIds.has(a.id)).forEach((a) =>
+          logActivity({ taskId: id, taskTitle, action: 'attachment_added', newValue: a.name }));
+        (prevTask.attachments || []).filter((a) => !nextIds.has(a.id)).forEach((a) =>
+          logActivity({ taskId: id, taskTitle, action: 'attachment_removed', oldValue: a.name }));
+      }
+      if (updates.links !== undefined) {
+        const prevIds = new Set((prevTask.links || []).map((l) => l.id));
+        const nextIds = new Set(updates.links.map((l) => l.id));
+        updates.links.filter((l) => !prevIds.has(l.id)).forEach((l) =>
+          logActivity({ taskId: id, taskTitle, action: 'link_added', newValue: l.title }));
+        (prevTask.links || []).filter((l) => !nextIds.has(l.id)).forEach((l) =>
+          logActivity({ taskId: id, taskTitle, action: 'link_removed', oldValue: l.title }));
+      }
+      if (updates.subtasks !== undefined) {
+        logActivity({ taskId: id, taskTitle, action: 'subtask_changed' });
+      }
+    }
   },
 
   deleteTask: (id, requestingUserId) => {
@@ -388,6 +459,10 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       tasks: state.tasks.filter((t) => t.id !== id),
       selectedTaskId: state.selectedTaskId === id ? null : state.selectedTaskId,
     }));
+    // Log before the delete so the FK is still valid at insert time — the
+    // row itself survives the task's deletion (task_id becomes null via
+    // ON DELETE SET NULL), preserving the audit trail permanently.
+    logActivity({ taskId: id, taskTitle: task.title, action: 'deleted' });
     taskDb.delete(id, isMockMode());
     return true;
   },

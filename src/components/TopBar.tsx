@@ -124,13 +124,22 @@ export const TopBar: React.FC = () => {
 
     const results: SearchResult[] = [];
 
-    // Search tasks
+    // Search tasks — title, description, and now also attachment names and reference link titles
     tasks.forEach((task) => {
-      if (task.title.toLowerCase().includes(q) || task.description?.toLowerCase().includes(q)) {
+      const titleMatch = task.title.toLowerCase().includes(q);
+      const descMatch = task.description?.toLowerCase().includes(q);
+      const matchedAttachment = task.attachments?.find((a) => a.name.toLowerCase().includes(q));
+      const matchedLink = task.links?.find((l) => l.title.toLowerCase().includes(q));
+      if (titleMatch || descMatch || matchedAttachment || matchedLink) {
+        const subtitle = matchedAttachment
+          ? `📎 ${matchedAttachment.name}`
+          : matchedLink
+            ? `🔗 ${matchedLink.title}`
+            : `${task.status} · ${task.priority} priority`;
         results.push({
           id: task.id,
           label: task.title,
-          subtitle: `${task.status} · ${task.priority} priority`,
+          subtitle,
           category: 'task',
           page: '#tasks',
         });
