@@ -31,6 +31,9 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronDown,
+  ShoppingCart,
+  Image as ImageIcon,
+  Building2,
 } from 'lucide-react';
 import { useProjectStore, projectTemplates, ProjectTask, Project } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
@@ -46,6 +49,7 @@ const getTemplateIcon = (templateId: string, size: number = 24) => {
     'web-app': <Globe size={size} strokeWidth={1.5} />,
     'mobile-app': <Smartphone size={size} strokeWidth={1.5} />,
     'marketing': <Megaphone size={size} strokeWidth={1.5} />,
+    'product-sales': <ShoppingCart size={size} strokeWidth={1.5} />,
     'api-service': <Zap size={size} strokeWidth={1.5} />,
     'design-system': <Palette size={size} strokeWidth={1.5} />,
     'training': <GraduationCap size={size} strokeWidth={1.5} />,
@@ -56,6 +60,15 @@ const getTemplateIcon = (templateId: string, size: number = 24) => {
     'custom': <Wrench size={size} strokeWidth={1.5} />,
   };
   return icons[templateId] || <FolderKanban size={size} strokeWidth={1.5} />;
+};
+
+/** Renders a project's uploaded company logo (data URL stored in project.icon)
+ *  when present, falling back to the template's outline icon otherwise. */
+const renderProjectIcon = (project: { icon: string; templateId: string }, size: number = 24) => {
+  if (project.icon && project.icon.startsWith('data:image')) {
+    return <img src={project.icon} alt="" className="w-full h-full object-cover rounded-lg" />;
+  }
+  return getTemplateIcon(project.templateId, size);
 };
 
 // ── Status config ──────────────────────────────────────────────────────
@@ -88,9 +101,14 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const [customTaskDescription, setCustomTaskDescription] = useState('');
   const [customTasks, setCustomTasks] = useState<{ title: string; description: string; priority: 'low' | 'medium' | 'high' | 'urgent'; estimatedHours: number; tags: string[] }[]>([]);
   const [assignments, setAssignments] = useState<Record<number, string>>({});
+  const [productName, setProductName] = useState('');
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState('');
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const template = projectTemplates.find((t) => t.id === selectedTemplate);
   const isCustom = selectedTemplate === 'custom';
+  const isProductSales = selectedTemplate === 'product-sales';
 
   const reset = () => {
     setStep(1);
@@ -102,6 +120,28 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     setCustomTaskDescription('');
     setCustomTasks([]);
     setAssignments({});
+    setProductName('');
+    setLogoDataUrl(null);
+    setLogoError('');
+  };
+
+  const MAX_LOGO_BYTES = 1024 * 1024; // 1MB — keeps the DB row small since it's stored as a data URL
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoError('');
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Please choose an image file.');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setLogoError('Logo must be under 1MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setLogoDataUrl(reader.result as string);
+    reader.readAsDataURL(file);
+    if (logoInputRef.current) logoInputRef.current.value = '';
   };
 
   const handleSelectTemplate = (templateId: string) => {
@@ -182,10 +222,11 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
         name: projectName,
         description: description.trim(),
         templateId: selectedTemplate || 'custom',
-        icon: template?.icon || '🔧',
+        icon: logoDataUrl || template?.icon || '🔧',
         color: template?.color || '#6b7280',
         tasks: taskList,
         createdBy: user.id,
+        productName: isProductSales ? productName.trim() || undefined : undefined,
       });
 
       // Send project-invite notifications to each assigned member
@@ -303,6 +344,62 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                 />
               </div>
 
+              {/* Company logo */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                  Company Logo <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <div
+                    onClick={() => logoInputRef.current?.click()}
+                    className={clsx(
+                      'w-14 h-14 rounded-xl flex items-center justify-center cursor-pointer overflow-hidden flex-shrink-0 border-2 border-dashed transition-colors',
+                      logoDataUrl
+                        ? 'border-transparent'
+                        : 'border-gray-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-700/50 bg-gray-50 dark:bg-slate-800/50'
+                    )}
+                  >
+                    {logoDataUrl ? (
+                      <img src={logoDataUrl} alt="Logo preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <Building2 size={20} className="text-gray-300 dark:text-slate-600" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => logoInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-700/50 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        <ImageIcon size={12} />
+                        {logoDataUrl ? 'Change logo' : 'Upload logo'}
+                      </button>
+                      {logoDataUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setLogoDataUrl(null)}
+                          className="text-xs text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+                      Shown instead of the template icon on this project's cards. PNG/JPG, up to 1MB.
+                    </p>
+                    {logoError && <p className="text-[11px] text-red-500 mt-1">{logoError}</p>}
+                  </div>
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+
               {/* Template cards */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-3">
@@ -340,6 +437,28 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                   ))}
                 </div>
               </div>
+
+              {/* Product name — only relevant for the Product Sales template */}
+              {isProductSales && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                    <ShoppingCart size={14} className="text-emerald-500" />
+                    Product Name <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    placeholder="e.g. Acme Pro Subscription"
+                    className={clsx(
+                      'w-full rounded-lg px-4 py-2.5 text-sm',
+                      'bg-white border border-gray-300 text-gray-800 placeholder-gray-400',
+                      'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                      'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                    )}
+                  />
+                </div>
+              )}
 
               {/* Next button */}
               <div className="flex justify-end pt-2">
@@ -841,11 +960,16 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
         </div>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="flex items-start gap-3">
-            <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 flex-shrink-0">
-              {getTemplateIcon(project.templateId, 28)}
+            <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 flex-shrink-0 overflow-hidden">
+              {renderProjectIcon(project, 28)}
             </span>
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-slate-100">{project.name}</h1>
+              {project.productName && (
+                <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center gap-1">
+                  <ShoppingCart size={11} /> {project.productName}
+                </p>
+              )}
               {project.description && (
                 <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{project.description}</p>
               )}
@@ -1837,10 +1961,10 @@ export const Projects: React.FC = () => {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center"
+                      className="w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden"
                       style={{ backgroundColor: `${project.color}15`, color: project.color }}
                     >
-                      {getTemplateIcon(project.templateId, 20)}
+                      {renderProjectIcon(project, 20)}
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">

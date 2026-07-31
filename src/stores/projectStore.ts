@@ -127,6 +127,25 @@ export const projectTemplates: ProjectTemplate[] = [
     ],
   },
   {
+    id: 'product-sales',
+    name: 'Product Sales',
+    icon: '💰',
+    description: 'Launch and run a product sales pipeline or campaign',
+    color: '#16a34a',
+    tasks: [
+      { title: 'Pricing strategy', description: 'Define price points, discount tiers, and bundling options based on market and margin analysis', priority: 'urgent', estimatedHours: 6, tags: ['pricing', 'strategy'], order: 1 },
+      { title: 'Target market & lead list', description: 'Identify ideal customer profile, build a qualified lead list, and segment by priority', priority: 'high', estimatedHours: 8, tags: ['leads', 'research'], order: 2 },
+      { title: 'Sales collateral & pitch deck', description: 'Create product one-pagers, pitch deck, and comparison sheets for the sales team', priority: 'high', estimatedHours: 10, tags: ['collateral', 'design'], order: 3 },
+      { title: 'CRM & pipeline setup', description: 'Configure deal stages, pipeline automation, and reporting in the CRM', priority: 'high', estimatedHours: 6, tags: ['crm', 'setup'], order: 4 },
+      { title: 'Proposal & quote template', description: 'Build a reusable proposal/quote template with standard terms and approval workflow', priority: 'medium', estimatedHours: 5, tags: ['proposal', 'documentation'], order: 5 },
+      { title: 'Sales enablement training', description: 'Train the sales team on product positioning, objection handling, and demo flow', priority: 'high', estimatedHours: 8, tags: ['training', 'enablement'], order: 6 },
+      { title: 'Contract & terms review', description: 'Finalize standard contract terms, discount approval limits, and legal sign-off', priority: 'high', estimatedHours: 6, tags: ['contract', 'legal'], order: 7 },
+      { title: 'Campaign & outreach launch', description: 'Kick off outbound outreach, email sequences, and initial customer calls', priority: 'urgent', estimatedHours: 10, tags: ['outreach', 'launch'], order: 8 },
+      { title: 'Sales tracking dashboard', description: 'Set up win-rate, pipeline value, and forecast dashboards for visibility', priority: 'medium', estimatedHours: 5, tags: ['reporting', 'analytics'], order: 9 },
+      { title: 'Post-sale handover & onboarding', description: 'Define handoff process from sales to delivery/success once a deal closes', priority: 'medium', estimatedHours: 4, tags: ['handover', 'onboarding'], order: 10 },
+    ],
+  },
+  {
     id: 'api-service',
     name: 'API / Microservice',
     icon: '⚡',
@@ -295,6 +314,8 @@ export interface Project {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Optional product name for Product Sales projects (and any project where it's relevant) */
+  productName?: string;
 }
 
 // ─── Store ─────────────────────────────────────────────────────────────
@@ -311,6 +332,7 @@ interface ProjectStore {
     color: string;
     tasks: Omit<ProjectTask, 'id'>[];
     createdBy: string;
+    productName?: string;
   }) => string; // returns project id
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
@@ -466,6 +488,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       createdBy: data.createdBy,
       createdAt: new Date(),
       updatedAt: new Date(),
+      productName: data.productName || undefined,
     };
     set((state) => {
       const next = [project, ...state.projects];
@@ -487,6 +510,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         status: project.status,
         team_id: teamId || null,
         created_by: data.createdBy,
+        product_name: project.productName || null,
       },
       project.tasks.map((t) => toDbProjectTask(project.id, t)),
       isMockMode(),
@@ -510,6 +534,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.icon !== undefined) payload.icon = updates.icon;
     if (updates.color !== undefined) payload.color = updates.color;
     if (updates.status !== undefined) payload.status = updates.status;
+    if (updates.productName !== undefined) payload.product_name = updates.productName || null;
     if (Object.keys(payload).length > 0) {
       payload.updated_at = new Date().toISOString();
       projectDb.update(id, payload, isMockMode());
@@ -695,6 +720,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       createdBy: r.created_by || '',
       createdAt: new Date(r.created_at),
       updatedAt: new Date(r.updated_at),
+      productName: r.product_name || undefined,
       tasks: ((r.project_tasks as Array<Record<string, any>>) || [])
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((t) => ({

@@ -47,8 +47,10 @@ A modern, enterprise-grade productivity management platform with advanced task m
 - **Calendar View** — Deadline visualization; its own page (month grid, agenda list, and upcoming-tasks grouping) accessed from the sidebar
 
 ### Project Management
-- Project templates (Web App, Mobile, Marketing, API, Design System, Training, Services, Cybersecurity, Cloud Computing, Support, Custom)
+- Project templates (Web App, Mobile, Marketing, Product Sales, API, Design System, Training, Services, Cybersecurity, Cloud Computing, Support, Custom)
 - Project task breakdown with suggested tasks per template
+- **Company logo on project creation** — an optional image upload in step 1 of the Create Project wizard (PNG/JPG, up to 1MB) stored as a data URL in `project.icon`; when present it renders as the project's icon on grid cards and the detail header instead of the template's outline icon; persists to Supabase `projects.icon` (`text`, no length cap)
+- **Product Name field** — shown in the wizard only when the Product Sales template is selected; optional, persists to `projects.product_name` and displays as a small subtitle under the project name in the detail header
 - **Bulk-assign on project creation** — step 3 of the Create Project modal has an "Assign all to" dropdown that fills every task's individual assignment select with one click; individual dropdowns remain editable afterwards for overrides
 - Team member assignment per project task — triggers instant `task-assigned` notification to the assignee (live mode)
 - Project status tracking (Planning, Active, On Hold, Completed)
