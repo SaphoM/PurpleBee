@@ -1,6 +1,6 @@
 {
   "name": "productivity-dashboard",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "AI-powered modern productivity dashboard with task management, analytics, and team collaboration",
   "private": true,
   "type": "module",

@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.13.0
+# PurpleBee - AI-Powered Productivity Dashboard · v1.14.0
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -117,6 +117,8 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 - **`markGroupAsRead` now persists** — previously local-state-only; marking a notification group read now writes through to Supabase like `markAsRead` already did, so it survives a reload and syncs across tabs/devices
 - **Cross-device notification preferences** — `profiles.notification_preferences` (jsonb) syncs the per-category and delivery toggles to the account, not just localStorage on one browser; read on `hydrateFromDb`, written on every `updatePreferences` call
 - **Real email delivery (stub, Resend)** — `supabase/functions/send-email-notification` fires off an `AFTER INSERT ON notifications` trigger (`pg_net.http_post`, async, never blocks the in-app notification if delivery fails), respects the recipient's email + per-category preferences, and sends a branded HTML email via Resend. Safe to deploy as-is: with no `RESEND_API_KEY` secret set it logs and no-ops. Mirrors the shape of the existing (also unwired) `telegram-notify` function
+- **Fixed: `notifications.type` enum was missing the 4 new values** — `task-reopened`/`task-updated`/`attachment-added`/`project-updated` are backed by a Postgres enum column; the new `NotificationType` values were never added to it when that feature shipped, so every insert of those types was silently failing in live mode. Fixed via `20260731210000_notifications_type_enum_add_values.sql`
+- **Backfilled missing `task-assigned` notifications for real existing assignments** — a one-time data fix (not a recurring migration) inserted notifications for 9 board tasks and 90 project checklist items that were already assigned to someone other than the creator but had never been notified, backdated to each item's own timestamp rather than "now". Deliberately did **not** fabricate history for events with no audit trail (task reopens, due-date/priority changes, project status changes, chat mentions) — the `task_activity` log was empty, so there was nothing real to reconstruct for those
 
 | Trigger | Type | Recipient |
 |---|---|---|
