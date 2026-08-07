@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.15.0
+# PurpleBee - AI-Powered Productivity Dashboard · v1.15.1
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -121,6 +121,7 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 - **Backfilled missing `task-assigned` notifications for real existing assignments** — a one-time data fix (not a recurring migration) inserted notifications for 9 board tasks and 90 project checklist items that were already assigned to someone other than the creator but had never been notified, backdated to each item's own timestamp rather than "now". Deliberately did **not** fabricate history for events with no audit trail (task reopens, due-date/priority changes, project status changes, chat mentions) — the `task_activity` log was empty, so there was nothing real to reconstruct for those
 - **New project creation notifies every team member, not just assignees** — `Projects.tsx`'s `handleCreate` now sends the existing richer "assigned you N tasks" `task-assigned` notification to members with a task, and a plainer `project-updated` "New project" announcement (`"${creator} created a new project — \"${name}\""`) to every other team member of the same team, so nobody misses that a project was created. Team-scoped via `team_members`, not a blanket notify-everyone
 - **Backfilled `project-updated` "New project" notifications for all 30 pre-existing projects** — a one-time data fix, scoped per-project to that project's own team (`team_members` joined on `projects.team_id`, not all profiles globally), skipping any member who already has a task in that project (they keep just the `task-assigned` notification from the backfill above, not a duplicate). Inserted unread, backdated to each project's `created_at`. 175 rows across 30 projects
+- **Fixed: project logo rendered as a raw base64 string in the Create Task project picker** — `CreateTaskModal`'s "Top Projects" quick-pick, project-tasks group header, and selected-project badge rendered `project.icon` as plain text, which is fine for the emoji template default but dumped the entire `data:image/...` string on screen for any project with an uploaded company logo. Added a small `renderProjectIcon` helper (renders a real `<img>` thumbnail for data URLs, falls back to text for emoji) at all three call sites
 
 | Trigger | Type | Recipient |
 |---|---|---|

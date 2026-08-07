@@ -11,6 +11,16 @@ import { useUserStore } from '@stores/userStore';
 import { ReferencesSection } from '@components/shared/ReferencesSection';
 import { LinkedProjectReferences } from '@components/shared/LinkedProjectReferences';
 
+/** Project icons are either an emoji (template default) or a `data:image` URL
+ *  (uploaded company logo) — render each correctly instead of dumping a raw
+ *  data URL string into the UI as text. */
+const renderProjectIcon = (icon?: string) => {
+  if (icon && icon.startsWith('data:image')) {
+    return <img src={icon} alt="" className="inline-block w-3.5 h-3.5 rounded-full object-cover align-[-2px]" />;
+  }
+  return <span>{icon}</span>;
+};
+
 interface CreateTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -299,7 +309,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
                     <FolderKanban size={10} />
-                    {pt.projectIcon} {pt.projectName}
+                    {renderProjectIcon(pt.projectIcon)} {pt.projectName}
                   </span>
                   <button
                     type="button"
@@ -344,7 +354,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                               : 'bg-gray-100 text-gray-600 hover:bg-purple-100 hover:text-purple-700 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-purple-900/30 dark:hover:text-purple-300'
                           )}
                         >
-                          <span>{proj.icon}</span>
+                          {renderProjectIcon(proj.icon)}
                           {proj.name}
                         </button>
                       ))}
@@ -380,7 +390,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                     <div key={projId}>
                       <div className="px-3 py-1.5 bg-gray-50 dark:bg-slate-800/80 sticky top-0">
                         <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400">
-                          {tasks[0].projectIcon} {tasks[0].projectName}
+                          {renderProjectIcon(tasks[0].projectIcon)} {tasks[0].projectName}
                         </span>
                       </div>
                       {tasks.map((pt) => {
