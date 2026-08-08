@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import clsx from 'clsx';
 import {
   Plus,
@@ -973,7 +974,10 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   };
 
   const handleCreateActualTask = (pt: ProjectTask) => {
-    // Create a real task in the taskStore linked to this project task
+    // Create a real task in the taskStore linked to this project task.
+    // Generate the id ourselves (forcedId) so we can deep-link the
+    // notifications below to this exact task instead of the generic list.
+    const newTaskId = uuidv4();
     addTask({
       title: pt.title,
       description: pt.description,
@@ -984,7 +988,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       tags: pt.tags,
       progress: 0,
       projectId: project.id,
-    });
+    }, newTaskId);
 
     // Notify the current user that the task was added
     addNotification({
@@ -993,7 +997,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       title: 'Task added to board',
       message: `"${pt.title}" has been added to your Tasks board from ${project.name}`,
       read: false,
-      actionUrl: '#tasks',
+      actionUrl: `#tasks?taskId=${newTaskId}`,
+      taskId: newTaskId,
     });
 
     // If an admin/manager added a task for someone else, notify the assignee too
@@ -1004,7 +1009,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
         title: 'New task on your board',
         message: `${currentUserName.split(' ')[0]} added "${pt.title}" to your Tasks board from ${project.name}`,
         read: false,
-        actionUrl: '#tasks',
+        actionUrl: `#tasks?taskId=${newTaskId}`,
+        taskId: newTaskId,
       });
     }
 

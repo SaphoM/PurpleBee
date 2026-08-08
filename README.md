@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="PurpleBee Task Manager" height="80" />
 </p>
 
-# PurpleBee - AI-Powered Productivity Dashboard · v1.15.1
+# PurpleBee - AI-Powered Productivity Dashboard · v1.15.2
 
 A modern, enterprise-grade productivity management platform with advanced task management, project tracking, team chat, AI insights, and multi-channel notifications.
 
@@ -122,6 +122,7 @@ All notifications are written directly to Supabase via `notificationDb.insert` a
 - **New project creation notifies every team member, not just assignees** — `Projects.tsx`'s `handleCreate` now sends the existing richer "assigned you N tasks" `task-assigned` notification to members with a task, and a plainer `project-updated` "New project" announcement (`"${creator} created a new project — \"${name}\""`) to every other team member of the same team, so nobody misses that a project was created. Team-scoped via `team_members`, not a blanket notify-everyone
 - **Backfilled `project-updated` "New project" notifications for all 30 pre-existing projects** — a one-time data fix, scoped per-project to that project's own team (`team_members` joined on `projects.team_id`, not all profiles globally), skipping any member who already has a task in that project (they keep just the `task-assigned` notification from the backfill above, not a duplicate). Inserted unread, backdated to each project's `created_at`. 175 rows across 30 projects
 - **Fixed: project logo rendered as a raw base64 string in the Create Task project picker** — `CreateTaskModal`'s "Top Projects" quick-pick, project-tasks group header, and selected-project badge rendered `project.icon` as plain text, which is fine for the emoji template default but dumped the entire `data:image/...` string on screen for any project with an uploaded company logo. Added a small `renderProjectIcon` helper (renders a real `<img>` thumbnail for data URLs, falls back to text for emoji) at all three call sites
+- **Notification system audit pass** — full trace of every producer→consumer path (bell, dropdown, unread count, Realtime, deep links, chat replies, read receipts) confirmed the pipeline is sound: no duplicate-firing, no unread-count drift on remote-origin Realtime events, chat replies already correctly self-skip via the shared `sendMessage` participant loop. Three real gaps fixed: (1) task collaborators — a real "Invite/Manage Collaborators" UI feature (`MemberTooltip`/`TaskCard`) — previously sent zero notification of any kind on add/remove, now notifies the invited/removed user (reuses the existing `task-assigned`/`update` types, no new enum values); (2) `deleteTask` now notifies the assignee and creator instead of silently vanishing from their board; (3) the two "task added to board" notifications in `Projects.tsx` were missing `taskId` entirely and dead-ended on the generic Tasks list — now carry a real `taskId` so they deep-link to the specific task like every other task-assigned notification. Descoped and stated plainly: project-task-level scroll anchoring, chat message-level deep links, and project/project-task deletion fan-out — see the plan file for the full reasoning
 
 | Trigger | Type | Recipient |
 |---|---|---|

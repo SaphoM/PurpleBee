@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { Task, TaskStatus, TaskPriority, TaskCollaborator } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
 import { taskDb, botTaskDb, taskActivityDb } from '@/lib/dataService';
-import { notifyUser } from '@/lib/notify';
+import { notifyUser, notifyUsers } from '@/lib/notify';
 
 import { useSettingsStore } from '@stores/settingsStore';
 import { useProjectStore } from '@stores/projectStore';
@@ -516,6 +516,20 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     // ON DELETE SET NULL), preserving the audit trail permanently.
     logActivity({ taskId: id, taskTitle: task.title, action: 'deleted' });
     taskDb.delete(id, isMockMode());
+
+    // Notify the assignee and creator (excluding whoever just deleted it) —
+    // no actionUrl/taskId since the task no longer exists to link to.
+    const { userId: actorId, userName } = getTeamContext();
+    notifyUsers(
+      [task.assignedTo, task.createdBy].filter((uid): uid is string => !!uid),
+      {
+        actorId,
+        type: 'update',
+        title: 'Task deleted',
+        message: `${userName} deleted "${task.title}"`,
+      }
+    );
+
     return true;
   },
 
@@ -610,7 +624,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     get().updateTask(id, { status: 'completed', progress: 100 });
   },
 
-  addCollaborator: (taskId, collaborator) =>
+  addCollaborator: (taskId, collaborator) => {
+    const task = get().tasks.find((t) => t.id === taskId);
     set((state) => ({
       tasks: state.tasks.map((task) =>
         task.id === taskId
@@ -624,9 +639,27 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
             }
           : task
       ),
-    })),
+    }));
 
-  removeCollaborator: (taskId, userId) =>
+    // Notify the invited collaborator (reuses the existing task-assigned
+    // type — an invite is a task-relevant responsibility just like an
+    // assignment; not adding a new NotificationType for this).
+    if (task) {
+      const { userId: actorId, userName } = getTeamContext();
+      notifyUser({
+        actorId,
+        recipientId: collaborator.userId,
+        type: 'task-assigned',
+        title: 'Added as collaborator',
+        message: `${userName} added you as a ${collaborator.role} on "${task.title}"`,
+        actionUrl: `#tasks?taskId=${taskId}`,
+        taskId,
+      });
+    }
+  },
+
+  removeCollaborator: (taskId, userId) => {
+    const task = get().tasks.find((t) => t.id === taskId);
     set((state) => ({
       tasks: state.tasks.map((task) =>
         task.id === taskId
@@ -639,7 +672,21 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
             }
           : task
       ),
-    })),
+    }));
+
+    if (task) {
+      const { userId: actorId, userName } = getTeamContext();
+      notifyUser({
+        actorId,
+        recipientId: userId,
+        type: 'update',
+        title: 'Removed from task',
+        message: `${userName} removed you as a collaborator on "${task.title}"`,
+        actionUrl: `#tasks?taskId=${taskId}`,
+        taskId,
+      });
+    }
+  },
 
   updateCollaboratorTime: (taskId, userId, minutes) =>
     set((state) => ({
