@@ -474,7 +474,7 @@ export const projectDb = {
     // is row-level only.
     let q = supabase!
       .from('projects')
-      .select('id, name, description, icon, color, template_id, status, team_id, created_by, created_at, updated_at, product_name, attachments, links, card_display, project_tasks(*)')
+      .select('id, name, description, icon, color, template_id, status, team_id, created_by, created_at, updated_at, product_name, attachments, links, card_display, project_type, planned_start_date, planned_completion_date, project_tasks(*)')
       .order('created_at', { ascending: false })
       .order('order', { referencedTable: 'project_tasks', ascending: true });
     // Admins/managers: let RLS is_admin_or_manager() return everything — no client filter.

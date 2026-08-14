@@ -38,7 +38,7 @@ import {
   Wallet,
   Lock,
 } from 'lucide-react';
-import { useProjectStore, projectTemplates, ProjectTask, Project } from '@stores/projectStore';
+import { useProjectStore, projectTemplates, ProjectTask, Project, getProjectTaskStats, getProjectTimeProgress, getProjectPace } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useNotificationStore } from '@stores/notificationStore';
@@ -67,20 +67,6 @@ const getTemplateIcon = (templateId: string, size: number = 24) => {
     'custom': <Wrench size={size} strokeWidth={1.5} />,
   };
   return icons[templateId] || <FolderKanban size={size} strokeWidth={1.5} />;
-};
-
-/** Percentage of a project's linked board-tasks that are completed, or null
- *  when the project has no linked tasks to measure progress from (shown as
- *  "no progress data yet" rather than a misleading 0%). Mirrors the same
- *  linked-task lookup ProjectDetail's auto-status-derivation effect uses. */
-const computeProjectProgress = (project: Project, boardTasks: { id: string; status: string }[]): number | null => {
-  const linked = project.tasks
-    .filter((t) => t.linkedTaskId)
-    .map((t) => boardTasks.find((bt) => bt.id === t.linkedTaskId))
-    .filter(Boolean) as { id: string; status: string }[];
-  if (linked.length === 0) return null;
-  const completed = linked.filter((t) => t.status === 'completed').length;
-  return Math.round((completed / linked.length) * 100);
 };
 
 /** Renders a project's uploaded company logo (data URL stored in project.icon)
@@ -122,10 +108,26 @@ const CARD_DISPLAY_FIELDS: { key: keyof NonNullable<Project['cardDisplay']>; lab
   { key: 'projectManager', label: 'Project Manager' },
   { key: 'team', label: 'Team' },
   { key: 'taskCompletion', label: 'Task Completion' },
+  { key: 'projectType', label: 'Project Type' },
+  { key: 'plannedCompletion', label: 'Planned Completion' },
 ];
 
 const DEFAULT_CARD_DISPLAY: NonNullable<Project['cardDisplay']> = {
   status: true, progress: true, value: false, team: true, projectManager: false, taskCompletion: true,
+  projectType: false, plannedCompletion: false,
+};
+
+const PROJECT_TYPES: { value: NonNullable<Project['projectType']>; label: string }[] = [
+  { value: 'internal', label: 'Internal' },
+  { value: 'external', label: 'External' },
+];
+
+/** Formats a Date as YYYY-MM-DD for a native <input type="date"> value. */
+const toDateInputValue = (d?: Date | null) => {
+  if (!d) return '';
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '';
+  return dt.toISOString().slice(0, 10);
 };
 
 interface ProjectValueSectionProps {
@@ -142,14 +144,20 @@ interface ProjectValueSectionProps {
   assignableMembers: { id: string; name: string }[];
   expanded: boolean;
   onToggleExpanded: () => void;
+  plannedStart: string;
+  onPlannedStartChange: (v: string) => void;
+  plannedCompletion: string;
+  onPlannedCompletionChange: (v: string) => void;
 }
 
-/** Optional per-project financial value + who can see it + which fields show on this project's card.
- *  Purely additive — collapsed by default, never required. */
+/** Optional per-project financial value, planned timeline + who can see the
+ *  value + which fields show on this project's card. Purely additive —
+ *  collapsed by default, never required. */
 const ProjectValueSection: React.FC<ProjectValueSectionProps> = ({
   amount, onAmountChange, currency, onCurrencyChange,
   visibility, onVisibilityChange, visibleUserIds, onVisibleUserIdsChange,
   cardDisplay, onCardDisplayChange, assignableMembers, expanded, onToggleExpanded,
+  plannedStart, onPlannedStartChange, plannedCompletion, onPlannedCompletionChange,
 }) => {
   const toggleMember = (id: string) => {
     onVisibleUserIdsChange(
@@ -169,7 +177,7 @@ const ProjectValueSection: React.FC<ProjectValueSectionProps> = ({
       >
         <span className="text-sm font-medium text-gray-700 dark:text-slate-300 inline-flex items-center gap-1.5">
           <Wallet size={14} className="text-gray-400 dark:text-slate-500" />
-          Project Value &amp; Card Display <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+          Project Planning, Value &amp; Card Display <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
           {amount.trim() !== '' && (
             <span className="ml-1 text-xs text-purple-600 dark:text-purple-400 font-normal">value set</span>
           )}
@@ -218,6 +226,38 @@ const ProjectValueSection: React.FC<ProjectValueSectionProps> = ({
               >
                 {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
+            </div>
+          </div>
+
+          {/* Planned timeline — used only to compute time-progress, never stored as a percentage */}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Planned Start</label>
+              <input
+                type="date"
+                value={plannedStart}
+                onChange={(e) => onPlannedStartChange(e.target.value)}
+                className={clsx(
+                  'w-full rounded-lg px-3 py-2 text-sm',
+                  'bg-white border border-gray-300 text-gray-800',
+                  'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                  'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                )}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Planned Completion</label>
+              <input
+                type="date"
+                value={plannedCompletion}
+                onChange={(e) => onPlannedCompletionChange(e.target.value)}
+                className={clsx(
+                  'w-full rounded-lg px-3 py-2 text-sm',
+                  'bg-white border border-gray-300 text-gray-800',
+                  'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                  'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                )}
+              />
             </div>
           </div>
 
@@ -316,6 +356,9 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const [valueVisibleUserIds, setValueVisibleUserIds] = useState<string[]>([]);
   const [cardDisplay, setCardDisplay] = useState<NonNullable<Project['cardDisplay']>>(DEFAULT_CARD_DISPLAY);
   const [showValueSection, setShowValueSection] = useState(false);
+  const [projectType, setProjectType] = useState<NonNullable<Project['projectType']>>('internal');
+  const [plannedStart, setPlannedStart] = useState('');
+  const [plannedCompletion, setPlannedCompletion] = useState('');
 
   const template = projectTemplates.find((t) => t.id === selectedTemplate);
   const isCustom = selectedTemplate === 'custom';
@@ -343,6 +386,9 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     setValueVisibleUserIds([]);
     setCardDisplay(DEFAULT_CARD_DISPLAY);
     setShowValueSection(false);
+    setProjectType('internal');
+    setPlannedStart('');
+    setPlannedCompletion('');
   };
 
   const MAX_LOGO_BYTES = 1024 * 1024; // 1MB — keeps the DB row small since it's stored as a data URL
@@ -454,6 +500,9 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
         valueVisibility,
         valueVisibleUserIds: valueVisibility === 'selected' && valueVisibleUserIds.length > 0 ? valueVisibleUserIds : undefined,
         cardDisplay,
+        projectType,
+        plannedStartDate: plannedStart ? new Date(plannedStart) : undefined,
+        plannedCompletionDate: plannedCompletion ? new Date(plannedCompletion) : undefined,
       });
 
       // Members with a task assigned to them get the richer "assigned you N
@@ -586,6 +635,23 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                 />
               </div>
 
+              {/* Project Type — Internal vs External */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Project Type</label>
+                <select
+                  value={projectType}
+                  onChange={(e) => setProjectType(e.target.value as NonNullable<Project['projectType']>)}
+                  className={clsx(
+                    'w-full sm:w-56 rounded-lg px-4 py-2.5 text-sm',
+                    'bg-white border border-gray-300 text-gray-800',
+                    'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 cursor-pointer'
+                  )}
+                >
+                  {PROJECT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+
               {/* Company logo */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
@@ -696,6 +762,10 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                 assignableMembers={assignableMembers}
                 expanded={showValueSection}
                 onToggleExpanded={() => setShowValueSection(!showValueSection)}
+                plannedStart={plannedStart}
+                onPlannedStartChange={setPlannedStart}
+                plannedCompletion={plannedCompletion}
+                onPlannedCompletionChange={setPlannedCompletion}
               />
 
               {/* Template cards */}
@@ -1144,6 +1214,9 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   const assignedCount = project.tasks.filter((t) => t.assignedTo).length;
   const totalHours = project.tasks.reduce((sum, t) => sum + t.estimatedHours, 0);
   const sc = statusConfig[project.status];
+  const taskStats = getProjectTaskStats(project, boardTasks);
+  const timeProgress = getProjectTimeProgress(project);
+  const pace = getProjectPace(project, boardTasks);
 
   // Auto-update project status based on linked board task progress
   useEffect(() => {
@@ -1293,10 +1366,22 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
               {project.description && (
                 <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{project.description}</p>
               )}
-              <div className="flex items-center gap-2 mt-2 text-[11px] text-gray-400 dark:text-slate-500">
+              <div className="flex items-center flex-wrap gap-2 mt-2 text-[11px] text-gray-400 dark:text-slate-500">
                 <span>Created {new Date(project.createdAt).toLocaleDateString()}</span>
                 <span>&middot;</span>
                 <span className="capitalize">{project.templateId.replace('-', ' ')} template</span>
+                {project.projectType && (
+                  <>
+                    <span>&middot;</span>
+                    <span className="capitalize">{project.projectType}</span>
+                  </>
+                )}
+                {project.plannedStartDate && project.plannedCompletionDate && (
+                  <>
+                    <span>&middot;</span>
+                    <span>Planned {new Date(project.plannedStartDate).toLocaleDateString()} – {new Date(project.plannedCompletionDate).toLocaleDateString()}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1357,6 +1442,55 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
           </div>
         )}
       </div>
+
+      {/* Task breakdown + planned pace — auto-appears only when there's data to show it from, no new toggle needed */}
+      {(taskStats.completionPct !== null || timeProgress) && (
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700 space-y-4">
+          {taskStats.completionPct !== null && (
+            <div>
+              <div className="flex items-center justify-between text-xs text-gray-500 dark:text-slate-400 mb-2">
+                <span className="font-semibold text-gray-700 dark:text-slate-300">Task Completion</span>
+                <span>{taskStats.completionPct}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden mb-2">
+                <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${taskStats.completionPct}%` }} />
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-center text-[11px] text-gray-500 dark:text-slate-400">
+                <div><span className="block text-sm font-bold text-gray-900 dark:text-slate-100">{taskStats.planned}</span>Planned</div>
+                <div><span className="block text-sm font-bold text-gray-900 dark:text-slate-100">{taskStats.inProgress}</span>In Progress</div>
+                <div><span className="block text-sm font-bold text-gray-900 dark:text-slate-100">{taskStats.completed}</span>Completed</div>
+                <div><span className="block text-sm font-bold text-gray-900 dark:text-slate-100">{taskStats.remaining}</span>Remaining</div>
+              </div>
+            </div>
+          )}
+          {timeProgress && (
+            <div>
+              <div className="flex items-center justify-between text-xs text-gray-500 dark:text-slate-400 mb-2">
+                <span className="font-semibold text-gray-700 dark:text-slate-300">Time Elapsed</span>
+                <span>{timeProgress.timeProgressPct}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden mb-2">
+                <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${timeProgress.timeProgressPct}%` }} />
+              </div>
+              <p className="text-[11px] text-gray-400 dark:text-slate-500">
+                {timeProgress.elapsedDays} of {timeProgress.totalDays} planned days elapsed &middot; {timeProgress.remainingDays} remaining
+              </p>
+            </div>
+          )}
+          {pace !== 'unknown' && (
+            <div className={clsx(
+              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
+              pace === 'behind' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+              pace === 'ahead' && 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+              pace === 'on-pace' && 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+            )}>
+              {pace === 'behind' && <>⚠ Behind Planned Pace</>}
+              {pace === 'ahead' && <>✓ Ahead of Planned Pace</>}
+              {pace === 'on-pace' && <>On Pace</>}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Value History — only for managers/admins (same audience as edit access) */}
       {canManage && valueHistory && valueHistory.length > 0 && (
@@ -1859,11 +1993,13 @@ interface EditProjectModalProps {
     id: string; name: string; description?: string; status: string; icon: string; templateId: string;
     attachments?: Attachment[]; links?: TaskLink[];
     valueVisibility?: Project['valueVisibility']; valueVisibleUserIds?: string[]; cardDisplay?: Project['cardDisplay'];
+    projectType?: Project['projectType']; plannedStartDate?: Date; plannedCompletionDate?: Date;
   };
   onClose: () => void;
   onSave: (id: string, updates: {
     name: string; description: string; status: string; icon: string; attachments?: Attachment[]; links?: TaskLink[];
     value?: number; currency?: string; valueVisibility?: Project['valueVisibility']; valueVisibleUserIds?: string[]; cardDisplay?: Project['cardDisplay'];
+    projectType?: Project['projectType']; plannedStartDate?: Date; plannedCompletionDate?: Date;
   }) => void;
 }
 const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, onSave }) => {
@@ -1886,6 +2022,9 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
   const [valueVisibleUserIds, setValueVisibleUserIds] = useState<string[]>(project.valueVisibleUserIds || []);
   const [cardDisplay, setCardDisplay] = useState<NonNullable<Project['cardDisplay']>>({ ...DEFAULT_CARD_DISPLAY, ...(project.cardDisplay || {}) });
   const [showValueSection, setShowValueSection] = useState(false);
+  const [projectType, setProjectType] = useState<NonNullable<Project['projectType']>>(project.projectType || 'internal');
+  const [plannedStart, setPlannedStart] = useState(toDateInputValue(project.plannedStartDate));
+  const [plannedCompletion, setPlannedCompletion] = useState(toDateInputValue(project.plannedCompletionDate));
 
   // Prefill the current value/currency via the authorized RPC — never
   // trust/derive this from the bulk project object, since it's
@@ -1938,6 +2077,9 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
       valueVisibility,
       valueVisibleUserIds: valueVisibility === 'selected' && valueVisibleUserIds.length > 0 ? valueVisibleUserIds : undefined,
       cardDisplay,
+      projectType,
+      plannedStartDate: plannedStart ? new Date(plannedStart) : undefined,
+      plannedCompletionDate: plannedCompletion ? new Date(plannedCompletion) : undefined,
     });
     onClose();
   };
@@ -1985,6 +2127,21 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
               )}
               placeholder="What is this project about?"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Project Type</label>
+            <select
+              value={projectType}
+              onChange={(e) => setProjectType(e.target.value as NonNullable<Project['projectType']>)}
+              className={clsx(
+                'w-full px-3 py-2.5 rounded-xl text-sm border',
+                'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                'border-gray-200 dark:border-slate-600',
+                'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 cursor-pointer'
+              )}
+            >
+              {PROJECT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">
@@ -2072,6 +2229,10 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
             assignableMembers={assignableMembers}
             expanded={showValueSection}
             onToggleExpanded={() => setShowValueSection(!showValueSection)}
+            plannedStart={plannedStart}
+            onPlannedStartChange={setPlannedStart}
+            plannedCompletion={plannedCompletion}
+            onPlannedCompletionChange={setPlannedCompletion}
           />
           <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Status</label>
@@ -2550,35 +2711,55 @@ export const Projects: React.FC = () => {
                   )}
                 </div>
 
-                {/* Configurable card fields — Project Value / Progress / Project Manager.
-                    Each only renders when this project's Card Display config explicitly
-                    turns it on; a project that has never been configured (cardDisplay
-                    undefined) renders none of these, exactly as before this feature. */}
+                {/* Configurable card fields — Project Value / Progress / Project Manager /
+                    Project Type / Planned Completion. Each only renders when this
+                    project's Card Display config explicitly turns it on; a project
+                    that has never been configured (cardDisplay undefined) renders
+                    none of these, exactly as before this feature. */}
                 {(() => {
                   const cd = project.cardDisplay;
                   const showValue = cd?.value === true;
                   const showProgress = cd?.progress === true;
                   const showPM = cd?.projectManager === true;
-                  if (!showValue && !showProgress && !showPM) return null;
+                  const showType = cd?.projectType === true;
+                  const showDue = cd?.plannedCompletion === true && !!project.plannedCompletionDate;
+                  if (!showValue && !showProgress && !showPM && !showType && !showDue) return null;
                   const pv = projectValues[project.id];
-                  const progress = showProgress ? computeProjectProgress(project, boardTasks) : null;
+                  const stats = showProgress ? getProjectTaskStats(project, boardTasks) : null;
                   const pm = showPM ? assignableMembers.find((m) => m.id === project.createdBy) : null;
                   return (
                     <div className="mb-3 space-y-1.5">
+                      {(showType || showDue) && (
+                        <div className="flex items-center gap-2">
+                          {showType && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300 capitalize">
+                              {project.projectType || 'internal'}
+                            </span>
+                          )}
+                          {showDue && (
+                            <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                              Due: {new Date(project.plannedCompletionDate!).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {showValue && pv && pv.value !== null && (
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-slate-200">
                           <Wallet size={12} className="text-purple-500" />
                           {new Intl.NumberFormat(undefined, { style: 'currency', currency: pv.currency || 'ZAR' }).format(pv.value)}
                         </div>
                       )}
-                      {showProgress && progress !== null && (
+                      {showProgress && stats && stats.completionPct !== null && (
                         <div>
                           <div className="flex items-center justify-between text-[10px] text-gray-400 dark:text-slate-500 mb-0.5">
                             <span>Progress</span>
-                            <span>{progress}%</span>
+                            <span>{stats.completionPct}%</span>
                           </div>
                           <div className="h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
-                            <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
+                            <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${stats.completionPct}%` }} />
+                          </div>
+                          <div className="text-[10px] text-gray-400 dark:text-slate-500 mt-0.5">
+                            {stats.completed} / {stats.total} Tasks Completed
                           </div>
                         </div>
                       )}
@@ -2746,6 +2927,7 @@ export const Projects: React.FC = () => {
               id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active', icon: proj.icon, templateId: proj.templateId,
               attachments: proj.attachments, links: proj.links,
               valueVisibility: proj.valueVisibility, valueVisibleUserIds: proj.valueVisibleUserIds, cardDisplay: proj.cardDisplay,
+              projectType: proj.projectType, plannedStartDate: proj.plannedStartDate, plannedCompletionDate: proj.plannedCompletionDate,
             }}
             onClose={() => setEditProjectId(null)}
             onSave={(id, updates) => updateProject(id, updates as any)}

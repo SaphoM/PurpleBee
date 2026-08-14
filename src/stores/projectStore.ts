@@ -343,7 +343,107 @@ export interface Project {
     team?: boolean;
     projectManager?: boolean;
     taskCompletion?: boolean;
+    projectType?: boolean;
+    plannedCompletion?: boolean;
   };
+  /** Internal (in-house) vs External (client/customer) project. Defaults to 'internal' at the DB level. */
+  projectType?: 'internal' | 'external';
+  /** Optional planned timeline — used only to compute time-progress (see getProjectTimeProgress). Never persisted as a percentage. */
+  plannedStartDate?: Date;
+  plannedCompletionDate?: Date;
+}
+
+// ─── Project planning calculations (foundation for future Value vs Time vs
+// Completion reporting) — always computed at render time from live data,
+// never persisted, so they can never go stale. ──────────────────────────
+
+export interface ProjectTaskStats {
+  total: number;
+  completed: number;
+  inProgress: number;
+  planned: number;
+  remaining: number;
+  completionPct: number | null;
+}
+
+/**
+ * Buckets a project's checklist tasks (`project.tasks`) by the status of
+ * whichever board task they're linked to (`linkedTaskId`). Unlinked tasks —
+ * and linked tasks still at 'todo' — count as "planned" (not yet started).
+ * This generalizes the Card's earlier one-off progress calculation into a
+ * single shared helper reused by the Card, ProjectDetail, and any future
+ * Analytics view.
+ */
+export function getProjectTaskStats(
+  project: Pick<Project, 'tasks'>,
+  boardTasks: Array<{ id: string; status: string }>,
+): ProjectTaskStats {
+  const total = project.tasks.length;
+  let completed = 0;
+  let inProgress = 0;
+  for (const t of project.tasks) {
+    const linked = t.linkedTaskId ? boardTasks.find((bt) => bt.id === t.linkedTaskId) : undefined;
+    if (linked?.status === 'completed') completed++;
+    else if (linked?.status === 'in-progress' || linked?.status === 'review') inProgress++;
+  }
+  const planned = total - completed - inProgress;
+  const remaining = planned + inProgress;
+  return {
+    total, completed, inProgress, planned, remaining,
+    completionPct: total === 0 ? null : Math.round((completed / total) * 100),
+  };
+}
+
+export interface ProjectTimeProgress {
+  totalDays: number;
+  elapsedDays: number;
+  remainingDays: number;
+  timeProgressPct: number;
+}
+
+/**
+ * Computes elapsed/remaining time against the project's planned dates.
+ * Returns null when either date is missing or the range is invalid
+ * (completion on/before start) — callers should treat null as "no
+ * planned timeline to show", not an error.
+ */
+export function getProjectTimeProgress(
+  project: Pick<Project, 'plannedStartDate' | 'plannedCompletionDate'>,
+): ProjectTimeProgress | null {
+  if (!project.plannedStartDate || !project.plannedCompletionDate) return null;
+  const start = new Date(project.plannedStartDate).getTime();
+  const end = new Date(project.plannedCompletionDate).getTime();
+  if (!(end > start)) return null;
+  const now = Date.now();
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const totalDays = Math.round((end - start) / DAY_MS);
+  const elapsedDaysRaw = (now - start) / DAY_MS;
+  const elapsedDays = Math.max(0, Math.min(totalDays, Math.round(elapsedDaysRaw)));
+  const remainingDays = totalDays - elapsedDays;
+  const timeProgressPct = Math.max(0, Math.min(100, Math.round((elapsedDaysRaw / totalDays) * 100)));
+  return { totalDays, elapsedDays, remainingDays, timeProgressPct };
+}
+
+export type ProjectPace = 'ahead' | 'behind' | 'on-pace' | 'unknown';
+
+/**
+ * Compares planned time-elapsed against actual task completion — the
+ * foundation for a future Value vs Time vs Completion view. 'unknown'
+ * whenever either input isn't available (no planned dates, or no tasks to
+ * measure completion from) rather than guessing.
+ */
+export function getProjectPace(
+  project: Pick<Project, 'tasks' | 'plannedStartDate' | 'plannedCompletionDate'>,
+  boardTasks: Array<{ id: string; status: string }>,
+): ProjectPace {
+  const time = getProjectTimeProgress(project);
+  const stats = getProjectTaskStats(project, boardTasks);
+  if (!time || stats.completionPct === null) return 'unknown';
+  const diff = stats.completionPct - time.timeProgressPct;
+  const TOLERANCE = 10;
+  if (diff > TOLERANCE) return 'ahead';
+  if (diff < -TOLERANCE) return 'behind';
+  return 'on-pace';
 }
 
 // ─── Store ─────────────────────────────────────────────────────────────
@@ -368,6 +468,9 @@ interface ProjectStore {
     valueVisibility?: Project['valueVisibility'];
     valueVisibleUserIds?: string[];
     cardDisplay?: Project['cardDisplay'];
+    projectType?: Project['projectType'];
+    plannedStartDate?: Date;
+    plannedCompletionDate?: Date;
   }) => string; // returns project id
   /** `notify` (default true) — pass false for system-derived updates (e.g. auto status derivation from linked task progress) so they don't spam project members with a notification for something nobody actively did. */
   updateProject: (id: string, updates: Partial<Project>, notify?: boolean) => void;
@@ -532,6 +635,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       valueVisibility: data.valueVisibility || 'admins',
       valueVisibleUserIds: data.valueVisibleUserIds || undefined,
       cardDisplay: data.cardDisplay || undefined,
+      projectType: data.projectType || 'internal',
+      plannedStartDate: data.plannedStartDate || undefined,
+      plannedCompletionDate: data.plannedCompletionDate || undefined,
     };
     set((state) => {
       const next = [project, ...state.projects];
@@ -561,6 +667,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         value_visibility: project.valueVisibility || 'admins',
         value_visible_user_ids: project.valueVisibleUserIds && project.valueVisibleUserIds.length > 0 ? project.valueVisibleUserIds : null,
         card_display: project.cardDisplay || null,
+        project_type: project.projectType || 'internal',
+        planned_start_date: project.plannedStartDate ? project.plannedStartDate.toISOString().slice(0, 10) : null,
+        planned_completion_date: project.plannedCompletionDate ? project.plannedCompletionDate.toISOString().slice(0, 10) : null,
       },
       project.tasks.map((t) => toDbProjectTask(project.id, t)),
       isMockMode(),
@@ -593,6 +702,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.valueVisibility !== undefined) payload.value_visibility = updates.valueVisibility || 'admins';
     if (updates.valueVisibleUserIds !== undefined) payload.value_visible_user_ids = updates.valueVisibleUserIds && updates.valueVisibleUserIds.length > 0 ? updates.valueVisibleUserIds : null;
     if (updates.cardDisplay !== undefined) payload.card_display = updates.cardDisplay || null;
+    if (updates.projectType !== undefined) payload.project_type = updates.projectType || 'internal';
+    if (updates.plannedStartDate !== undefined) payload.planned_start_date = updates.plannedStartDate ? new Date(updates.plannedStartDate).toISOString().slice(0, 10) : null;
+    if (updates.plannedCompletionDate !== undefined) payload.planned_completion_date = updates.plannedCompletionDate ? new Date(updates.plannedCompletionDate).toISOString().slice(0, 10) : null;
     if (Object.keys(payload).length > 0) {
       payload.updated_at = new Date().toISOString();
       projectDb.update(id, payload, isMockMode());
@@ -823,6 +935,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       // projectDb.fetchAll) — never hydrated here; fetched on demand via
       // projectDb.getValue() by whichever component needs to show it.
       cardDisplay: r.card_display || undefined,
+      projectType: r.project_type || 'internal',
+      plannedStartDate: r.planned_start_date ? new Date(r.planned_start_date) : undefined,
+      plannedCompletionDate: r.planned_completion_date ? new Date(r.planned_completion_date) : undefined,
       tasks: ((r.project_tasks as Array<Record<string, any>>) || [])
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((t) => ({
