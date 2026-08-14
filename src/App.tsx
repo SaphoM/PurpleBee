@@ -19,10 +19,12 @@ import { ChatBot } from '@components/ChatBot';
 import { DockedChats } from '@components/DockedChats';
 import { ToastContainer } from '@components/Toast';
 import { WelcomeTipsModal, MobileToastProvider } from '@components/Tip';
+import { SessionWarningModal } from '@components/SessionWarningModal';
 import { useUIStore } from '@stores/uiStore';
 import { useUserStore } from '@stores/userStore';
 import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
+import { useSessionGuard } from '@/lib/sessionGuard';
 
 type PageType = 'dashboard' | 'projects' | 'tasks' | 'calendar' | 'analytics' | 'team' | 'chat' | 'ai-insights' | 'settings' | 'onboard' | 'reset-password';
 
@@ -46,6 +48,10 @@ const App: React.FC = () => {
   useEffect(() => {
     initSession();
   }, [initSession]);
+
+  // Idle-timeout guard — only tracks activity/shows the warning once
+  // genuinely authenticated; quietly does nothing beforehand.
+  const { showWarning, secondsRemaining, continueWorking } = useSessionGuard(isAuthenticated);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -224,6 +230,7 @@ const App: React.FC = () => {
       <ToastContainer />
       <MobileToastProvider />
       <WelcomeTipsModal />
+      <SessionWarningModal isOpen={showWarning} secondsRemaining={secondsRemaining} onContinue={continueWorking} />
     </div>
   );
 };

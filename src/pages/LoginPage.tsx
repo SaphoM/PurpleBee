@@ -101,12 +101,13 @@ const OnboardToggle: React.FC<{
 type PageMode = 'login' | 'create';
 
 export const LoginPage: React.FC = () => {
-  const { login, loginWithEmail, signUpWithEmail, error, setError, isLoading: storeLoading } = useUserStore();
+  const { login, loginWithEmail, signUpWithEmail, error, setError, isLoading: storeLoading, sessionExpiredReason } = useUserStore();
   const { setKeepMockData, setShowTips, hideQuickLogin, setHideQuickLogin } = useSettingsStore();
 
   const [pageMode, setPageMode] = useState<PageMode>('login');
   const [password, setPassword] = useState('');
   const [loginEmail, setLoginEmail] = useState('');
+  const [rememberMe, setRememberMeChecked] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loginMode, setLoginMode] = useState<'select' | 'credentials'>(hideQuickLogin ? 'credentials' : 'select');
@@ -141,7 +142,7 @@ export const LoginPage: React.FC = () => {
     if (!password.trim()) { setError('Please enter your password'); return; }
     setIsLoading(true);
     setError(null);
-    const success = await loginWithEmail(loginEmail, password);
+    const success = await loginWithEmail(loginEmail, password, rememberMe);
     setIsLoading(false);
     if (!success && !error) {
       setError('Invalid email or password');
@@ -246,6 +247,11 @@ export const LoginPage: React.FC = () => {
               </div>
 
               <div className="p-6">
+                {sessionExpiredReason && !error && (
+                  <div className="mb-4 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-xs text-amber-700 dark:text-amber-400 font-medium">
+                    Your session has expired for security. Please sign in again to continue.
+                  </div>
+                )}
                 {error && (
                   <div className="mb-4 px-3 py-2.5 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 text-xs text-red-600 dark:text-red-400 font-medium">
                     {error}
@@ -338,7 +344,12 @@ export const LoginPage: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between">
                       <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" defaultChecked className="w-3.5 h-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500/30" />
+                        <input
+                          type="checkbox"
+                          checked={rememberMe}
+                          onChange={(e) => setRememberMeChecked(e.target.checked)}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500/30"
+                        />
                         <span className="text-xs text-gray-500 dark:text-slate-400">Remember me</span>
                       </label>
                       <button

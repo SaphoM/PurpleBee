@@ -6,7 +6,7 @@ import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { useTaskStore, setTaskUserContext } from '@stores/taskStore';
 import { useProjectStore, setProjectUserContext } from '@stores/projectStore';
-import { supabase, isDbConnected } from '@/lib/supabase';
+import { supabase, isDbConnected, setRememberMe } from '@/lib/supabase';
 import { authDb } from '@/lib/dataService';
 
 export type AppRole = 'admin' | 'manager' | 'user';
@@ -76,6 +76,9 @@ interface UserStore {
   isLoading: boolean;
   authChecked: boolean; // true once initSession has run
   pendingPasswordRecovery: boolean; // true when user arrived via password reset email
+  /** Set when logout happened because of inactivity or a revoked/expired session (not an explicit user click) — LoginPage shows a banner instead of a bare form. Cleared on next successful login. */
+  sessionExpiredReason: 'inactivity' | 'revoked' | null;
+  setSessionExpiredReason: (reason: 'inactivity' | 'revoked' | null) => void;
   error: string | null;
 
   // "View As" — admin/manager peek at a member's dashboard
@@ -101,12 +104,12 @@ interface UserStore {
   login: (profileId: string, password: string) => boolean;
 
   // Actions — Supabase Auth (real email/password)
-  loginWithEmail: (email: string, password: string) => Promise<boolean>;
+  loginWithEmail: (email: string, password: string, rememberMe?: boolean) => Promise<boolean>;
   signUpWithEmail: (email: string, password: string, name: string, companyName?: string) => Promise<{ success: boolean; needsConfirmation: boolean }>;
   initSession: () => Promise<void>; // Restore session on app load
 
   setUser: (user: User) => void;
-  logout: () => void;
+  logout: (reason?: 'inactivity' | 'revoked') => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
 
@@ -219,6 +222,7 @@ async function restoreUserSession(
     isAuthenticated: true,
     viewingAsId: null,
     error: null,
+    sessionExpiredReason: null,
   });
 
   // Real Supabase users must always be in live mode (mock is for Quick Login only).
@@ -269,6 +273,8 @@ export const useUserStore = create<UserStore>((set, get) => ({
   isLoading: false,
   authChecked: false,
   pendingPasswordRecovery: false,
+  sessionExpiredReason: null,
+  setSessionExpiredReason: (reason) => set({ sessionExpiredReason: reason }),
   error: null,
   viewingAsId: null,
   currentTeamId: null,
@@ -417,15 +423,20 @@ export const useUserStore = create<UserStore>((set, get) => ({
       isAuthenticated: true,
       viewingAsId: null,
       error: null,
+      sessionExpiredReason: null,
     });
     hydrateStores(profile.id, profile.name);
     return true;
   },
 
   // ── Supabase Auth: email + password sign-in ────────────────────────
-  loginWithEmail: async (email, password) => {
+  loginWithEmail: async (email, password, rememberMe = true) => {
     set({ isLoading: true, error: null });
     try {
+      // Must be set before signIn — supabase.ts's storage adapter reads this
+      // flag at write-time to decide localStorage (persists across browser
+      // restarts) vs sessionStorage (cleared on tab/browser close).
+      setRememberMe(rememberMe);
       const result = await authDb.signIn(email, password);
       if (!result || !result.user) {
         set({ error: 'Invalid email or password', isLoading: false });
@@ -480,6 +491,18 @@ export const useUserStore = create<UserStore>((set, get) => ({
         if (event === 'PASSWORD_RECOVERY' && session) {
           set({ pendingPasswordRecovery: true });
         }
+        // Reached either because this tab called logout() itself (which
+        // already set this same state synchronously — harmless to repeat),
+        // or because another tab signed out: supabase-js listens for the
+        // browser's native `storage` event on the persisted session key and
+        // re-emits SIGNED_OUT here automatically, which is what makes every
+        // open PurpleBee tab react to a logout within seconds. Deliberately
+        // does NOT call authDb.signOut() again — whoever triggered this
+        // already revoked the session server-side.
+        if (event === 'SIGNED_OUT') {
+          useNotificationStore.getState().unsubscribeRealtime();
+          set({ user: null, isAuthenticated: false, viewingAsId: null, currentTeamId: null, currentTeamName: null });
+        }
       });
     }
 
@@ -498,12 +521,16 @@ export const useUserStore = create<UserStore>((set, get) => ({
   setUser: (user) =>
     set({ user, isAuthenticated: true, error: null }),
 
-  logout: () => {
+  logout: (reason) => {
     // Sign out of Supabase Auth (clears the persisted session)
     authDb.signOut().catch(() => {});
     // Clean up realtime subscription before clearing auth state
     useNotificationStore.getState().unsubscribeRealtime();
-    set({ user: null, isAuthenticated: false, viewingAsId: null, error: null, currentTeamId: null, currentTeamName: null });
+    set({
+      user: null, isAuthenticated: false, viewingAsId: null, error: null,
+      currentTeamId: null, currentTeamName: null,
+      sessionExpiredReason: reason ?? null,
+    });
   },
 
   setLoading: (loading) => set({ isLoading: loading }),

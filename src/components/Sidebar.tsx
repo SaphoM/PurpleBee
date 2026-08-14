@@ -272,7 +272,7 @@ export const Sidebar: React.FC = () => {
                   title={user.name}
                 />
                 <button
-                  onClick={logout}
+                  onClick={() => logout()}
                   title="Logout"
                   className={clsx(
                     'p-2 rounded-lg relative group',
@@ -311,7 +311,7 @@ export const Sidebar: React.FC = () => {
                   </div>
                 </div>
                 <button
-                  onClick={logout}
+                  onClick={() => logout()}
                   className={clsx(
                     'w-full flex items-center justify-center gap-2',
                     'px-3 py-2 rounded-lg text-sm font-medium',
