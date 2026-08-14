@@ -47,7 +47,7 @@ import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useChatStore } from '@stores/chatStore';
 import { NotificationType } from '@/types/index';
-import { isDbConnected } from '@/lib/supabase';
+import { isDbConnected, supabase } from '@/lib/supabase';
 import { authDb } from '@/lib/dataService';
 
 // ─── Demo-to-Real Auth Modal ──────────────────────────────────────────────────
@@ -648,60 +648,58 @@ export const SettingsPage: React.FC = () => {
   const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [telegramUsername, setTelegramUsername] = useState('');
   const [telegramConnecting, setTelegramConnecting] = useState(false);
+  // Only used by the legacy handleConnectTelegram flow below, which this
+  // pass deliberately leaves untouched (see plan notes) — not used by the
+  // real chat_id-based linking flow, which now goes through Supabase Edge
+  // Functions instead.
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3005';
 
   // Personal Telegram account link (separate from the bot-level toggle
-  // above) — maps this specific user to their Telegram from.id.
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3005';
+  // above) — maps this specific user to their Telegram from.id. Routed
+  // through the telegram-link Supabase Edge Function (replaces the old
+  // deleted Express backend's /api/telegram/* routes) via supabase.functions.invoke,
+  // which automatically attaches the current session's auth token.
   const [telegramLinked, setTelegramLinked] = useState(false);
   const [telegramLinkCode, setTelegramLinkCode] = useState<string | null>(null);
   const [telegramLinking, setTelegramLinking] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
-    fetch(`${API_URL}/api/telegram/link-status?userId=${user.id}`)
-      .then((res) => res.json())
-      .then((data) => setTelegramLinked(Boolean(data.linked)))
+    if (!user || !supabase) return;
+    supabase.functions.invoke('telegram-link/link-status', { method: 'GET' })
+      .then(({ data }) => setTelegramLinked(Boolean(data?.linked)))
       .catch(() => {});
-  }, [user, API_URL]);
+  }, [user]);
 
   const handleGenerateTelegramLinkCode = async () => {
-    if (!user) return;
+    if (!user || !supabase) return;
     setTelegramLinking(true);
     try {
-      const res = await fetch(`${API_URL}/api/telegram/link-code`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      const { data, error } = await supabase.functions.invoke('telegram-link/link-code', { method: 'POST' });
+      if (error) throw error;
+      if (data?.success) {
         setTelegramLinkCode(data.code);
         window.open(data.deepLink, '_blank');
       } else {
-        alert('Could not generate a link code: ' + (data.error || 'Unknown error'));
+        alert('Could not generate a link code: ' + (data?.error || 'Unknown error'));
       }
     } catch {
-      alert('Could not reach backend. Make sure your backend server is running.');
+      alert('Could not reach the Telegram linking service. Please try again.');
     } finally {
       setTelegramLinking(false);
     }
   };
 
   const handleUnlinkTelegram = async () => {
-    if (!user) return;
+    if (!user || !supabase) return;
     try {
-      const res = await fetch(`${API_URL}/api/telegram/unlink`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      const { data, error } = await supabase.functions.invoke('telegram-link/unlink', { method: 'POST' });
+      if (error) throw error;
+      if (data?.success) {
         setTelegramLinked(false);
         setTelegramLinkCode(null);
       }
     } catch {
-      alert('Could not reach backend. Make sure your backend server is running.');
+      alert('Could not reach the Telegram linking service. Please try again.');
     }
   };
 
@@ -958,6 +956,16 @@ export const SettingsPage: React.FC = () => {
                     <Toggle
                       enabled={preferences.email}
                       onChange={(v) => updatePreferences({ email: v })}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    icon={<Send size={16} />}
+                    label="Telegram Notifications"
+                    description="Send notifications to your linked Telegram account"
+                  >
+                    <Toggle
+                      enabled={preferences.telegram}
+                      onChange={(v) => updatePreferences({ telegram: v })}
                     />
                   </SettingRow>
                   <SettingRow

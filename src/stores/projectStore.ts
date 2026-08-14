@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { projectDb, type DbProjectTaskInsert } from '@/lib/dataService';
+import { projectDb, projectValueHistoryDb, type DbProjectTaskInsert } from '@/lib/dataService';
 import { notifyUser, notifyUsers } from '@/lib/notify';
 import { useSettingsStore } from '@stores/settingsStore';
 import type { Attachment, TaskLink } from '@/types/index';
@@ -323,6 +323,27 @@ export interface Project {
   /** Project References — supporting material for the project as a whole (discovery meetings, requirements, scope docs, screenshots, etc.), distinct from any individual task's own attachments/links. */
   attachments?: Attachment[];
   links?: TaskLink[];
+  /**
+   * Optional financial value for this project. Deliberately never populated
+   * by hydrateFromDb's bulk fetch — only ever set client-side after a
+   * successful projectDb.getValue() RPC call, which enforces per-project
+   * visibility server-side. Absence here means "not fetched/not visible",
+   * not necessarily "no value set".
+   */
+  value?: number;
+  currency?: string;
+  /** Who can see `value` — defaults to 'admins' (safest) at the DB level. */
+  valueVisibility?: 'admins' | 'managers' | 'team' | 'selected';
+  valueVisibleUserIds?: string[];
+  /** Per-project card-display toggles. Undefined/missing fields fall back to the card's existing default rendering. */
+  cardDisplay?: {
+    value?: boolean;
+    status?: boolean;
+    progress?: boolean;
+    team?: boolean;
+    projectManager?: boolean;
+    taskCompletion?: boolean;
+  };
 }
 
 // ─── Store ─────────────────────────────────────────────────────────────
@@ -342,6 +363,11 @@ interface ProjectStore {
     productName?: string;
     attachments?: Attachment[];
     links?: TaskLink[];
+    value?: number;
+    currency?: string;
+    valueVisibility?: Project['valueVisibility'];
+    valueVisibleUserIds?: string[];
+    cardDisplay?: Project['cardDisplay'];
   }) => string; // returns project id
   /** `notify` (default true) — pass false for system-derived updates (e.g. auto status derivation from linked task progress) so they don't spam project members with a notification for something nobody actively did. */
   updateProject: (id: string, updates: Partial<Project>, notify?: boolean) => void;
@@ -501,6 +527,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       productName: data.productName || undefined,
       attachments: data.attachments || undefined,
       links: data.links || undefined,
+      value: data.value ?? undefined,
+      currency: data.value !== undefined ? (data.currency || 'ZAR') : undefined,
+      valueVisibility: data.valueVisibility || 'admins',
+      valueVisibleUserIds: data.valueVisibleUserIds || undefined,
+      cardDisplay: data.cardDisplay || undefined,
     };
     set((state) => {
       const next = [project, ...state.projects];
@@ -525,6 +556,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         product_name: project.productName || null,
         attachments: project.attachments && project.attachments.length > 0 ? project.attachments : null,
         links: project.links && project.links.length > 0 ? project.links : null,
+        value: project.value ?? null,
+        currency: project.currency || 'ZAR',
+        value_visibility: project.valueVisibility || 'admins',
+        value_visible_user_ids: project.valueVisibleUserIds && project.valueVisibleUserIds.length > 0 ? project.valueVisibleUserIds : null,
+        card_display: project.cardDisplay || null,
       },
       project.tasks.map((t) => toDbProjectTask(project.id, t)),
       isMockMode(),
@@ -552,9 +588,39 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.productName !== undefined) payload.product_name = updates.productName || null;
     if (updates.attachments !== undefined) payload.attachments = updates.attachments && updates.attachments.length > 0 ? updates.attachments : null;
     if (updates.links !== undefined) payload.links = updates.links && updates.links.length > 0 ? updates.links : null;
+    if (updates.value !== undefined) payload.value = updates.value ?? null;
+    if (updates.currency !== undefined) payload.currency = updates.currency || 'ZAR';
+    if (updates.valueVisibility !== undefined) payload.value_visibility = updates.valueVisibility || 'admins';
+    if (updates.valueVisibleUserIds !== undefined) payload.value_visible_user_ids = updates.valueVisibleUserIds && updates.valueVisibleUserIds.length > 0 ? updates.valueVisibleUserIds : null;
+    if (updates.cardDisplay !== undefined) payload.card_display = updates.cardDisplay || null;
     if (Object.keys(payload).length > 0) {
       payload.updated_at = new Date().toISOString();
       projectDb.update(id, payload, isMockMode());
+    }
+
+    // ── Audit trail: log Project Value changes (value or currency) ──
+    if (
+      prevProject &&
+      (updates.value !== undefined || updates.currency !== undefined) &&
+      (updates.value !== prevProject.value || (updates.currency ?? prevProject.currency) !== prevProject.currency)
+    ) {
+      const { userId: actorId, userName: actorName, teamId } = getTeamContext();
+      if (actorId) {
+        projectValueHistoryDb.insert(
+          {
+            projectId: id,
+            projectName: prevProject.name,
+            teamId,
+            actorId,
+            actorName,
+            oldValue: prevProject.value ?? null,
+            oldCurrency: prevProject.currency ?? null,
+            newValue: updates.value !== undefined ? updates.value ?? null : prevProject.value ?? null,
+            newCurrency: updates.currency !== undefined ? updates.currency || 'ZAR' : prevProject.currency ?? null,
+          },
+          isMockMode(),
+        );
+      }
     }
 
     // ── Notify everyone with a task assigned in this project when its status actually changes ──
@@ -753,6 +819,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       productName: r.product_name || undefined,
       attachments: r.attachments || [],
       links: r.links || [],
+      // value/currency are deliberately NOT in this payload (see
+      // projectDb.fetchAll) — never hydrated here; fetched on demand via
+      // projectDb.getValue() by whichever component needs to show it.
+      cardDisplay: r.card_display || undefined,
       tasks: ((r.project_tasks as Array<Record<string, any>>) || [])
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((t) => ({

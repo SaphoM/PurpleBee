@@ -466,9 +466,15 @@ export const projectDb = {
    */
   async fetchAll(userId: string, mockMode?: boolean, teamId?: string | null, role?: string | null) {
     if (!shouldPersist(mockMode)) return null;
+    // Explicit column list — deliberately excludes `value`/`currency`. Those
+    // two columns are only ever readable via the get_project_value() RPC
+    // (see getValue below), which enforces per-project visibility. Never
+    // add them back to this bulk select — doing so would leak financial
+    // data to every viewer regardless of their permission, since RLS here
+    // is row-level only.
     let q = supabase!
       .from('projects')
-      .select('*, project_tasks(*)')
+      .select('id, name, description, icon, color, template_id, status, team_id, created_by, created_at, updated_at, product_name, attachments, links, card_display, project_tasks(*)')
       .order('created_at', { ascending: false })
       .order('order', { referencedTable: 'project_tasks', ascending: true });
     // Admins/managers: let RLS is_admin_or_manager() return everything — no client filter.
@@ -548,6 +554,66 @@ export const projectDb = {
     const { error } = await supabase!.from('project_tasks').delete().eq('id', id);
     if (error) { console.error('[dataService] project_tasks.delete', error); return false; }
     return true;
+  },
+
+  /**
+   * The sole authorized read path for a project's value/currency — calls
+   * the get_project_value() SECURITY DEFINER RPC, which returns nulls when
+   * the caller isn't permitted to see it. Real (server-side) enforcement,
+   * not a client-side hide.
+   */
+  async getValue(projectId: string, mockMode?: boolean): Promise<{ value: number | null; currency: string | null } | null> {
+    if (!shouldPersist(mockMode)) return null;
+    const { data, error } = await supabase!.rpc('get_project_value', { p_project_id: projectId });
+    if (error) { console.error('[dataService] projects.getValue', error); return null; }
+    const row = Array.isArray(data) ? data[0] : data;
+    return { value: row?.value ?? null, currency: row?.currency ?? null };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROJECT VALUE HISTORY  (narrow audit trail — value/currency changes only)
+// ═══════════════════════════════════════════════════════════════════════
+
+export const projectValueHistoryDb = {
+  /** Fire-and-forget insert — never blocks the edit action that triggered it */
+  async insert(entry: {
+    projectId: string;
+    projectName: string;
+    teamId?: string | null;
+    actorId: string;
+    actorName: string;
+    oldValue: number | null;
+    oldCurrency: string | null;
+    newValue: number | null;
+    newCurrency: string | null;
+  }, mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('project_value_history').insert({
+      project_id: entry.projectId,
+      project_name: entry.projectName,
+      team_id: entry.teamId || null,
+      actor_id: entry.actorId,
+      actor_name: entry.actorName,
+      old_value: entry.oldValue,
+      old_currency: entry.oldCurrency,
+      new_value: entry.newValue,
+      new_currency: entry.newCurrency,
+    });
+    if (error) { console.error('[dataService] project_value_history.insert', error); return false; }
+    return true;
+  },
+
+  async fetchForProject(projectId: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return null;
+    const { data, error } = await supabase!
+      .from('project_value_history')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (error) { console.error('[dataService] project_value_history.fetchForProject', error); return null; }
+    return data;
   },
 };
 

@@ -35,6 +35,8 @@ import {
   ShoppingCart,
   Image as ImageIcon,
   Building2,
+  Wallet,
+  Lock,
 } from 'lucide-react';
 import { useProjectStore, projectTemplates, ProjectTask, Project } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
@@ -46,6 +48,8 @@ import { useUIStore } from '@stores/uiStore';
 import { MemberTooltip, MemberInfo } from '@components/MemberTooltip';
 import { ReferencesSection } from '@components/shared/ReferencesSection';
 import type { Attachment, TaskLink } from '@/types/index';
+import { projectDb, projectValueHistoryDb } from '@/lib/dataService';
+import { useSettingsStore } from '@stores/settingsStore';
 
 const getTemplateIcon = (templateId: string, size: number = 24) => {
   const icons: Record<string, React.ReactNode> = {
@@ -63,6 +67,20 @@ const getTemplateIcon = (templateId: string, size: number = 24) => {
     'custom': <Wrench size={size} strokeWidth={1.5} />,
   };
   return icons[templateId] || <FolderKanban size={size} strokeWidth={1.5} />;
+};
+
+/** Percentage of a project's linked board-tasks that are completed, or null
+ *  when the project has no linked tasks to measure progress from (shown as
+ *  "no progress data yet" rather than a misleading 0%). Mirrors the same
+ *  linked-task lookup ProjectDetail's auto-status-derivation effect uses. */
+const computeProjectProgress = (project: Project, boardTasks: { id: string; status: string }[]): number | null => {
+  const linked = project.tasks
+    .filter((t) => t.linkedTaskId)
+    .map((t) => boardTasks.find((bt) => bt.id === t.linkedTaskId))
+    .filter(Boolean) as { id: string; status: string }[];
+  if (linked.length === 0) return null;
+  const completed = linked.filter((t) => t.status === 'completed').length;
+  return Math.round((completed / linked.length) * 100);
 };
 
 /** Renders a project's uploaded company logo (data URL stored in project.icon)
@@ -94,6 +112,182 @@ const priorityConfig: Record<string, { label: string; color: string; dot: string
   low: { label: 'Low', color: 'text-gray-500 dark:text-gray-400', dot: 'bg-gray-400' },
 };
 
+// ── Project Value + Card Display (shared by Create & Edit modals) ────────
+const CURRENCIES = ['ZAR', 'USD', 'EUR', 'GBP'];
+
+const CARD_DISPLAY_FIELDS: { key: keyof NonNullable<Project['cardDisplay']>; label: string }[] = [
+  { key: 'status', label: 'Status' },
+  { key: 'progress', label: 'Progress' },
+  { key: 'value', label: 'Project Value' },
+  { key: 'projectManager', label: 'Project Manager' },
+  { key: 'team', label: 'Team' },
+  { key: 'taskCompletion', label: 'Task Completion' },
+];
+
+const DEFAULT_CARD_DISPLAY: NonNullable<Project['cardDisplay']> = {
+  status: true, progress: true, value: false, team: true, projectManager: false, taskCompletion: true,
+};
+
+interface ProjectValueSectionProps {
+  amount: string;
+  onAmountChange: (v: string) => void;
+  currency: string;
+  onCurrencyChange: (v: string) => void;
+  visibility: NonNullable<Project['valueVisibility']>;
+  onVisibilityChange: (v: NonNullable<Project['valueVisibility']>) => void;
+  visibleUserIds: string[];
+  onVisibleUserIdsChange: (ids: string[]) => void;
+  cardDisplay: NonNullable<Project['cardDisplay']>;
+  onCardDisplayChange: (cd: NonNullable<Project['cardDisplay']>) => void;
+  assignableMembers: { id: string; name: string }[];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+}
+
+/** Optional per-project financial value + who can see it + which fields show on this project's card.
+ *  Purely additive — collapsed by default, never required. */
+const ProjectValueSection: React.FC<ProjectValueSectionProps> = ({
+  amount, onAmountChange, currency, onCurrencyChange,
+  visibility, onVisibilityChange, visibleUserIds, onVisibleUserIdsChange,
+  cardDisplay, onCardDisplayChange, assignableMembers, expanded, onToggleExpanded,
+}) => {
+  const toggleMember = (id: string) => {
+    onVisibleUserIdsChange(
+      visibleUserIds.includes(id) ? visibleUserIds.filter((u) => u !== id) : [...visibleUserIds, id]
+    );
+  };
+  const toggleCardField = (key: keyof NonNullable<Project['cardDisplay']>) => {
+    onCardDisplayChange({ ...cardDisplay, [key]: !cardDisplay[key] });
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggleExpanded}
+        className="flex items-center justify-between w-full text-left group"
+      >
+        <span className="text-sm font-medium text-gray-700 dark:text-slate-300 inline-flex items-center gap-1.5">
+          <Wallet size={14} className="text-gray-400 dark:text-slate-500" />
+          Project Value &amp; Card Display <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+          {amount.trim() !== '' && (
+            <span className="ml-1 text-xs text-purple-600 dark:text-purple-400 font-normal">value set</span>
+          )}
+        </span>
+        <ChevronDown
+          size={16}
+          className={clsx(
+            'text-gray-400 dark:text-slate-500 group-hover:text-purple-500 transition-transform',
+            expanded && 'rotate-180'
+          )}
+        />
+      </button>
+      {expanded && (
+        <div className="mt-2 p-3 rounded-xl bg-gray-50/50 dark:bg-slate-800/20 border border-gray-200 dark:border-slate-700/50 space-y-4">
+          {/* Amount + currency */}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Amount</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                value={amount}
+                onChange={(e) => onAmountChange(e.target.value)}
+                placeholder="0.00"
+                className={clsx(
+                  'w-full rounded-lg px-3 py-2 text-sm',
+                  'bg-white border border-gray-300 text-gray-800 placeholder-gray-400',
+                  'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                  'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                )}
+              />
+            </div>
+            <div className="w-28">
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Currency</label>
+              <select
+                value={currency}
+                onChange={(e) => onCurrencyChange(e.target.value)}
+                className={clsx(
+                  'w-full rounded-lg px-2 py-2 text-sm',
+                  'bg-white border border-gray-300 text-gray-800',
+                  'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                  'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 cursor-pointer'
+                )}
+              >
+                {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Visibility */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 inline-flex items-center gap-1">
+              <Lock size={11} /> Who can see this?
+            </label>
+            <select
+              value={visibility}
+              onChange={(e) => onVisibilityChange(e.target.value as NonNullable<Project['valueVisibility']>)}
+              className={clsx(
+                'w-full rounded-lg px-3 py-2 text-sm',
+                'bg-white border border-gray-300 text-gray-800',
+                'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 cursor-pointer'
+              )}
+            >
+              <option value="admins">Admins only (safest, default)</option>
+              <option value="managers">Managers and above</option>
+              <option value="team">Everyone on the project</option>
+              <option value="selected">Selected users</option>
+            </select>
+            <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+              Enforced server-side — even if the card is set to show Project Value, only people permitted here will ever see the amount.
+            </p>
+            {visibility === 'selected' && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {assignableMembers.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => toggleMember(m.id)}
+                    className={clsx(
+                      'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                      visibleUserIds.includes(m.id)
+                        ? 'bg-purple-100 border-purple-300 text-purple-700 dark:bg-purple-900/30 dark:border-purple-700 dark:text-purple-300'
+                        : 'bg-white border-gray-200 text-gray-500 dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-400'
+                    )}
+                  >
+                    {m.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Card display toggles */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1.5">Card Display</label>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+              {CARD_DISPLAY_FIELDS.map((f) => (
+                <label key={f.key} className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!cardDisplay[f.key]}
+                    onChange={() => toggleCardField(f.key)}
+                    className="rounded border-gray-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500/30"
+                  />
+                  {f.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Create Project Modal ───────────────────────────────────────────────
 const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const { createProject } = useProjectStore();
@@ -116,6 +310,12 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const [refAttachments, setRefAttachments] = useState<Attachment[]>([]);
   const [refLinks, setRefLinks] = useState<TaskLink[]>([]);
   const [showReferences, setShowReferences] = useState(false);
+  const [valueAmount, setValueAmount] = useState('');
+  const [valueCurrency, setValueCurrency] = useState('ZAR');
+  const [valueVisibility, setValueVisibility] = useState<NonNullable<Project['valueVisibility']>>('admins');
+  const [valueVisibleUserIds, setValueVisibleUserIds] = useState<string[]>([]);
+  const [cardDisplay, setCardDisplay] = useState<NonNullable<Project['cardDisplay']>>(DEFAULT_CARD_DISPLAY);
+  const [showValueSection, setShowValueSection] = useState(false);
 
   const template = projectTemplates.find((t) => t.id === selectedTemplate);
   const isCustom = selectedTemplate === 'custom';
@@ -137,6 +337,12 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     setRefAttachments([]);
     setRefLinks([]);
     setShowReferences(false);
+    setValueAmount('');
+    setValueCurrency('ZAR');
+    setValueVisibility('admins');
+    setValueVisibleUserIds([]);
+    setCardDisplay(DEFAULT_CARD_DISPLAY);
+    setShowValueSection(false);
   };
 
   const MAX_LOGO_BYTES = 1024 * 1024; // 1MB — keeps the DB row small since it's stored as a data URL
@@ -243,6 +449,11 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
         productName: isProductSales ? productName.trim() || undefined : undefined,
         attachments: refAttachments.length > 0 ? refAttachments : undefined,
         links: refLinks.length > 0 ? refLinks : undefined,
+        value: valueAmount.trim() !== '' ? Number(valueAmount) : undefined,
+        currency: valueAmount.trim() !== '' ? valueCurrency : undefined,
+        valueVisibility,
+        valueVisibleUserIds: valueVisibility === 'selected' && valueVisibleUserIds.length > 0 ? valueVisibleUserIds : undefined,
+        cardDisplay,
       });
 
       // Members with a task assigned to them get the richer "assigned you N
@@ -469,6 +680,23 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                   </div>
                 )}
               </div>
+
+              {/* Project Value + Card Display — optional, collapsed by default */}
+              <ProjectValueSection
+                amount={valueAmount}
+                onAmountChange={setValueAmount}
+                currency={valueCurrency}
+                onCurrencyChange={setValueCurrency}
+                visibility={valueVisibility}
+                onVisibilityChange={setValueVisibility}
+                visibleUserIds={valueVisibleUserIds}
+                onVisibleUserIdsChange={setValueVisibleUserIds}
+                cardDisplay={cardDisplay}
+                onCardDisplayChange={setCardDisplay}
+                assignableMembers={assignableMembers}
+                expanded={showValueSection}
+                onToggleExpanded={() => setShowValueSection(!showValueSection)}
+              />
 
               {/* Template cards */}
               <div>
@@ -906,6 +1134,10 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   const [editingTaskValues, setEditingTaskValues] = useState<{ title: string; description: string; priority: string; estimatedHours: number; tags: string }>({ title: '', description: '', priority: 'medium', estimatedHours: 4, tags: '' });
   const suggestionRef = React.useRef<HTMLDivElement>(null);
   const addTaskInputRef = React.useRef<HTMLInputElement>(null);
+  const keepMockData = useSettingsStore((s) => s.keepMockData);
+  const [valueInfo, setValueInfo] = useState<{ value: number | null; currency: string | null } | null>(null);
+  const [valueHistory, setValueHistory] = useState<Array<Record<string, any>> | null>(null);
+  const [showValueHistory, setShowValueHistory] = useState(false);
 
   if (!project) return null;
 
@@ -926,6 +1158,19 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
     const derived = allCompleted ? 'completed' : anyActive ? 'active' : project.status === 'on-hold' ? 'on-hold' : linked.length > 0 ? 'planning' : project.status;
     if (derived !== project.status) updateProject(project.id, { status: derived as any }, false);
   }, [boardTasks, project.tasks, project.id]);
+
+  // Project Value is never in the bulk project object — fetch it via the
+  // authorized get_project_value() RPC. History is only ever fetched for
+  // managers/admins (the same audience already allowed to edit the value),
+  // matching how the edit trigger is already permission-gated in the UI.
+  useEffect(() => {
+    let cancelled = false;
+    projectDb.getValue(project.id, keepMockData).then((res) => { if (!cancelled) setValueInfo(res); });
+    if (canManage) {
+      projectValueHistoryDb.fetchForProject(project.id, keepMockData).then((rows) => { if (!cancelled) setValueHistory(rows); });
+    }
+    return () => { cancelled = true; };
+  }, [project.id, keepMockData, canManage]);
 
   // Build suggestions: template tasks + industry tasks that haven't been added yet
   const existingTitles = new Set(project.tasks.map((t) => t.title.toLowerCase()));
@@ -1082,7 +1327,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className={clsx('grid grid-cols-1 gap-4', valueInfo && valueInfo.value !== null ? 'sm:grid-cols-4' : 'sm:grid-cols-3')}>
         <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2 text-gray-500 dark:text-slate-400 text-xs mb-1">
             <Layers size={14} /> Total Tasks
@@ -1101,7 +1346,48 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
           </div>
           <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{totalHours}h</p>
         </div>
+        {valueInfo && valueInfo.value !== null && (
+          <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+            <div className="flex items-center gap-2 text-gray-500 dark:text-slate-400 text-xs mb-1">
+              <Wallet size={14} /> Project Value
+            </div>
+            <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">
+              {new Intl.NumberFormat(undefined, { style: 'currency', currency: valueInfo.currency || 'ZAR' }).format(valueInfo.value)}
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* Value History — only for managers/admins (same audience as edit access) */}
+      {canManage && valueHistory && valueHistory.length > 0 && (
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+          <button
+            type="button"
+            onClick={() => setShowValueHistory(!showValueHistory)}
+            className="flex items-center justify-between w-full text-left group"
+          >
+            <span className="text-sm font-semibold text-gray-700 dark:text-slate-300 inline-flex items-center gap-1.5">
+              <Wallet size={14} className="text-gray-400 dark:text-slate-500" /> Value History
+            </span>
+            <ChevronDown size={16} className={clsx('text-gray-400 dark:text-slate-500 transition-transform', showValueHistory && 'rotate-180')} />
+          </button>
+          {showValueHistory && (
+            <div className="mt-3 space-y-2">
+              {valueHistory.map((h) => {
+                const fmt = (v: number | null, c: string | null) => v === null ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency: c || 'ZAR' }).format(v);
+                return (
+                  <div key={h.id} className="text-xs text-gray-500 dark:text-slate-400 flex flex-wrap items-baseline gap-x-1.5">
+                    <span className="font-medium text-gray-700 dark:text-slate-300">{h.actor_name}</span>
+                    <span>changed Project Value</span>
+                    <span className="font-mono">{fmt(h.old_value, h.old_currency)} → {fmt(h.new_value, h.new_currency)}</span>
+                    <span className="text-gray-400 dark:text-slate-500">· {new Date(h.created_at).toLocaleString()}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Project References */}
       <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
@@ -1569,12 +1855,21 @@ const PROJECT_STATUSES = [
 ] as const;
 
 interface EditProjectModalProps {
-  project: { id: string; name: string; description?: string; status: string; icon: string; templateId: string; attachments?: Attachment[]; links?: TaskLink[] };
+  project: {
+    id: string; name: string; description?: string; status: string; icon: string; templateId: string;
+    attachments?: Attachment[]; links?: TaskLink[];
+    valueVisibility?: Project['valueVisibility']; valueVisibleUserIds?: string[]; cardDisplay?: Project['cardDisplay'];
+  };
   onClose: () => void;
-  onSave: (id: string, updates: { name: string; description: string; status: string; icon: string; attachments?: Attachment[]; links?: TaskLink[] }) => void;
+  onSave: (id: string, updates: {
+    name: string; description: string; status: string; icon: string; attachments?: Attachment[]; links?: TaskLink[];
+    value?: number; currency?: string; valueVisibility?: Project['valueVisibility']; valueVisibleUserIds?: string[]; cardDisplay?: Project['cardDisplay'];
+  }) => void;
 }
 const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, onSave }) => {
   const user = useUserStore((s) => s.user);
+  const assignableMembers = useUserStore((s) => s.assignableMembers);
+  const keepMockData = useSettingsStore((s) => s.keepMockData);
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description || '');
   const [status, setStatus] = useState(project.status);
@@ -1585,6 +1880,28 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [refAttachments, setRefAttachments] = useState<Attachment[]>(project.attachments || []);
   const [refLinks, setRefLinks] = useState<TaskLink[]>(project.links || []);
+  const [valueAmount, setValueAmount] = useState('');
+  const [valueCurrency, setValueCurrency] = useState('ZAR');
+  const [valueVisibility, setValueVisibility] = useState<NonNullable<Project['valueVisibility']>>(project.valueVisibility || 'admins');
+  const [valueVisibleUserIds, setValueVisibleUserIds] = useState<string[]>(project.valueVisibleUserIds || []);
+  const [cardDisplay, setCardDisplay] = useState<NonNullable<Project['cardDisplay']>>({ ...DEFAULT_CARD_DISPLAY, ...(project.cardDisplay || {}) });
+  const [showValueSection, setShowValueSection] = useState(false);
+
+  // Prefill the current value/currency via the authorized RPC — never
+  // trust/derive this from the bulk project object, since it's
+  // deliberately never populated there. If the viewer isn't authorized to
+  // see it, getValue returns nulls and the field just stays blank (they
+  // simply can't prefill what they can't see — consistent with the
+  // enforcement model, not a bug).
+  useEffect(() => {
+    let cancelled = false;
+    projectDb.getValue(project.id, keepMockData).then((res) => {
+      if (cancelled || !res) return;
+      if (res.value !== null) setValueAmount(String(res.value));
+      if (res.currency) setValueCurrency(res.currency);
+    });
+    return () => { cancelled = true; };
+  }, [project.id, keepMockData]);
 
   const MAX_LOGO_BYTES = 1024 * 1024; // 1MB — keeps the DB row small since it's stored as a data URL
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1616,6 +1933,11 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
       icon: logoDataUrl || fallbackIcon,
       attachments: refAttachments,
       links: refLinks,
+      value: valueAmount.trim() !== '' ? Number(valueAmount) : undefined,
+      currency: valueAmount.trim() !== '' ? valueCurrency : undefined,
+      valueVisibility,
+      valueVisibleUserIds: valueVisibility === 'selected' && valueVisibleUserIds.length > 0 ? valueVisibleUserIds : undefined,
+      cardDisplay,
     });
     onClose();
   };
@@ -1736,6 +2058,21 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
               />
             </div>
           </div>
+          <ProjectValueSection
+            amount={valueAmount}
+            onAmountChange={setValueAmount}
+            currency={valueCurrency}
+            onCurrencyChange={setValueCurrency}
+            visibility={valueVisibility}
+            onVisibilityChange={setValueVisibility}
+            visibleUserIds={valueVisibleUserIds}
+            onVisibleUserIdsChange={setValueVisibleUserIds}
+            cardDisplay={cardDisplay}
+            onCardDisplayChange={setCardDisplay}
+            assignableMembers={assignableMembers}
+            expanded={showValueSection}
+            onToggleExpanded={() => setShowValueSection(!showValueSection)}
+          />
           <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Status</label>
             <select
@@ -1777,6 +2114,26 @@ export const Projects: React.FC = () => {
   const currentUserId = useUserStore((s) => s.user?.id ?? 'guest');
   const assignableMembers = useUserStore((s) => s.assignableMembers);
   const canManage = isAdmin() || isManager();
+  const { tasks: boardTasks } = useTaskStore();
+  const keepMockData = useSettingsStore((s) => s.keepMockData);
+
+  // Project Value is never in the bulk projects payload (server-enforced —
+  // see projectDb.fetchAll) — lazily fetch it per-project, only for
+  // projects whose card is actually configured to show it, via the
+  // authorized get_project_value() RPC. Cache in state so it's fetched once
+  // per project per session, not on every render.
+  const [projectValues, setProjectValues] = useState<Record<string, { value: number | null; currency: string | null }>>({});
+  useEffect(() => {
+    if (keepMockData) return; // mock mode never persists/reads real values
+    const toFetch = projects.filter((p) => p.cardDisplay?.value === true && !(p.id in projectValues));
+    if (toFetch.length === 0) return;
+    toFetch.forEach((p) => {
+      projectDb.getValue(p.id, keepMockData).then((res) => {
+        if (!res) return;
+        setProjectValues((prev) => ({ ...prev, [p.id]: res }));
+      });
+    });
+  }, [projects, keepMockData, projectValues]);
   const globalSearchQuery = useUIStore((s) => s.globalSearchQuery);
   const setGlobalSearchQuery = useUIStore((s) => s.setGlobalSearchQuery);
   const selectedProjectId = useUIStore((s) => s.activeProjectId);
@@ -2167,9 +2524,11 @@ export const Projects: React.FC = () => {
                       <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
                         {project.name}
                       </h3>
-                      <span className={clsx('text-[10px] font-semibold px-2 py-0.5 rounded-full', sc.bg, sc.color)}>
-                        {sc.label}
-                      </span>
+                      {project.cardDisplay?.status !== false && (
+                        <span className={clsx('text-[10px] font-semibold px-2 py-0.5 rounded-full', sc.bg, sc.color)}>
+                          {sc.label}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2191,17 +2550,62 @@ export const Projects: React.FC = () => {
                   )}
                 </div>
 
+                {/* Configurable card fields — Project Value / Progress / Project Manager.
+                    Each only renders when this project's Card Display config explicitly
+                    turns it on; a project that has never been configured (cardDisplay
+                    undefined) renders none of these, exactly as before this feature. */}
+                {(() => {
+                  const cd = project.cardDisplay;
+                  const showValue = cd?.value === true;
+                  const showProgress = cd?.progress === true;
+                  const showPM = cd?.projectManager === true;
+                  if (!showValue && !showProgress && !showPM) return null;
+                  const pv = projectValues[project.id];
+                  const progress = showProgress ? computeProjectProgress(project, boardTasks) : null;
+                  const pm = showPM ? assignableMembers.find((m) => m.id === project.createdBy) : null;
+                  return (
+                    <div className="mb-3 space-y-1.5">
+                      {showValue && pv && pv.value !== null && (
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-slate-200">
+                          <Wallet size={12} className="text-purple-500" />
+                          {new Intl.NumberFormat(undefined, { style: 'currency', currency: pv.currency || 'ZAR' }).format(pv.value)}
+                        </div>
+                      )}
+                      {showProgress && progress !== null && (
+                        <div>
+                          <div className="flex items-center justify-between text-[10px] text-gray-400 dark:text-slate-500 mb-0.5">
+                            <span>Progress</span>
+                            <span>{progress}%</span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+                            <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
+                          </div>
+                        </div>
+                      )}
+                      {showPM && pm && (
+                        <div className="text-[11px] text-gray-400 dark:text-slate-500">
+                          Project Manager: <span className="text-gray-600 dark:text-slate-300 font-medium">{pm.name}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
-                      <Layers size={12} /> {project.tasks.length} tasks
-                    </span>
-                    <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
-                      <Clock size={12} /> {totalHours}h
-                    </span>
+                    {project.cardDisplay?.taskCompletion !== false && (
+                      <>
+                        <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
+                          <Layers size={12} /> {project.tasks.length} tasks
+                        </span>
+                        <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
+                          <Clock size={12} /> {totalHours}h
+                        </span>
+                      </>
+                    )}
                   </div>
                   {/* Member avatars with tooltip */}
-                  {members.length > 0 && (() => {
+                  {project.cardDisplay?.team !== false && members.length > 0 && (() => {
                     const memberInfos: MemberInfo[] = members.map((uid) => {
                       const p = assignableMembers.find((t) => t.id === uid);
                       if (!p) return null;
@@ -2338,7 +2742,11 @@ export const Projects: React.FC = () => {
         const proj = projects.find((p) => p.id === editProjectId);
         return proj ? (
           <EditProjectModal
-            project={{ id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active', icon: proj.icon, templateId: proj.templateId, attachments: proj.attachments, links: proj.links }}
+            project={{
+              id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active', icon: proj.icon, templateId: proj.templateId,
+              attachments: proj.attachments, links: proj.links,
+              valueVisibility: proj.valueVisibility, valueVisibleUserIds: proj.valueVisibleUserIds, cardDisplay: proj.cardDisplay,
+            }}
             onClose={() => setEditProjectId(null)}
             onSave={(id, updates) => updateProject(id, updates as any)}
           />

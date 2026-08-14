@@ -32,6 +32,7 @@ export interface NotificationPreferences {
   // Delivery
   inApp: boolean;
   email: boolean;
+  telegram: boolean;
   sound: boolean;
   desktop: boolean;
 
@@ -51,6 +52,7 @@ const defaultPreferences: NotificationPreferences = {
   aiInsights: true,
   inApp: true,
   email: true,
+  telegram: true,
   sound: true,
   desktop: false,
   quietHoursEnabled: false,
