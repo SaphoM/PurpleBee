@@ -27,7 +27,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "/Users/saphomaqhwazima/Documents/X SPARK/Honey Com",
+        "/Users/saphomaqhwazima/Documents/X SPARK/BeeHive",
         "run",
         "dev:frontend"
       ],
@@ -38,7 +38,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "/Users/saphomaqhwazima/Documents/X SPARK/Honey Com",
+        "/Users/saphomaqhwazima/Documents/X SPARK/BeeHive",
         "run",
         "start"
       ],
