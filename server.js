@@ -20,7 +20,7 @@ app.use((req, res, next) => {
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
-      "connect-src 'self' https://sudkymxnzuiubnszpxbc.supabase.co wss://sudkymxnzuiubnszpxbc.supabase.co https://realtime.supabase.co wss://realtime.supabase.co",
+      "connect-src 'self' https://kpiridirhzrzmbcwdxyb.supabase.co wss://kpiridirhzrzmbcwdxyb.supabase.co https://realtime.supabase.co wss://realtime.supabase.co",
       "img-src 'self' data: https:",
       "font-src 'self' data:",
       "object-src 'none'",
