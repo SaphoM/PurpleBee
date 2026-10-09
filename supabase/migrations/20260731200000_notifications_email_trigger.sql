@@ -15,7 +15,7 @@ as $$
 begin
   begin
     perform net.http_post(
-      url := 'https://sudkymxnzuiubnszpxbc.supabase.co/functions/v1/send-email-notification',
+      url := 'https://kpiridirhzrzmbcwdxyb.supabase.co/functions/v1/send-email-notification',
       headers := jsonb_build_object('Content-Type', 'application/json'),
       body := jsonb_build_object(
         'type', 'INSERT',
