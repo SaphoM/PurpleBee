@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
-import { Task, TaskStatus, TaskPriority, Subtask, Attachment, TaskLink, ProgressNote } from '@/types/index';
+import { Task, TaskStatus, TaskPriority, Subtask, ProgressNote, TaskActivityEntry } from '@/types/index';
 import { PriorityBadge } from './Badge';
 import {
   X,
@@ -25,14 +25,6 @@ import {
   Plus,
   Settings2,
   Info,
-  Paperclip,
-  Link2,
-  Upload,
-  ExternalLink,
-  File,
-  FileImage,
-  FileVideo,
-  Download,
   MessageSquare,
   Send,
   StickyNote,
@@ -40,14 +32,19 @@ import {
   ChevronUp,
   FolderKanban,
   Pencil,
+  History,
 } from 'lucide-react';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
 import { useToastStore } from '@components/Toast';
+import { useSettingsStore } from '@stores/settingsStore';
 import { linkifyText } from '@/utils/linkify';
+import { taskActivityDb } from '@/lib/dataService';
 import { v4 as uuidv4 } from 'uuid';
+import { ReferencesSection } from '@components/shared/ReferencesSection';
+import { LinkedProjectReferences } from '@components/shared/LinkedProjectReferences';
 
 interface TaskDetailModalProps {
   task: Task | null;
@@ -234,6 +231,9 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const { assignableMembers, user } = useUserStore();
   const { addToast } = useToastStore();
   const canComplete = user?.role === 'admin' || user?.role === 'manager';
+  // Only the person who created the task may delete it. Tasks with no
+  // tracked creator (legacy/unattributed) remain deletable by anyone.
+  const canDelete = !task?.createdBy || task.createdBy === user?.id;
   const project = task?.projectId ? getProjectById(task.projectId) : null;
 
   // Resolve assignee: check assignableMembers first, fall back to current user if id matches
@@ -259,13 +259,20 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const [showInfoGuide, setShowInfoGuide] = useState(false);
   const [newMiniTaskInput, setNewMiniTaskInput] = useState('');
   const [newMiniTaskDescription, setNewMiniTaskDescription] = useState('');
-  const [showAddLink, setShowAddLink] = useState(false);
-  const [linkTitle, setLinkTitle] = useState('');
-  const [linkUrl, setLinkUrl] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [showAllNotes, setShowAllNotes] = useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [showActivity, setShowActivity] = useState(false);
+  const [activityEntries, setActivityEntries] = useState<TaskActivityEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityHasMore, setActivityHasMore] = useState(true);
   const noteInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Collapse/reset the activity timeline when switching to a different task
+  useEffect(() => {
+    setShowActivity(false);
+    setActivityEntries([]);
+    setActivityHasMore(true);
+  }, [task?.id]);
 
   if (!isOpen || !task) return null;
 
@@ -385,54 +392,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     addToast({ type: 'success', title: 'Mini task updated', message: `"${title}" saved.`, duration: 3000 });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    const newAttachments: Attachment[] = Array.from(files).map((file) => ({
-      id: uuidv4(),
-      name: file.name,
-      url: URL.createObjectURL(file),
-      type: file.type,
-      size: file.size,
-      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
-      uploadedAt: new Date(),
-    }));
-    updateTask(task.id, {
-      attachments: [...(task.attachments || []), ...newAttachments],
-    });
-    // Reset input
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleRemoveAttachment = (attachmentId: string) => {
-    updateTask(task.id, {
-      attachments: (task.attachments || []).filter((a) => a.id !== attachmentId),
-    });
-  };
-
-  const handleAddLink = () => {
-    if (!linkUrl.trim()) return;
-    const newLink: TaskLink = {
-      id: uuidv4(),
-      title: linkTitle.trim() || linkUrl.trim(),
-      url: linkUrl.trim().startsWith('http') ? linkUrl.trim() : `https://${linkUrl.trim()}`,
-      type: detectLinkType(linkUrl.trim()),
-      addedAt: new Date(),
-    };
-    updateTask(task.id, {
-      links: [...(task.links || []), newLink],
-    });
-    setLinkTitle('');
-    setLinkUrl('');
-    setShowAddLink(false);
-  };
-
-  const handleRemoveLink = (linkId: string) => {
-    updateTask(task.id, {
-      links: (task.links || []).filter((l) => l.id !== linkId),
-    });
-  };
-
   const handleAddNote = () => {
     const text = noteInput.trim();
     if (!text) return;
@@ -463,42 +422,84 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     return <StickyNote size={10} className="text-gray-400 dark:text-slate-500" />;
   };
 
-  const detectLinkType = (url: string): TaskLink['type'] => {
-    if (url.includes('figma.com')) return 'figma';
-    if (url.includes('github.com')) return 'github';
-    if (url.includes('notion.so') || url.includes('notion.site')) return 'notion';
-    if (url.includes('docs.google.com')) return 'google-doc';
-    return 'link';
+  // ── Activity Timeline ────────────────────────────────────────────────
+  const ACTIVITY_PAGE_SIZE = 20;
+
+  const loadActivity = async (loadMore = false) => {
+    if (activityLoading) return;
+    const mockMode = useSettingsStore.getState().keepMockData;
+    if (mockMode) { setActivityHasMore(false); return; } // no persisted history in demo mode
+    setActivityLoading(true);
+    const before = loadMore && activityEntries.length > 0
+      ? activityEntries[activityEntries.length - 1].createdAt.toISOString()
+      : undefined;
+    const rows = await taskActivityDb.fetchForTask(task.id, { limit: ACTIVITY_PAGE_SIZE, before }, mockMode);
+    setActivityLoading(false);
+    if (rows === null) { setActivityHasMore(false); return; }
+    setActivityEntries((prev) => (loadMore ? [...prev, ...rows] : rows));
+    setActivityHasMore(rows.length === ACTIVITY_PAGE_SIZE);
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const handleToggleActivity = () => {
+    const next = !showActivity;
+    setShowActivity(next);
+    if (next && activityEntries.length === 0) loadActivity(false);
   };
 
-  const getFileIcon = (type: string) => {
-    if (type.startsWith('image/')) return <FileImage size={18} className="text-purple-500" />;
-    if (type.startsWith('video/')) return <FileVideo size={18} className="text-blue-500" />;
-    return <File size={18} className="text-gray-500 dark:text-slate-400" />;
+  const resolveUserName = (userId?: string): string => {
+    if (!userId) return 'Unassigned';
+    if (userId === user?.id) return user?.name || 'You';
+    return assignableMembers.find((m) => m.id === userId)?.name || 'Unknown user';
   };
 
-  const getLinkIcon = (type: TaskLink['type']) => {
-    switch (type) {
-      case 'figma': return <span className="text-sm">🎨</span>;
-      case 'github': return <span className="text-sm">🐙</span>;
-      case 'notion': return <span className="text-sm">📝</span>;
-      case 'google-doc': return <span className="text-sm">📄</span>;
-      default: return <Link2 size={14} className="text-blue-500" />;
+  const formatActivityValue = (field?: string, value?: string): string => {
+    if (value === undefined) return '—';
+    if (!field) return value;
+    if (field === 'status') return statusConfig.find((s) => s.value === value)?.label || value;
+    if (field === 'priority') return value.charAt(0).toUpperCase() + value.slice(1);
+    if (field === 'assignedTo') return resolveUserName(value);
+    if (field === 'dueDate') { try { return format(new Date(value), 'MMM d, yyyy'); } catch { return value; } }
+    if (field === 'description' || field === 'title') return value.length > 60 ? `${value.slice(0, 60)}…` : value;
+    return value;
+  };
+
+  const activityFieldLabels: Record<string, string> = {
+    title: 'title', description: 'description', status: 'status', priority: 'priority',
+    assignedTo: 'assignee', dueDate: 'due date',
+  };
+
+  const activityActionText = (entry: TaskActivityEntry): string => {
+    switch (entry.action) {
+      case 'created': return 'created this task';
+      case 'deleted': return 'deleted this task';
+      case 'attachment_added': return `uploaded "${entry.newValue}"`;
+      case 'attachment_removed': return `removed "${entry.oldValue}"`;
+      case 'link_added': return `added a reference link "${entry.newValue}"`;
+      case 'link_removed': return `removed a reference link "${entry.oldValue}"`;
+      case 'subtask_changed': return 'updated the subtasks';
+      case 'updated': {
+        const label = entry.field ? (activityFieldLabels[entry.field] || entry.field) : 'a field';
+        const oldVal = formatActivityValue(entry.field, entry.oldValue);
+        const newVal = formatActivityValue(entry.field, entry.newValue);
+        return `changed ${label} from "${oldVal}" to "${newVal}"`;
+      }
+      default: return 'updated this task';
     }
+  };
+
+  const getActivityAvatar = (entry: TaskActivityEntry): string | undefined => {
+    if (entry.actorId === user?.id) return user?.avatar;
+    return assignableMembers.find((m) => m.id === entry.actorId)?.avatar;
   };
 
   const handleDelete = () => {
     const title = task.title;
-    deleteTask(task.id);
+    const deleted = deleteTask(task.id, user?.id);
     setShowDeleteConfirm(false);
-    onClose();
-    addToast({ type: 'success', title: 'Task deleted', message: `"${title}" has been deleted.`, duration: 4000 });
+    if (deleted) {
+      onClose();
+      addToast({ type: 'success', title: 'Task deleted', message: `"${title}" has been deleted.`, duration: 4000 });
+    }
   };
 
   return (
@@ -584,13 +585,15 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 <Edit3 size={18} />
               </button>
             )}
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="p-2 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 dark:text-slate-400 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors"
-              title="Delete task"
-            >
-              <Trash2 size={18} />
-            </button>
+            {canDelete && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="p-2 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 dark:text-slate-400 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors"
+                title="Delete task"
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-300 transition-colors"
@@ -674,6 +677,129 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               </p>
             ) : (
               <p className="text-sm text-gray-400 dark:text-slate-500 italic">No notes yet. Click "+ Add note" to add context or reminders.</p>
+            )}
+          </div>
+
+          {/* Progress Notes */}
+          <div className="bg-gray-50/50 dark:bg-slate-800/30 rounded-xl p-5 border border-gray-100 dark:border-slate-700/30">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <MessageSquare size={14} />
+                  Progress Notes
+                </h3>
+                {(task.progressNotes?.length ?? 0) > 0 && (
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300">
+                    {task.progressNotes!.length}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {(task.progressNotes?.length ?? 0) > 3 && (
+                  <button
+                    onClick={() => setShowAllNotes(!showAllNotes)}
+                    className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium transition-colors"
+                  >
+                    {showAllNotes ? (
+                      <>Show less <ChevronUp size={12} /></>
+                    ) : (
+                      <>Show all ({task.progressNotes!.length}) <ChevronDown size={12} /></>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Note input */}
+            <div className="flex gap-2 mb-3">
+              <div className="relative flex-1">
+                <input
+                  ref={noteInputRef}
+                  type="text"
+                  value={noteInput}
+                  onChange={(e) => setNoteInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddNote();
+                    }
+                  }}
+                  placeholder="Add a progress note..."
+                  className={clsx(
+                    'w-full rounded-lg pl-3 pr-10 py-2.5 text-sm',
+                    'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
+                    'dark:bg-slate-800/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                  )}
+                />
+              </div>
+              <button
+                onClick={handleAddNote}
+                disabled={!noteInput.trim()}
+                className={clsx(
+                  'px-3 py-2.5 rounded-lg transition-all',
+                  noteInput.trim()
+                    ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm shadow-purple-500/20'
+                    : 'bg-gray-100 text-gray-300 dark:bg-slate-700/30 dark:text-slate-600 cursor-not-allowed'
+                )}
+              >
+                <Send size={16} />
+              </button>
+            </div>
+
+            {/* Notes list */}
+            {task.progressNotes && task.progressNotes.length > 0 && (
+              <div className="space-y-2">
+                {(showAllNotes ? task.progressNotes : task.progressNotes.slice(0, 3)).map((note) => (
+                  <div
+                    key={note.id}
+                    className="group flex gap-3 px-3 py-2.5 rounded-lg bg-white/60 hover:bg-white dark:bg-slate-800/30 dark:hover:bg-slate-800/50 transition-colors"
+                  >
+                    {/* Progress badge */}
+                    <div className="flex-shrink-0 pt-0.5">
+                      <div className={clsx(
+                        'w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border-2',
+                        note.progress >= 100
+                          ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-700/30'
+                          : note.progress >= 75
+                            ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-700/30'
+                            : note.progress > 0
+                              ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-700/30'
+                              : 'bg-gray-50 text-gray-500 border-gray-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600'
+                      )}>
+                        {note.progress}%
+                      </div>
+                    </div>
+
+                    {/* Note content */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">
+                        {linkifyText(note.text)}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-1">
+                          {getTriggerIcon(note.trigger)}
+                          <span className="text-[10px] text-gray-400 dark:text-slate-500 capitalize">
+                            {note.trigger}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-300 dark:text-slate-600">•</span>
+                        <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                          {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Delete */}
+                    <button
+                      onClick={() => handleRemoveNote(note.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-all flex-shrink-0 self-start"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
@@ -962,343 +1088,82 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               </div>
             )}
 
-            {/* Progress Notes */}
-            <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <MessageSquare size={12} />
-                      Progress Notes
-                    </h4>
-                    {(task.progressNotes?.length ?? 0) > 0 && (
-                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-slate-300">
-                        {task.progressNotes!.length}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {(task.progressNotes?.length ?? 0) > 3 && (
-                      <button
-                        onClick={() => setShowAllNotes(!showAllNotes)}
-                        className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium transition-colors"
-                      >
-                        {showAllNotes ? (
-                          <>Show less <ChevronUp size={12} /></>
-                        ) : (
-                          <>Show all ({task.progressNotes!.length}) <ChevronDown size={12} /></>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Note input */}
-                <div className="flex gap-2 mb-3">
-                  <div className="relative flex-1">
-                    <input
-                      ref={noteInputRef}
-                      type="text"
-                      value={noteInput}
-                      onChange={(e) => setNoteInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddNote();
-                        }
-                      }}
-                      placeholder="Add a progress note..."
-                      className={clsx(
-                        'w-full rounded-lg pl-3 pr-10 py-2.5 text-sm',
-                        'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
-                        'dark:bg-slate-800/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
-                        'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
-                      )}
-                    />
-                  </div>
-                  <button
-                    onClick={handleAddNote}
-                    disabled={!noteInput.trim()}
-                    className={clsx(
-                      'px-3 py-2.5 rounded-lg transition-all',
-                      noteInput.trim()
-                        ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-sm shadow-purple-500/20'
-                        : 'bg-gray-100 text-gray-300 dark:bg-slate-700/30 dark:text-slate-600 cursor-not-allowed'
-                    )}
-                  >
-                    <Send size={16} />
-                  </button>
-                </div>
-
-                {/* Notes list */}
-                {task.progressNotes && task.progressNotes.length > 0 && (
-                  <div className="space-y-2">
-                    {(showAllNotes ? task.progressNotes : task.progressNotes.slice(0, 3)).map((note) => (
-                      <div
-                        key={note.id}
-                        className="group flex gap-3 px-3 py-2.5 rounded-lg bg-white/60 hover:bg-white dark:bg-slate-800/30 dark:hover:bg-slate-800/50 transition-colors"
-                      >
-                        {/* Progress badge */}
-                        <div className="flex-shrink-0 pt-0.5">
-                          <div className={clsx(
-                            'w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border-2',
-                            note.progress >= 100
-                              ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-700/30'
-                              : note.progress >= 75
-                                ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-700/30'
-                                : note.progress > 0
-                                  ? 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-700/30'
-                                  : 'bg-gray-50 text-gray-500 border-gray-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600'
-                          )}>
-                            {note.progress}%
-                          </div>
-                        </div>
-
-                        {/* Note content */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed">
-                            {linkifyText(note.text)}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className="flex items-center gap-1">
-                              {getTriggerIcon(note.trigger)}
-                              <span className="text-[10px] text-gray-400 dark:text-slate-500 capitalize">
-                                {note.trigger}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-gray-300 dark:text-slate-600">•</span>
-                            <span className="text-[10px] text-gray-400 dark:text-slate-500">
-                              {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Delete */}
-                        <button
-                          onClick={() => handleRemoveNote(note.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-all flex-shrink-0 self-start"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-            </div>
-
             {/* Attachments & Links */}
             <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Paperclip size={12} />
-                      Attachments & Links
-                    </h4>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowAddLink(!showAddLink)}
-                      className={clsx(
-                        'inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                        showAddLink
-                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-700/50 dark:text-slate-300 dark:hover:bg-slate-700'
-                      )}
-                    >
-                      <Link2 size={12} />
-                      Add Link
-                    </button>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 transition-colors"
-                    >
-                      <Upload size={12} />
-                      Upload
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.csv,.json,.md"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
-                  </div>
+              <ReferencesSection
+                attachments={task.attachments || []}
+                onAttachmentsChange={(next) => updateTask(task.id, { attachments: next })}
+                links={task.links || []}
+                onLinksChange={(next) => updateTask(task.id, { links: next })}
+                currentUserId={user?.id}
+                currentUserName={user?.name}
+                emptyHint="Attach docs, images/screenshots, or reference links (discovery meetings, requirements, wireframes, Figma, GitHub, Drive, and more)"
+              />
+              {task.projectId && (
+                <div className="mt-2">
+                  <LinkedProjectReferences projectId={task.projectId} />
                 </div>
+              )}
+            </div>
 
-                {/* Add Link Form */}
-                {showAddLink && (
-                  <div className="mb-3 p-3 bg-white dark:bg-slate-800/50 rounded-lg border border-gray-200 dark:border-slate-700/50">
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        value={linkTitle}
-                        onChange={(e) => setLinkTitle(e.target.value)}
-                        placeholder="Link title (optional)"
-                        className={clsx(
-                          'w-full rounded-lg px-3 py-2 text-sm',
-                          'bg-gray-50 border border-gray-200 text-gray-800 placeholder-gray-400',
-                          'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
-                          'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
-                        )}
-                      />
-                      <div className="flex gap-2">
-                        <input
-                          type="url"
-                          value={linkUrl}
-                          onChange={(e) => setLinkUrl(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); handleAddLink(); } }}
-                          placeholder="https://..."
-                          className={clsx(
-                            'flex-1 rounded-lg px-3 py-2 text-sm',
-                            'bg-gray-50 border border-gray-200 text-gray-800 placeholder-gray-400',
-                            'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
-                            'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
-                          )}
-                          autoFocus
-                        />
-                        <button
-                          onClick={handleAddLink}
-                          disabled={!linkUrl.trim()}
-                          className={clsx(
-                            'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                            linkUrl.trim()
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                              : 'bg-gray-100 text-gray-300 dark:bg-slate-700/30 dark:text-slate-600 cursor-not-allowed'
-                          )}
-                        >
-                          Add
-                        </button>
+            {/* Activity Timeline */}
+            <div className="mt-4 pt-4 border-t border-gray-200/50 dark:border-slate-700/30">
+              <button
+                onClick={handleToggleActivity}
+                className="w-full flex items-center justify-between mb-1 group"
+              >
+                <h4 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <History size={12} />
+                  Activity
+                </h4>
+                {showActivity ? (
+                  <ChevronUp size={14} className="text-gray-400 dark:text-slate-500 group-hover:text-purple-500 transition-colors" />
+                ) : (
+                  <ChevronDown size={14} className="text-gray-400 dark:text-slate-500 group-hover:text-purple-500 transition-colors" />
+                )}
+              </button>
+
+              {showActivity && (
+                <div className="mt-3 space-y-3">
+                  {activityLoading && activityEntries.length === 0 && (
+                    <p className="text-xs text-gray-400 dark:text-slate-500 py-2">Loading activity…</p>
+                  )}
+                  {!activityLoading && activityEntries.length === 0 && (
+                    <p className="text-xs text-gray-400 dark:text-slate-500 py-2">
+                      No activity recorded yet — this history builds up as the task is edited (only tracked in live mode, not demo data).
+                    </p>
+                  )}
+                  {activityEntries.map((entry) => (
+                    <div key={entry.id} className="flex items-start gap-2.5">
+                      {getActivityAvatar(entry) ? (
+                        <img src={getActivityAvatar(entry)} alt={entry.actorName} className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5" />
+                      ) : (
+                        <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                          <span className="text-[9px] font-bold text-gray-500 dark:text-slate-400">{entry.actorName.charAt(0).toUpperCase()}</span>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-gray-600 dark:text-slate-300">
+                          <span className="font-semibold text-gray-800 dark:text-slate-100">{entry.actorName}</span>{' '}
+                          {activityActionText(entry)}
+                        </p>
+                        <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-0.5">
+                          {formatDistanceToNow(entry.createdAt, { addSuffix: true })}
+                        </p>
                       </div>
                     </div>
-                  </div>
-                )}
-
-                {/* Links list */}
-                {task.links && task.links.length > 0 && (
-                  <div className="space-y-1.5 mb-3">
-                    {task.links.map((link) => (
-                      <div
-                        key={link.id}
-                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/60 hover:bg-white dark:bg-slate-800/30 dark:hover:bg-slate-800/50 group transition-colors"
-                      >
-                        <span className="flex-shrink-0">{getLinkIcon(link.type)}</span>
-                        <a
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex-1 text-sm text-blue-600 dark:text-blue-400 hover:underline truncate font-medium"
-                        >
-                          {link.title}
-                        </a>
-                        <ExternalLink size={12} className="text-gray-400 dark:text-slate-500 flex-shrink-0" />
-                        <button
-                          onClick={() => handleRemoveLink(link.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-all flex-shrink-0"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Uploaded files list */}
-                {task.attachments && task.attachments.length > 0 && (
-                  <div className="space-y-2">
-                    {task.attachments.filter((a) => a.type.startsWith('image/')).length > 0 && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-2">
-                        {task.attachments
-                          .filter((a) => a.type.startsWith('image/'))
-                          .map((attachment) => (
-                            <div
-                              key={attachment.id}
-                              className="relative group rounded-lg overflow-hidden border border-gray-200 dark:border-slate-700/50 aspect-square"
-                            >
-                              <img
-                                src={attachment.previewUrl || attachment.url}
-                                alt={attachment.name}
-                                className="w-full h-full object-cover"
-                              />
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                                <a
-                                  href={attachment.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="p-1.5 bg-white/90 rounded-lg text-gray-700 hover:bg-white transition-colors"
-                                >
-                                  <ExternalLink size={14} />
-                                </a>
-                                <button
-                                  onClick={() => handleRemoveAttachment(attachment.id)}
-                                  className="p-1.5 bg-white/90 rounded-lg text-red-500 hover:bg-white transition-colors"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1">
-                                <p className="text-[10px] text-white truncate">{attachment.name}</p>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-
-                    {task.attachments
-                      .filter((a) => !a.type.startsWith('image/'))
-                      .map((attachment) => (
-                        <div
-                          key={attachment.id}
-                          className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg bg-white/60 hover:bg-white dark:bg-slate-800/30 dark:hover:bg-slate-800/50 group transition-colors"
-                        >
-                          {getFileIcon(attachment.type)}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-700 dark:text-slate-300 truncate">
-                              {attachment.name}
-                            </p>
-                            <p className="text-[10px] text-gray-400 dark:text-slate-500">
-                              {formatFileSize(attachment.size)}
-                            </p>
-                          </div>
-                          <a
-                            href={attachment.url}
-                            download={attachment.name}
-                            onClick={(e) => e.stopPropagation()}
-                            className="p-1.5 text-gray-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition-colors"
-                          >
-                            <Download size={14} />
-                          </a>
-                          <button
-                            onClick={() => handleRemoveAttachment(attachment.id)}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-all"
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ))}
-                  </div>
-                )}
-
-                {/* Empty state */}
-                {(!task.attachments || task.attachments.length === 0) && (!task.links || task.links.length === 0) && !showAddLink && (
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className={clsx(
-                      'border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors',
-                      'border-gray-200 hover:border-purple-300 hover:bg-purple-50/30',
-                      'dark:border-slate-700 dark:hover:border-purple-700/50 dark:hover:bg-purple-900/10'
-                    )}
-                  >
-                    <Upload size={20} className="mx-auto mb-1.5 text-gray-300 dark:text-slate-600" />
-                    <p className="text-xs text-gray-400 dark:text-slate-500">
-                      Drop files here or <span className="text-purple-600 dark:text-purple-400 font-medium">browse</span>
-                    </p>
-                    <p className="text-[10px] text-gray-300 dark:text-slate-600 mt-0.5">
-                      Attach docs, images, or links related to this progress update
-                    </p>
-                  </div>
-                )}
+                  ))}
+                  {activityHasMore && activityEntries.length > 0 && (
+                    <button
+                      onClick={() => loadActivity(true)}
+                      disabled={activityLoading}
+                      className="w-full py-1.5 text-xs font-medium text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50"
+                    >
+                      {activityLoading ? 'Loading…' : 'Load more'}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { io as socketIO } from 'socket.io-client';
 import { Conversation, ChatMessage, ConversationType, ChatParticipant } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
 import { chatDb, notificationDb } from '@/lib/dataService';
@@ -10,7 +11,6 @@ import { supabase } from '@/lib/supabase';
  * This keeps a clean separation: mock operations never touch the DB.
  */
 import { useSettingsStore } from '@stores/settingsStore';
-import { useNotificationStore } from '@stores/notificationStore';
 const isMockMode = () => useSettingsStore.getState().keepMockData;
 
 // Lazy import to avoid circular dependency (userStore → chatStore → userStore)
@@ -355,6 +355,7 @@ interface ChatStore {
   isDocked: (conversationId: string) => boolean;
   chatBotOpen: boolean;
   setChatBotOpen: (open: boolean) => void;
+  addTelegramMessage: (chatId: string, senderName: string, username: string, text: string, timestamp: string) => void;
   hydrateFromDb: (userId: string) => Promise<void>;
   clearMockData: () => void;
   restoreMockData: (userId: string) => void;
@@ -370,6 +371,26 @@ interface ChatStore {
   unsubscribeTyping: (conversationId: string) => void;
   getTypingNames: (conversationId: string) => string[];
 }
+
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const socket = socketIO(BACKEND_URL, { autoConnect: true, transports: ['websocket', 'polling'] });
+
+socket.on('telegram:message', (payload: { chatId: string; senderName: string; username: string; text: string; timestamp: string }) => {
+  useChatStore.getState().addTelegramMessage(payload.chatId, payload.senderName, payload.username, payload.text, payload.timestamp);
+  // Lazy import to avoid circular dep — import at call time
+  import('@stores/notificationStore').then(({ useNotificationStore }) => {
+    const user = (window as any).__purpleBeeUser;
+    useNotificationStore.getState().addNotification({
+      userId: user?.id || 'system',
+      type: 'mention',
+      title: 'Telegram message',
+      message: `${payload.senderName}: ${payload.text.slice(0, 80)}${payload.text.length > 80 ? '…' : ''}`,
+      conversationId: `telegram-${payload.chatId}`,
+      read: false,
+      channel: 'telegram',
+    });
+  });
+});
 
 export const useChatStore = create<ChatStore>((set, get) => ({
   conversations: [],
@@ -615,77 +636,60 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       chatDb.insertAttachments(newMessage.id, attachments, currentUserId, mock);
     }
 
-    // ── Bell + unread badge on every sent message ──
+    // ── Notify recipients (NOT the sender) on every sent message ──
+    // Enterprise rule: a sender never receives an unread notification for a
+    // message they themselves sent. Only the OTHER conversation participants
+    // are alerted — their bell increments live via the notifications Realtime
+    // subscription, and their conversation unread badge via the messages
+    // subscription. The sender's own bell stays untouched.
     const conv = get().conversations.find((c) => c.id === conversationId);
-    if (conv) {
+    if (conv && !mock) {
       const preview = trimmed.length > 60 ? trimmed.slice(0, 57) + '…' : trimmed;
       const convLabel = conv.type === 'dm'
         ? conv.participants.find((p) => p.userId !== currentUserId)?.name || conv.name
         : conv.name;
-      // Bell notification fires immediately on every sent message
-      const notifPrefs = useNotificationStore.getState().preferences;
-      if (notifPrefs.mentions) {
-        const notifId = uuidv4();
-        const notifTitle = conv.type === 'dm' ? `Message sent to ${convLabel}` : `New message in ${convLabel}`;
-        const notifMessage = `${currentUserName}: ${preview}`;
 
-        // Always add in-memory so the bell rings immediately
-        useNotificationStore.setState((state) => ({
-          notifications: [
-            {
-              id: notifId,
-              userId: currentUserId,
-              type: 'mention' as const,
-              title: notifTitle,
-              message: notifMessage,
-              read: false,
-              createdAt: new Date(),
-              actionUrl: '#/chat',
-              conversationId,
-            },
-            ...state.notifications,
-          ],
-          unreadCount: state.unreadCount + 1,
-        }));
-
-        // For DB users (live mode): also persist to DB so it survives page refresh.
-        // The Realtime subscription deduplicates by ID so no double-up occurs.
-        if (!mock) {
-          notificationDb.insert(
-            {
-              id: notifId,
-              userId: currentUserId,
-              type: 'mention',
-              title: notifTitle,
-              message: notifMessage,
-              read: false,
-              actionUrl: '#/chat',
-            },
-            false,
-          );
+      // Detect @Name mentions against this conversation's participants — used
+      // to give the specifically-addressed person a clearer, distinct
+      // notification instead of the generic "new message" one everyone gets.
+      const lowerText = trimmed.toLowerCase();
+      const mentionedIds = new Set<string>();
+      if (lowerText.includes('@')) {
+        for (const participant of conv.participants) {
+          if (participant.userId === currentUserId) continue;
+          const firstName = participant.name.split(' ')[0].toLowerCase();
+          if (firstName && lowerText.includes(`@${firstName}`)) {
+            mentionedIds.add(participant.userId);
+          }
         }
       }
 
-      // Live mode: increment unread_count and send bell notification for all other participants
-      if (!mock) {
-        for (const participant of conv.participants) {
-          if (participant.userId === currentUserId) continue;
-          // Bump their unread count in DB so it shows on next login
-          chatDb.incrementUnreadCount(conversationId, participant.userId, false);
-          // Also send them a DB notification (bell)
-          notificationDb.insert(
-            {
-              id: uuidv4(),
-              userId: participant.userId,
-              type: 'mention',
-              title: conv.type === 'dm' ? `New message from ${currentUserName}` : `New message in ${convLabel}`,
-              message: `${currentUserName}: ${preview}`,
-              read: false,
-              actionUrl: '#/chat',
-            },
-            false,
-          );
-        }
+      for (const participant of conv.participants) {
+        if (participant.userId === currentUserId) continue;
+        // Bump their unread count in DB so it shows on next login
+        chatDb.incrementUnreadCount(conversationId, participant.userId, false);
+        const isMentioned = mentionedIds.has(participant.userId);
+        // Send them a DB notification (bell). Delivery is unconditional — the
+        // recipient's own notification preferences are applied at display time,
+        // not delivery time. Carries conversationId so clicking it deep-links
+        // to the exact conversation thread.
+        notificationDb.insert(
+          {
+            id: uuidv4(),
+            userId: participant.userId,
+            type: 'mention',
+            title: isMentioned
+              ? `${currentUserName} mentioned you`
+              : conv.type === 'dm' ? `New message from ${currentUserName}` : `New message in ${convLabel}`,
+            message: isMentioned
+              ? `${currentUserName} mentioned you in ${convLabel}: "${preview}"`
+              : `${currentUserName}: ${preview}`,
+            read: false,
+            actionUrl: '#chat',
+            conversationId,
+          },
+          false,
+        );
       }
     }
   },
@@ -1055,6 +1059,62 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   isDocked: (conversationId) => {
     return get().dockedChatIds.includes(conversationId);
+  },
+
+  addTelegramMessage: (chatId, senderName, username, text, timestamp) => {
+    const convId = `telegram-${chatId}`;
+    const msgId = uuidv4();
+
+    const newMsg: ChatMessage = {
+      id: msgId,
+      conversationId: convId,
+      senderId: chatId,
+      senderName: senderName,
+      text,
+      timestamp: new Date(timestamp),
+      readBy: [],
+    };
+
+    set((state) => {
+      const existingConv = state.conversations.find((c) => c.id === convId);
+
+      if (existingConv) {
+        if (!seedMessages[convId]) seedMessages[convId] = [];
+        seedMessages[convId].push(newMsg);
+
+        return {
+          messages: {
+            ...state.messages,
+            [convId]: [...(state.messages[convId] || []), newMsg],
+          },
+          conversations: state.conversations.map((c) =>
+            c.id === convId
+              ? { ...c, lastMessage: newMsg, updatedAt: new Date(), unreadCount: c.unreadCount + 1 }
+              : c
+          ),
+        };
+      }
+
+      const newConv: Conversation = {
+        id: convId,
+        type: 'telegram',
+        name: senderName + (username ? ` (@${username})` : ''),
+        participants: [{ userId: chatId, name: senderName, role: 'member', online: true }],
+        lastMessage: newMsg,
+        unreadCount: 1,
+        pinned: false,
+        createdAt: new Date(timestamp),
+        updatedAt: new Date(timestamp),
+      };
+
+      seedConversations.push(newConv);
+      seedMessages[convId] = [newMsg];
+
+      return {
+        conversations: [newConv, ...state.conversations],
+        messages: { ...state.messages, [convId]: [newMsg] },
+      };
+    });
   },
 
   /**

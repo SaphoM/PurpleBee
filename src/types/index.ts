@@ -45,6 +45,7 @@ export interface Task {
   teamId?: string;
   projectId?: string;
   collaborators?: TaskCollaborator[];
+  sourceChannel?: 'whatsapp' | 'telegram' | 'in-app';
 }
 
 export interface TaskCollaborator {
@@ -72,14 +73,40 @@ export interface Attachment {
   size: number;
   previewUrl?: string;
   uploadedAt: Date;
+  uploadedBy?: string;      // user id of the uploader
+  uploadedByName?: string;  // denormalized display name, shown in upload history
 }
 
 export interface TaskLink {
   id: string;
   title: string;
   url: string;
-  type: 'link' | 'figma' | 'github' | 'notion' | 'google-doc' | 'other';
+  type:
+    | 'link' | 'figma' | 'github' | 'notion' | 'google-doc' | 'other'
+    // Project Reference categories
+    | 'google-drive' | 'sharepoint' | 'onedrive' | 'loom' | 'youtube' | 'vimeo'
+    | 'discovery-meeting' | 'wireframe' | 'requirements' | 'scope-doc';
   addedAt: Date;
+}
+
+export type TaskActivityAction =
+  | 'created' | 'updated' | 'deleted'
+  | 'attachment_added' | 'attachment_removed'
+  | 'link_added' | 'link_removed'
+  | 'subtask_changed';
+
+export interface TaskActivityEntry {
+  id: string;
+  taskId: string | null; // null once the source task has been deleted
+  taskTitle: string;      // denormalized snapshot — survives task deletion
+  teamId: string | null;
+  actorId: string;
+  actorName: string;
+  action: TaskActivityAction;
+  field?: string;       // e.g. 'status', 'priority', 'title', 'description', 'assignedTo', 'dueDate'
+  oldValue?: string;
+  newValue?: string;
+  createdAt: Date;
 }
 
 export interface ProgressNote {
@@ -175,7 +202,7 @@ export interface PriorityDistribution {
 }
 
 // Notification Types
-export type NotificationType = 'task-assigned' | 'task-due' | 'task-completed' | 'mention' | 'update' | 'ai-insight' | 'project-invite';
+export type NotificationType = 'task-assigned' | 'task-due' | 'task-completed' | 'task-reopened' | 'task-updated' | 'attachment-added' | 'project-updated' | 'mention' | 'update' | 'ai-insight' | 'project-invite';
 
 export interface Notification {
   id: string;
@@ -188,6 +215,7 @@ export interface Notification {
   read: boolean;
   createdAt: Date;
   actionUrl?: string;
+  channel?: 'whatsapp' | 'telegram';
 }
 
 // Integration Types
@@ -306,7 +334,7 @@ export interface UIState {
 }
 
 // Chat Types
-export type ConversationType = 'task' | 'dm' | 'team' | 'announcement';
+export type ConversationType = 'task' | 'dm' | 'team' | 'announcement' | 'telegram';
 
 export interface TaskRef {
   id: string;

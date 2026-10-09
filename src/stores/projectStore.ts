@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { projectDb, notificationDb, type DbProjectTaskInsert } from '@/lib/dataService';
+import { projectDb, projectValueHistoryDb, type DbProjectTaskInsert } from '@/lib/dataService';
+import { notifyUser, notifyUsers } from '@/lib/notify';
 import { useSettingsStore } from '@stores/settingsStore';
+import type { Attachment, TaskLink } from '@/types/index';
 
 /**
  * Returns true when mock/sample data mode is active.
@@ -15,18 +17,20 @@ const isMockMode = () => useSettingsStore.getState().keepMockData;
  * can attach teamId to writes without a circular require() dep.
  * (require is not defined in Vite's ESM browser runtime.)
  */
-let _ctx: { userId: string | null; teamId: string | null; role: string | null } = {
+let _ctx: { userId: string | null; teamId: string | null; role: string | null; userName: string } = {
   userId: null,
   teamId: null,
   role: null,
+  userName: 'Someone',
 };
 
 export function setProjectUserContext(
   userId: string | null,
   teamId: string | null,
   role?: string | null,
+  userName?: string,
 ) {
-  _ctx = { userId, teamId, role: role ?? null };
+  _ctx = { userId, teamId, role: role ?? null, userName: userName || _ctx.userName };
 }
 
 const getTeamContext = () => _ctx;
@@ -124,6 +128,25 @@ export const projectTemplates: ProjectTemplate[] = [
       { title: 'Social media scheduling', description: 'Schedule posts across platforms, set up monitoring', priority: 'medium', estimatedHours: 6, tags: ['social', 'marketing'], order: 7 },
       { title: 'Analytics & tracking setup', description: 'Configure UTMs, conversion tracking, and reporting dashboards', priority: 'high', estimatedHours: 4, tags: ['analytics', 'marketing'], order: 8 },
       { title: 'Campaign launch & monitoring', description: 'Go live, monitor performance, and make real-time adjustments', priority: 'urgent', estimatedHours: 8, tags: ['launch', 'marketing'], order: 9 },
+    ],
+  },
+  {
+    id: 'product-sales',
+    name: 'Product Sales',
+    icon: '💰',
+    description: 'Launch and run a product sales pipeline or campaign',
+    color: '#16a34a',
+    tasks: [
+      { title: 'Pricing strategy', description: 'Define price points, discount tiers, and bundling options based on market and margin analysis', priority: 'urgent', estimatedHours: 6, tags: ['pricing', 'strategy'], order: 1 },
+      { title: 'Target market & lead list', description: 'Identify ideal customer profile, build a qualified lead list, and segment by priority', priority: 'high', estimatedHours: 8, tags: ['leads', 'research'], order: 2 },
+      { title: 'Sales collateral & pitch deck', description: 'Create product one-pagers, pitch deck, and comparison sheets for the sales team', priority: 'high', estimatedHours: 10, tags: ['collateral', 'design'], order: 3 },
+      { title: 'CRM & pipeline setup', description: 'Configure deal stages, pipeline automation, and reporting in the CRM', priority: 'high', estimatedHours: 6, tags: ['crm', 'setup'], order: 4 },
+      { title: 'Proposal & quote template', description: 'Build a reusable proposal/quote template with standard terms and approval workflow', priority: 'medium', estimatedHours: 5, tags: ['proposal', 'documentation'], order: 5 },
+      { title: 'Sales enablement training', description: 'Train the sales team on product positioning, objection handling, and demo flow', priority: 'high', estimatedHours: 8, tags: ['training', 'enablement'], order: 6 },
+      { title: 'Contract & terms review', description: 'Finalize standard contract terms, discount approval limits, and legal sign-off', priority: 'high', estimatedHours: 6, tags: ['contract', 'legal'], order: 7 },
+      { title: 'Campaign & outreach launch', description: 'Kick off outbound outreach, email sequences, and initial customer calls', priority: 'urgent', estimatedHours: 10, tags: ['outreach', 'launch'], order: 8 },
+      { title: 'Sales tracking dashboard', description: 'Set up win-rate, pipeline value, and forecast dashboards for visibility', priority: 'medium', estimatedHours: 5, tags: ['reporting', 'analytics'], order: 9 },
+      { title: 'Post-sale handover & onboarding', description: 'Define handoff process from sales to delivery/success once a deal closes', priority: 'medium', estimatedHours: 4, tags: ['handover', 'onboarding'], order: 10 },
     ],
   },
   {
@@ -295,6 +318,132 @@ export interface Project {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Optional product name for Product Sales projects (and any project where it's relevant) */
+  productName?: string;
+  /** Project References — supporting material for the project as a whole (discovery meetings, requirements, scope docs, screenshots, etc.), distinct from any individual task's own attachments/links. */
+  attachments?: Attachment[];
+  links?: TaskLink[];
+  /**
+   * Optional financial value for this project. Deliberately never populated
+   * by hydrateFromDb's bulk fetch — only ever set client-side after a
+   * successful projectDb.getValue() RPC call, which enforces per-project
+   * visibility server-side. Absence here means "not fetched/not visible",
+   * not necessarily "no value set".
+   */
+  value?: number;
+  currency?: string;
+  /** Who can see `value` — defaults to 'admins' (safest) at the DB level. */
+  valueVisibility?: 'admins' | 'managers' | 'team' | 'selected';
+  valueVisibleUserIds?: string[];
+  /** Per-project card-display toggles. Undefined/missing fields fall back to the card's existing default rendering. */
+  cardDisplay?: {
+    value?: boolean;
+    status?: boolean;
+    progress?: boolean;
+    team?: boolean;
+    projectManager?: boolean;
+    taskCompletion?: boolean;
+    projectType?: boolean;
+    plannedCompletion?: boolean;
+  };
+  /** Internal (in-house) vs External (client/customer) project. Defaults to 'internal' at the DB level. */
+  projectType?: 'internal' | 'external';
+  /** Optional planned timeline — used only to compute time-progress (see getProjectTimeProgress). Never persisted as a percentage. */
+  plannedStartDate?: Date;
+  plannedCompletionDate?: Date;
+}
+
+// ─── Project planning calculations (foundation for future Value vs Time vs
+// Completion reporting) — always computed at render time from live data,
+// never persisted, so they can never go stale. ──────────────────────────
+
+export interface ProjectTaskStats {
+  total: number;
+  completed: number;
+  inProgress: number;
+  planned: number;
+  remaining: number;
+  completionPct: number | null;
+}
+
+/**
+ * Buckets a project's checklist tasks (`project.tasks`) by the status of
+ * whichever board task they're linked to (`linkedTaskId`). Unlinked tasks —
+ * and linked tasks still at 'todo' — count as "planned" (not yet started).
+ * This generalizes the Card's earlier one-off progress calculation into a
+ * single shared helper reused by the Card, ProjectDetail, and any future
+ * Analytics view.
+ */
+export function getProjectTaskStats(
+  project: Pick<Project, 'tasks'>,
+  boardTasks: Array<{ id: string; status: string }>,
+): ProjectTaskStats {
+  const total = project.tasks.length;
+  let completed = 0;
+  let inProgress = 0;
+  for (const t of project.tasks) {
+    const linked = t.linkedTaskId ? boardTasks.find((bt) => bt.id === t.linkedTaskId) : undefined;
+    if (linked?.status === 'completed') completed++;
+    else if (linked?.status === 'in-progress' || linked?.status === 'review') inProgress++;
+  }
+  const planned = total - completed - inProgress;
+  const remaining = planned + inProgress;
+  return {
+    total, completed, inProgress, planned, remaining,
+    completionPct: total === 0 ? null : Math.round((completed / total) * 100),
+  };
+}
+
+export interface ProjectTimeProgress {
+  totalDays: number;
+  elapsedDays: number;
+  remainingDays: number;
+  timeProgressPct: number;
+}
+
+/**
+ * Computes elapsed/remaining time against the project's planned dates.
+ * Returns null when either date is missing or the range is invalid
+ * (completion on/before start) — callers should treat null as "no
+ * planned timeline to show", not an error.
+ */
+export function getProjectTimeProgress(
+  project: Pick<Project, 'plannedStartDate' | 'plannedCompletionDate'>,
+): ProjectTimeProgress | null {
+  if (!project.plannedStartDate || !project.plannedCompletionDate) return null;
+  const start = new Date(project.plannedStartDate).getTime();
+  const end = new Date(project.plannedCompletionDate).getTime();
+  if (!(end > start)) return null;
+  const now = Date.now();
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const totalDays = Math.round((end - start) / DAY_MS);
+  const elapsedDaysRaw = (now - start) / DAY_MS;
+  const elapsedDays = Math.max(0, Math.min(totalDays, Math.round(elapsedDaysRaw)));
+  const remainingDays = totalDays - elapsedDays;
+  const timeProgressPct = Math.max(0, Math.min(100, Math.round((elapsedDaysRaw / totalDays) * 100)));
+  return { totalDays, elapsedDays, remainingDays, timeProgressPct };
+}
+
+export type ProjectPace = 'ahead' | 'behind' | 'on-pace' | 'unknown';
+
+/**
+ * Compares planned time-elapsed against actual task completion — the
+ * foundation for a future Value vs Time vs Completion view. 'unknown'
+ * whenever either input isn't available (no planned dates, or no tasks to
+ * measure completion from) rather than guessing.
+ */
+export function getProjectPace(
+  project: Pick<Project, 'tasks' | 'plannedStartDate' | 'plannedCompletionDate'>,
+  boardTasks: Array<{ id: string; status: string }>,
+): ProjectPace {
+  const time = getProjectTimeProgress(project);
+  const stats = getProjectTaskStats(project, boardTasks);
+  if (!time || stats.completionPct === null) return 'unknown';
+  const diff = stats.completionPct - time.timeProgressPct;
+  const TOLERANCE = 10;
+  if (diff > TOLERANCE) return 'ahead';
+  if (diff < -TOLERANCE) return 'behind';
+  return 'on-pace';
 }
 
 // ─── Store ─────────────────────────────────────────────────────────────
@@ -311,8 +460,20 @@ interface ProjectStore {
     color: string;
     tasks: Omit<ProjectTask, 'id'>[];
     createdBy: string;
+    productName?: string;
+    attachments?: Attachment[];
+    links?: TaskLink[];
+    value?: number;
+    currency?: string;
+    valueVisibility?: Project['valueVisibility'];
+    valueVisibleUserIds?: string[];
+    cardDisplay?: Project['cardDisplay'];
+    projectType?: Project['projectType'];
+    plannedStartDate?: Date;
+    plannedCompletionDate?: Date;
   }) => string; // returns project id
-  updateProject: (id: string, updates: Partial<Project>) => void;
+  /** `notify` (default true) — pass false for system-derived updates (e.g. auto status derivation from linked task progress) so they don't spam project members with a notification for something nobody actively did. */
+  updateProject: (id: string, updates: Partial<Project>, notify?: boolean) => void;
   deleteProject: (id: string) => void;
   selectProject: (id: string | null) => void;
 
@@ -466,6 +627,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       createdBy: data.createdBy,
       createdAt: new Date(),
       updatedAt: new Date(),
+      productName: data.productName || undefined,
+      attachments: data.attachments || undefined,
+      links: data.links || undefined,
+      value: data.value ?? undefined,
+      currency: data.value !== undefined ? (data.currency || 'ZAR') : undefined,
+      valueVisibility: data.valueVisibility || 'admins',
+      valueVisibleUserIds: data.valueVisibleUserIds || undefined,
+      cardDisplay: data.cardDisplay || undefined,
+      projectType: data.projectType || 'internal',
+      plannedStartDate: data.plannedStartDate || undefined,
+      plannedCompletionDate: data.plannedCompletionDate || undefined,
     };
     set((state) => {
       const next = [project, ...state.projects];
@@ -487,6 +659,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         status: project.status,
         team_id: teamId || null,
         created_by: data.createdBy,
+        product_name: project.productName || null,
+        attachments: project.attachments && project.attachments.length > 0 ? project.attachments : null,
+        links: project.links && project.links.length > 0 ? project.links : null,
+        value: project.value ?? null,
+        currency: project.currency || 'ZAR',
+        value_visibility: project.valueVisibility || 'admins',
+        value_visible_user_ids: project.valueVisibleUserIds && project.valueVisibleUserIds.length > 0 ? project.valueVisibleUserIds : null,
+        card_display: project.cardDisplay || null,
+        project_type: project.projectType || 'internal',
+        planned_start_date: project.plannedStartDate ? project.plannedStartDate.toISOString().slice(0, 10) : null,
+        planned_completion_date: project.plannedCompletionDate ? project.plannedCompletionDate.toISOString().slice(0, 10) : null,
       },
       project.tasks.map((t) => toDbProjectTask(project.id, t)),
       isMockMode(),
@@ -495,7 +678,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return id;
   },
 
-  updateProject: (id, updates) => {
+  updateProject: (id, updates, notify = true) => {
+    const prevProject = get().projects.find((p) => p.id === id);
     set((state) => {
       const next = state.projects.map((p) =>
         p.id === id ? { ...p, ...updates, updatedAt: new Date() } : p
@@ -510,9 +694,60 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.icon !== undefined) payload.icon = updates.icon;
     if (updates.color !== undefined) payload.color = updates.color;
     if (updates.status !== undefined) payload.status = updates.status;
+    if (updates.productName !== undefined) payload.product_name = updates.productName || null;
+    if (updates.attachments !== undefined) payload.attachments = updates.attachments && updates.attachments.length > 0 ? updates.attachments : null;
+    if (updates.links !== undefined) payload.links = updates.links && updates.links.length > 0 ? updates.links : null;
+    if (updates.value !== undefined) payload.value = updates.value ?? null;
+    if (updates.currency !== undefined) payload.currency = updates.currency || 'ZAR';
+    if (updates.valueVisibility !== undefined) payload.value_visibility = updates.valueVisibility || 'admins';
+    if (updates.valueVisibleUserIds !== undefined) payload.value_visible_user_ids = updates.valueVisibleUserIds && updates.valueVisibleUserIds.length > 0 ? updates.valueVisibleUserIds : null;
+    if (updates.cardDisplay !== undefined) payload.card_display = updates.cardDisplay || null;
+    if (updates.projectType !== undefined) payload.project_type = updates.projectType || 'internal';
+    if (updates.plannedStartDate !== undefined) payload.planned_start_date = updates.plannedStartDate ? new Date(updates.plannedStartDate).toISOString().slice(0, 10) : null;
+    if (updates.plannedCompletionDate !== undefined) payload.planned_completion_date = updates.plannedCompletionDate ? new Date(updates.plannedCompletionDate).toISOString().slice(0, 10) : null;
     if (Object.keys(payload).length > 0) {
       payload.updated_at = new Date().toISOString();
       projectDb.update(id, payload, isMockMode());
+    }
+
+    // ── Audit trail: log Project Value changes (value or currency) ──
+    if (
+      prevProject &&
+      (updates.value !== undefined || updates.currency !== undefined) &&
+      (updates.value !== prevProject.value || (updates.currency ?? prevProject.currency) !== prevProject.currency)
+    ) {
+      const { userId: actorId, userName: actorName, teamId } = getTeamContext();
+      if (actorId) {
+        projectValueHistoryDb.insert(
+          {
+            projectId: id,
+            projectName: prevProject.name,
+            teamId,
+            actorId,
+            actorName,
+            oldValue: prevProject.value ?? null,
+            oldCurrency: prevProject.currency ?? null,
+            newValue: updates.value !== undefined ? updates.value ?? null : prevProject.value ?? null,
+            newCurrency: updates.currency !== undefined ? updates.currency || 'ZAR' : prevProject.currency ?? null,
+          },
+          isMockMode(),
+        );
+      }
+    }
+
+    // ── Notify everyone with a task assigned in this project when its status actually changes ──
+    if (notify && updates.status !== undefined && prevProject && updates.status !== prevProject.status) {
+      const { userId: currentUserId, userName } = getTeamContext();
+      const recipients = Array.from(
+        new Set(prevProject.tasks.map((t) => t.assignedTo).filter((uid): uid is string => !!uid))
+      );
+      notifyUsers(recipients, {
+        actorId: currentUserId,
+        type: 'project-updated',
+        title: 'Project updated',
+        message: `${userName} changed "${prevProject.name}" status to ${updates.status}`,
+        actionUrl: `#projects?projectId=${id}`,
+      });
     }
   },
 
@@ -559,6 +794,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   updateProjectTask: (projectId, taskId, updates) => {
+    const prevProject = get().projects.find((p) => p.id === projectId);
+    const prevTask = prevProject?.tasks.find((t) => t.id === taskId);
     set((state) => {
       const next = state.projects.map((p) =>
         p.id === projectId
@@ -584,35 +821,31 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (Object.keys(payload).length > 0) {
       projectDb.updateTask(taskId, payload, isMockMode());
     }
+
+    // ── Notify the assignee whenever a project task is (re)assigned — the
+    // single source of truth for this, so assignProjectTask (which just
+    // delegates here) doesn't need its own duplicate notify logic. ──
+    if (
+      updates.assignedTo !== undefined &&
+      updates.assignedTo !== prevTask?.assignedTo &&
+      updates.assignedTo &&
+      isValidUuid(updates.assignedTo)
+    ) {
+      const { userId: currentUserId, userName } = getTeamContext();
+      const taskTitle = updates.title || prevTask?.title || 'a task';
+      notifyUser({
+        actorId: currentUserId,
+        recipientId: updates.assignedTo,
+        type: 'task-assigned',
+        title: 'Task assigned to you',
+        message: `${userName} assigned "${taskTitle}" to you${prevProject ? ` in ${prevProject.name}` : ''}`,
+        actionUrl: `#projects?projectId=${projectId}`,
+      });
+    }
   },
 
   assignProjectTask: (projectId, taskId, userId) => {
     get().updateProjectTask(projectId, taskId, { assignedTo: userId });
-
-    // Notify the newly-assigned user (live mode only, skip self-assignment and demo IDs)
-    const { userId: currentUserId } = getTeamContext();
-    if (
-      !isMockMode() &&
-      isValidUuid(userId) &&
-      userId !== currentUserId
-    ) {
-      const project = get().projects.find((p) => p.id === projectId);
-      const task = project?.tasks.find((t) => t.id === taskId);
-      if (project && task) {
-        notificationDb.insert(
-          {
-            id: uuidv4(),
-            userId,
-            type: 'task-assigned',
-            title: "You've been assigned a task",
-            message: `${project.name}: ${task.title}`,
-            read: false,
-            actionUrl: '#projects',
-          },
-          false,
-        ).catch(() => {});
-      }
-    }
   },
 
   linkProjectTask: (projectId, projectTaskId, linkedTaskId) => {
@@ -695,6 +928,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       createdBy: r.created_by || '',
       createdAt: new Date(r.created_at),
       updatedAt: new Date(r.updated_at),
+      productName: r.product_name || undefined,
+      attachments: r.attachments || [],
+      links: r.links || [],
+      // value/currency are deliberately NOT in this payload (see
+      // projectDb.fetchAll) — never hydrated here; fetched on demand via
+      // projectDb.getValue() by whichever component needs to show it.
+      cardDisplay: r.card_display || undefined,
+      projectType: r.project_type || 'internal',
+      plannedStartDate: r.planned_start_date ? new Date(r.planned_start_date) : undefined,
+      plannedCompletionDate: r.planned_completion_date ? new Date(r.planned_completion_date) : undefined,
       tasks: ((r.project_tasks as Array<Record<string, any>>) || [])
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((t) => ({
@@ -717,3 +960,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     set({ projects: mapped });
   },
 }));
+
+// Push a live project snapshot to the backend so the WhatsApp/Telegram bot
+// can show real projects (never hardcoded/hallucinated ones).
+import('@/lib/botSocket').then(({ getBotSocket }) => {
+  const socket = getBotSocket();
+  const pushSnapshot = () => {
+    const projects = useProjectStore.getState().projects;
+    socket.emit('projects:sync', projects.map((p) => ({
+      id: p.id,
+      name: p.name,
+      icon: p.icon,
+      updatedAt: new Date(p.updatedAt).toISOString(),
+    })));
+  };
+  socket.on('connect', pushSnapshot);
+  useProjectStore.subscribe(pushSnapshot);
+});

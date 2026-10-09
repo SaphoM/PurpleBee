@@ -17,7 +17,7 @@
  */
 
 import { supabase, isDbConnected } from './supabase';
-import type { Task, TaskStatus, TaskPriority, Subtask } from '@/types/index';
+import type { Task, TaskStatus, TaskPriority, Subtask, TaskActivityEntry, TaskActivityAction } from '@/types/index';
 
 // ── Central gate ──────────────────────────────────────────────────────
 // We can't import useSettingsStore here (circular), so every public
@@ -98,6 +98,8 @@ const toDbInsert = (task: Task, createdBy?: string) => ({
   project_id: task.projectId || null,
   team_id: task.teamId || null,
   created_by: createdBy || task.createdBy || null,
+  links: task.links && task.links.length > 0 ? task.links : null,
+  attachments: task.attachments && task.attachments.length > 0 ? task.attachments : null,
 });
 
 // ── Subtask persistence ────────────────────────────────────────────────────────
@@ -229,6 +231,142 @@ export const taskDb = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════
+// BOT TASKS
+// ═══════════════════════════════════════════════════════════════════════
+// Telegram/WhatsApp "database mode" tasks live in public.bot_tasks (text
+// user/project ids), separate from public.tasks (UUID FKs to profiles).
+// hydrateFromDb merges these in so bot-created tasks survive a refresh
+// and show up on the Tasks page — see taskStore.ts hydrateFromDb.
+
+interface DbBotTask {
+  id: string;
+  user_id: string;
+  project_id: string | null;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  due_date: string | null;
+  estimated_hours: number | null;
+  tags: string[];
+  subtasks: { id: string; title: string; completed: boolean; createdAt: string }[];
+  progress: number;
+  source_channel: string;
+  created_at: string;
+  updated_at: string;
+}
+
+const toTaskFromBot = (row: DbBotTask): Task => ({
+  id: row.id,
+  title: row.title,
+  description: row.description || undefined,
+  status: row.status,
+  priority: row.priority,
+  assignedTo: row.user_id,
+  createdBy: row.user_id,
+  dueDate: row.due_date ? new Date(row.due_date) : undefined,
+  tags: row.tags || [],
+  progress: row.progress ?? 0,
+  estimatedHours: row.estimated_hours || undefined,
+  projectId: row.project_id || undefined,
+  subtasks: (row.subtasks || []).map((s) => ({ ...s, createdAt: new Date(s.createdAt) })),
+  sourceChannel: row.source_channel as Task['sourceChannel'],
+  createdAt: new Date(row.created_at),
+  updatedAt: new Date(row.updated_at),
+});
+
+export const botTaskDb = {
+  /** Fetch bot-created tasks for a user (merged into the main task list on hydrate) */
+  async fetchAllForUser(userId: string, mockMode?: boolean): Promise<Task[] | null> {
+    if (!shouldPersist(mockMode)) return null;
+    const { data, error } = await supabase!
+      .from('bot_tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) { console.error('[dataService] bot_tasks.fetchAllForUser', error); return null; }
+    return (data as DbBotTask[]).map(toTaskFromBot);
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// TASK ACTIVITY — append-only audit log (who/when/what changed)
+// ═══════════════════════════════════════════════════════════════════════
+
+interface DbTaskActivity {
+  id: string;
+  task_id: string | null;
+  task_title: string;
+  team_id: string | null;
+  actor_id: string;
+  actor_name: string;
+  action: string;
+  field: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  created_at: string;
+}
+
+const toTaskActivity = (row: DbTaskActivity): TaskActivityEntry => ({
+  id: row.id,
+  taskId: row.task_id,
+  taskTitle: row.task_title,
+  teamId: row.team_id,
+  actorId: row.actor_id,
+  actorName: row.actor_name,
+  action: row.action as TaskActivityAction,
+  field: row.field || undefined,
+  oldValue: row.old_value || undefined,
+  newValue: row.new_value || undefined,
+  createdAt: new Date(row.created_at),
+});
+
+export const taskActivityDb = {
+  /** Fire-and-forget insert — never blocks the UI action that triggered it */
+  async insert(entry: {
+    taskId: string;
+    taskTitle: string;
+    teamId?: string | null;
+    actorId: string;
+    actorName: string;
+    action: TaskActivityAction;
+    field?: string;
+    oldValue?: string;
+    newValue?: string;
+  }, mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('task_activity').insert({
+      task_id: entry.taskId,
+      task_title: entry.taskTitle,
+      team_id: entry.teamId || null,
+      actor_id: entry.actorId,
+      actor_name: entry.actorName,
+      action: entry.action,
+      field: entry.field || null,
+      old_value: entry.oldValue ?? null,
+      new_value: entry.newValue ?? null,
+    });
+    if (error) { console.error('[dataService] task_activity.insert', error); return false; }
+    return true;
+  },
+
+  /** Paginated fetch, newest first. Pass `before` (an ISO timestamp) to load older pages. */
+  async fetchForTask(taskId: string, opts: { limit?: number; before?: string } = {}, mockMode?: boolean): Promise<TaskActivityEntry[] | null> {
+    if (!shouldPersist(mockMode)) return null;
+    let q = supabase!
+      .from('task_activity')
+      .select('*')
+      .eq('task_id', taskId)
+      .order('created_at', { ascending: false })
+      .limit(opts.limit ?? 20);
+    if (opts.before) q = q.lt('created_at', opts.before);
+    const { data, error } = await q;
+    if (error) { console.error('[dataService] task_activity.fetchForTask', error); return null; }
+    return (data as DbTaskActivity[]).map(toTaskActivity);
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
 // NOTIFICATIONS
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -289,6 +427,13 @@ export const notificationDb = {
     return true;
   },
 
+  async delete(id: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('notifications').delete().eq('id', id);
+    if (error) { console.error('[dataService] notifications.delete', error); return false; }
+    return true;
+  },
+
   async deleteAll(userId: string, mockMode?: boolean) {
     if (!shouldPersist(mockMode)) return true;
     const { error } = await supabase!.from('notifications').delete().eq('user_id', userId);
@@ -321,9 +466,15 @@ export const projectDb = {
    */
   async fetchAll(userId: string, mockMode?: boolean, teamId?: string | null, role?: string | null) {
     if (!shouldPersist(mockMode)) return null;
+    // Explicit column list — deliberately excludes `value`/`currency`. Those
+    // two columns are only ever readable via the get_project_value() RPC
+    // (see getValue below), which enforces per-project visibility. Never
+    // add them back to this bulk select — doing so would leak financial
+    // data to every viewer regardless of their permission, since RLS here
+    // is row-level only.
     let q = supabase!
       .from('projects')
-      .select('*, project_tasks(*)')
+      .select('id, name, description, icon, color, template_id, status, team_id, created_by, created_at, updated_at, product_name, attachments, links, card_display, project_type, planned_start_date, planned_completion_date, project_tasks(*)')
       .order('created_at', { ascending: false })
       .order('order', { referencedTable: 'project_tasks', ascending: true });
     // Admins/managers: let RLS is_admin_or_manager() return everything — no client filter.
@@ -403,6 +554,66 @@ export const projectDb = {
     const { error } = await supabase!.from('project_tasks').delete().eq('id', id);
     if (error) { console.error('[dataService] project_tasks.delete', error); return false; }
     return true;
+  },
+
+  /**
+   * The sole authorized read path for a project's value/currency — calls
+   * the get_project_value() SECURITY DEFINER RPC, which returns nulls when
+   * the caller isn't permitted to see it. Real (server-side) enforcement,
+   * not a client-side hide.
+   */
+  async getValue(projectId: string, mockMode?: boolean): Promise<{ value: number | null; currency: string | null } | null> {
+    if (!shouldPersist(mockMode)) return null;
+    const { data, error } = await supabase!.rpc('get_project_value', { p_project_id: projectId });
+    if (error) { console.error('[dataService] projects.getValue', error); return null; }
+    const row = Array.isArray(data) ? data[0] : data;
+    return { value: row?.value ?? null, currency: row?.currency ?? null };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROJECT VALUE HISTORY  (narrow audit trail — value/currency changes only)
+// ═══════════════════════════════════════════════════════════════════════
+
+export const projectValueHistoryDb = {
+  /** Fire-and-forget insert — never blocks the edit action that triggered it */
+  async insert(entry: {
+    projectId: string;
+    projectName: string;
+    teamId?: string | null;
+    actorId: string;
+    actorName: string;
+    oldValue: number | null;
+    oldCurrency: string | null;
+    newValue: number | null;
+    newCurrency: string | null;
+  }, mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('project_value_history').insert({
+      project_id: entry.projectId,
+      project_name: entry.projectName,
+      team_id: entry.teamId || null,
+      actor_id: entry.actorId,
+      actor_name: entry.actorName,
+      old_value: entry.oldValue,
+      old_currency: entry.oldCurrency,
+      new_value: entry.newValue,
+      new_currency: entry.newCurrency,
+    });
+    if (error) { console.error('[dataService] project_value_history.insert', error); return false; }
+    return true;
+  },
+
+  async fetchForProject(projectId: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return null;
+    const { data, error } = await supabase!
+      .from('project_value_history')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (error) { console.error('[dataService] project_value_history.fetchForProject', error); return null; }
+    return data;
   },
 };
 
@@ -818,6 +1029,14 @@ export const authDb = {
         .eq('team_id', teamId);
       if (error) { console.error('[dataService] auth.updateProfile team_members', error); }
     }
+    return true;
+  },
+
+  /** Persist notification preferences (in-app/email/per-category toggles) so they follow the account across devices, not just localStorage on one browser. */
+  async updateNotificationPreferences(userId: string, preferences: Record<string, unknown>) {
+    if (!isDbConnected()) return false;
+    const { error } = await supabase!.from('profiles').update({ notification_preferences: preferences }).eq('id', userId);
+    if (error) { console.error('[dataService] auth.updateNotificationPreferences', error); return false; }
     return true;
   },
 

@@ -1,11 +1,25 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
 import { v4 as uuidv4 } from 'uuid';
-import { X, Plus, Trash2, CalendarDays, Clock, Tag, FolderKanban, ChevronDown } from 'lucide-react';
-import { TaskStatus, TaskPriority } from '@/types/index';
+import {
+  X, Plus, Trash2, CalendarDays, Clock, Tag, FolderKanban, ChevronDown,
+} from 'lucide-react';
+import { TaskStatus, TaskPriority, Attachment, TaskLink } from '@/types/index';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
+import { ReferencesSection } from '@components/shared/ReferencesSection';
+import { LinkedProjectReferences } from '@components/shared/LinkedProjectReferences';
+
+/** Project icons are either an emoji (template default) or a `data:image` URL
+ *  (uploaded company logo) — render each correctly instead of dumping a raw
+ *  data URL string into the UI as text. */
+const renderProjectIcon = (icon?: string) => {
+  if (icon && icon.startsWith('data:image')) {
+    return <img src={icon} alt="" className="inline-block w-3.5 h-3.5 rounded-full object-cover align-[-2px]" />;
+  }
+  return <span>{icon}</span>;
+};
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -47,8 +61,20 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const [recurringFrequency, setRecurringFrequency] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly'>('weekly');
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [showTitleDropdown, setShowTitleDropdown] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [links, setLinks] = useState<TaskLink[]>([]);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Top 3 projects by most recently updated (filtered by user assignment for members)
+  const top3Projects = useMemo(() => {
+    const userProjects = canManageTeam()
+      ? projects
+      : projects.filter((p) => p.tasks.some((t) => t.assignedTo === user?.id));
+    return [...userProjects]
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 3);
+  }, [projects, user, canManageTeam]);
 
   // Project task suggestions — admins/managers see all, members see their projects
   const allProjectTasks = getAllProjectTaskTitles();
@@ -117,6 +143,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     setRecurringFrequency('weekly');
     setSelectedProjectId('');
     setShowTitleDropdown(false);
+    setAttachments([]);
+    setLinks([]);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -147,6 +175,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
         createdAt: new Date(),
       })),
       projectId: selectedProjectId || undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      links: links.length > 0 ? links : undefined,
     });
 
     resetForm();
@@ -279,7 +309,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
                     <FolderKanban size={10} />
-                    {pt.projectIcon} {pt.projectName}
+                    {renderProjectIcon(pt.projectIcon)} {pt.projectName}
                   </span>
                   <button
                     type="button"
@@ -302,6 +332,40 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                   'rounded-xl shadow-xl max-h-64 overflow-y-auto'
                 )}
               >
+                {/* Top 3 projects quick-pick */}
+                {top3Projects.length > 0 && (
+                  <div className="px-3 py-2 border-b border-gray-100 dark:border-slate-700">
+                    <p className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                      <FolderKanban size={10} /> Top Projects
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {top3Projects.map((proj) => (
+                        <button
+                          key={proj.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedProjectId(proj.id);
+                            setShowTitleDropdown(false);
+                          }}
+                          className={clsx(
+                            'inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-colors',
+                            selectedProjectId === proj.id
+                              ? 'bg-purple-200 text-purple-800 dark:bg-purple-800/50 dark:text-purple-200'
+                              : 'bg-gray-100 text-gray-600 hover:bg-purple-100 hover:text-purple-700 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-purple-900/30 dark:hover:text-purple-300'
+                          )}
+                        >
+                          {renderProjectIcon(proj.icon)}
+                          {proj.name}
+                        </button>
+                      ))}
+                      {projects.length > 3 && (
+                        <span className="inline-flex items-center px-2 py-1 text-[10px] text-gray-400 dark:text-slate-500">
+                          +{projects.length - 3} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="px-3 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
                   <p className="text-[10px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
                     <FolderKanban size={10} /> Project Tasks
@@ -326,7 +390,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                     <div key={projId}>
                       <div className="px-3 py-1.5 bg-gray-50 dark:bg-slate-800/80 sticky top-0">
                         <span className="text-[10px] font-bold text-gray-500 dark:text-slate-400">
-                          {tasks[0].projectIcon} {tasks[0].projectName}
+                          {renderProjectIcon(tasks[0].projectIcon)} {tasks[0].projectName}
                         </span>
                       </div>
                       {tasks.map((pt) => {
@@ -605,6 +669,25 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                 Add subtask
               </button>
             </div>
+          </div>
+
+          {/* Attachments & Links */}
+          <div>
+            <ReferencesSection
+              attachments={attachments}
+              onAttachmentsChange={setAttachments}
+              links={links}
+              onLinksChange={setLinks}
+              enablePaste={false}
+              currentUserId={user?.id}
+              currentUserName={user?.name}
+              emptyHint="Attach docs, images/screenshots, or links related to this task"
+            />
+            {selectedProjectId && (
+              <div className="mt-2">
+                <LinkedProjectReferences projectId={selectedProjectId} />
+              </div>
+            )}
           </div>
 
           {/* Recurring */}

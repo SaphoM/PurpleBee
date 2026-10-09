@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import clsx from 'clsx';
 import {
   Plus,
@@ -28,8 +29,16 @@ import {
   Cloud,
   Headphones,
   Pencil,
+  ArrowUp,
+  ArrowDown,
+  ChevronDown,
+  ShoppingCart,
+  Image as ImageIcon,
+  Building2,
+  Wallet,
+  Lock,
 } from 'lucide-react';
-import { useProjectStore, projectTemplates, ProjectTask } from '@stores/projectStore';
+import { useProjectStore, projectTemplates, ProjectTask, Project, getProjectTaskStats, getProjectTimeProgress, getProjectPace } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useNotificationStore } from '@stores/notificationStore';
@@ -37,12 +46,17 @@ import { useChatStore } from '@stores/chatStore';
 import { useToastStore } from '@components/Toast';
 import { useUIStore } from '@stores/uiStore';
 import { MemberTooltip, MemberInfo } from '@components/MemberTooltip';
+import { ReferencesSection } from '@components/shared/ReferencesSection';
+import type { Attachment, TaskLink } from '@/types/index';
+import { projectDb, projectValueHistoryDb } from '@/lib/dataService';
+import { useSettingsStore } from '@stores/settingsStore';
 
 const getTemplateIcon = (templateId: string, size: number = 24) => {
   const icons: Record<string, React.ReactNode> = {
     'web-app': <Globe size={size} strokeWidth={1.5} />,
     'mobile-app': <Smartphone size={size} strokeWidth={1.5} />,
     'marketing': <Megaphone size={size} strokeWidth={1.5} />,
+    'product-sales': <ShoppingCart size={size} strokeWidth={1.5} />,
     'api-service': <Zap size={size} strokeWidth={1.5} />,
     'design-system': <Palette size={size} strokeWidth={1.5} />,
     'training': <GraduationCap size={size} strokeWidth={1.5} />,
@@ -53,6 +67,20 @@ const getTemplateIcon = (templateId: string, size: number = 24) => {
     'custom': <Wrench size={size} strokeWidth={1.5} />,
   };
   return icons[templateId] || <FolderKanban size={size} strokeWidth={1.5} />;
+};
+
+/** Renders a project's uploaded company logo (data URL stored in project.icon)
+ *  as a circular badge, or null when no logo was uploaded. Shown alongside
+ *  (not instead of) the template's outline icon. */
+const renderProjectLogo = (project: { icon: string }, sizeClass: string = 'w-10 h-10') => {
+  if (!project.icon || !project.icon.startsWith('data:image')) return null;
+  return (
+    <img
+      src={project.icon}
+      alt="Company logo"
+      className={clsx(sizeClass, 'rounded-full object-cover border-2 border-white dark:border-slate-800 shadow-sm flex-shrink-0')}
+    />
+  );
 };
 
 // ── Status config ──────────────────────────────────────────────────────
@@ -70,6 +98,236 @@ const priorityConfig: Record<string, { label: string; color: string; dot: string
   low: { label: 'Low', color: 'text-gray-500 dark:text-gray-400', dot: 'bg-gray-400' },
 };
 
+// ── Project Value + Card Display (shared by Create & Edit modals) ────────
+const CURRENCIES = ['ZAR', 'USD', 'EUR', 'GBP'];
+
+const CARD_DISPLAY_FIELDS: { key: keyof NonNullable<Project['cardDisplay']>; label: string }[] = [
+  { key: 'status', label: 'Status' },
+  { key: 'progress', label: 'Progress' },
+  { key: 'value', label: 'Project Value' },
+  { key: 'projectManager', label: 'Project Manager' },
+  { key: 'team', label: 'Team' },
+  { key: 'taskCompletion', label: 'Task Completion' },
+  { key: 'projectType', label: 'Project Type' },
+  { key: 'plannedCompletion', label: 'Planned Completion' },
+];
+
+const DEFAULT_CARD_DISPLAY: NonNullable<Project['cardDisplay']> = {
+  status: true, progress: true, value: false, team: true, projectManager: false, taskCompletion: true,
+  projectType: false, plannedCompletion: false,
+};
+
+const PROJECT_TYPES: { value: NonNullable<Project['projectType']>; label: string }[] = [
+  { value: 'internal', label: 'Internal' },
+  { value: 'external', label: 'External' },
+];
+
+/** Formats a Date as YYYY-MM-DD for a native <input type="date"> value. */
+const toDateInputValue = (d?: Date | null) => {
+  if (!d) return '';
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return '';
+  return dt.toISOString().slice(0, 10);
+};
+
+interface ProjectValueSectionProps {
+  amount: string;
+  onAmountChange: (v: string) => void;
+  currency: string;
+  onCurrencyChange: (v: string) => void;
+  visibility: NonNullable<Project['valueVisibility']>;
+  onVisibilityChange: (v: NonNullable<Project['valueVisibility']>) => void;
+  visibleUserIds: string[];
+  onVisibleUserIdsChange: (ids: string[]) => void;
+  cardDisplay: NonNullable<Project['cardDisplay']>;
+  onCardDisplayChange: (cd: NonNullable<Project['cardDisplay']>) => void;
+  assignableMembers: { id: string; name: string }[];
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  plannedStart: string;
+  onPlannedStartChange: (v: string) => void;
+  plannedCompletion: string;
+  onPlannedCompletionChange: (v: string) => void;
+}
+
+/** Optional per-project financial value, planned timeline + who can see the
+ *  value + which fields show on this project's card. Purely additive —
+ *  collapsed by default, never required. */
+const ProjectValueSection: React.FC<ProjectValueSectionProps> = ({
+  amount, onAmountChange, currency, onCurrencyChange,
+  visibility, onVisibilityChange, visibleUserIds, onVisibleUserIdsChange,
+  cardDisplay, onCardDisplayChange, assignableMembers, expanded, onToggleExpanded,
+  plannedStart, onPlannedStartChange, plannedCompletion, onPlannedCompletionChange,
+}) => {
+  const toggleMember = (id: string) => {
+    onVisibleUserIdsChange(
+      visibleUserIds.includes(id) ? visibleUserIds.filter((u) => u !== id) : [...visibleUserIds, id]
+    );
+  };
+  const toggleCardField = (key: keyof NonNullable<Project['cardDisplay']>) => {
+    onCardDisplayChange({ ...cardDisplay, [key]: !cardDisplay[key] });
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggleExpanded}
+        className="flex items-center justify-between w-full text-left group"
+      >
+        <span className="text-sm font-medium text-gray-700 dark:text-slate-300 inline-flex items-center gap-1.5">
+          <Wallet size={14} className="text-gray-400 dark:text-slate-500" />
+          Project Planning, Value &amp; Card Display <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+          {amount.trim() !== '' && (
+            <span className="ml-1 text-xs text-purple-600 dark:text-purple-400 font-normal">value set</span>
+          )}
+        </span>
+        <ChevronDown
+          size={16}
+          className={clsx(
+            'text-gray-400 dark:text-slate-500 group-hover:text-purple-500 transition-transform',
+            expanded && 'rotate-180'
+          )}
+        />
+      </button>
+      {expanded && (
+        <div className="mt-2 p-3 rounded-xl bg-gray-50/50 dark:bg-slate-800/20 border border-gray-200 dark:border-slate-700/50 space-y-4">
+          {/* Amount + currency */}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Amount</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                value={amount}
+                onChange={(e) => onAmountChange(e.target.value)}
+                placeholder="0.00"
+                className={clsx(
+                  'w-full rounded-lg px-3 py-2 text-sm',
+                  'bg-white border border-gray-300 text-gray-800 placeholder-gray-400',
+                  'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                  'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                )}
+              />
+            </div>
+            <div className="w-28">
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Currency</label>
+              <select
+                value={currency}
+                onChange={(e) => onCurrencyChange(e.target.value)}
+                className={clsx(
+                  'w-full rounded-lg px-2 py-2 text-sm',
+                  'bg-white border border-gray-300 text-gray-800',
+                  'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                  'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 cursor-pointer'
+                )}
+              >
+                {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Planned timeline — used only to compute time-progress, never stored as a percentage */}
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Planned Start</label>
+              <input
+                type="date"
+                value={plannedStart}
+                onChange={(e) => onPlannedStartChange(e.target.value)}
+                className={clsx(
+                  'w-full rounded-lg px-3 py-2 text-sm',
+                  'bg-white border border-gray-300 text-gray-800',
+                  'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                  'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                )}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1">Planned Completion</label>
+              <input
+                type="date"
+                value={plannedCompletion}
+                onChange={(e) => onPlannedCompletionChange(e.target.value)}
+                className={clsx(
+                  'w-full rounded-lg px-3 py-2 text-sm',
+                  'bg-white border border-gray-300 text-gray-800',
+                  'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                  'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                )}
+              />
+            </div>
+          </div>
+
+          {/* Visibility */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 inline-flex items-center gap-1">
+              <Lock size={11} /> Who can see this?
+            </label>
+            <select
+              value={visibility}
+              onChange={(e) => onVisibilityChange(e.target.value as NonNullable<Project['valueVisibility']>)}
+              className={clsx(
+                'w-full rounded-lg px-3 py-2 text-sm',
+                'bg-white border border-gray-300 text-gray-800',
+                'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 cursor-pointer'
+              )}
+            >
+              <option value="admins">Admins only (safest, default)</option>
+              <option value="managers">Managers and above</option>
+              <option value="team">Everyone on the project</option>
+              <option value="selected">Selected users</option>
+            </select>
+            <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+              Enforced server-side — even if the card is set to show Project Value, only people permitted here will ever see the amount.
+            </p>
+            {visibility === 'selected' && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {assignableMembers.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => toggleMember(m.id)}
+                    className={clsx(
+                      'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                      visibleUserIds.includes(m.id)
+                        ? 'bg-purple-100 border-purple-300 text-purple-700 dark:bg-purple-900/30 dark:border-purple-700 dark:text-purple-300'
+                        : 'bg-white border-gray-200 text-gray-500 dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-400'
+                    )}
+                  >
+                    {m.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Card display toggles */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1.5">Card Display</label>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+              {CARD_DISPLAY_FIELDS.map((f) => (
+                <label key={f.key} className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!cardDisplay[f.key]}
+                    onChange={() => toggleCardField(f.key)}
+                    className="rounded border-gray-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500/30"
+                  />
+                  {f.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Create Project Modal ───────────────────────────────────────────────
 const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const { createProject } = useProjectStore();
@@ -82,11 +340,29 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [selectedTasks, setSelectedTasks] = useState<Set<number>>(new Set());
   const [customTaskInput, setCustomTaskInput] = useState('');
+  const [customTaskDescription, setCustomTaskDescription] = useState('');
   const [customTasks, setCustomTasks] = useState<{ title: string; description: string; priority: 'low' | 'medium' | 'high' | 'urgent'; estimatedHours: number; tags: string[] }[]>([]);
   const [assignments, setAssignments] = useState<Record<number, string>>({});
+  const [productName, setProductName] = useState('');
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState('');
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [refAttachments, setRefAttachments] = useState<Attachment[]>([]);
+  const [refLinks, setRefLinks] = useState<TaskLink[]>([]);
+  const [showReferences, setShowReferences] = useState(false);
+  const [valueAmount, setValueAmount] = useState('');
+  const [valueCurrency, setValueCurrency] = useState('ZAR');
+  const [valueVisibility, setValueVisibility] = useState<NonNullable<Project['valueVisibility']>>('admins');
+  const [valueVisibleUserIds, setValueVisibleUserIds] = useState<string[]>([]);
+  const [cardDisplay, setCardDisplay] = useState<NonNullable<Project['cardDisplay']>>(DEFAULT_CARD_DISPLAY);
+  const [showValueSection, setShowValueSection] = useState(false);
+  const [projectType, setProjectType] = useState<NonNullable<Project['projectType']>>('internal');
+  const [plannedStart, setPlannedStart] = useState('');
+  const [plannedCompletion, setPlannedCompletion] = useState('');
 
   const template = projectTemplates.find((t) => t.id === selectedTemplate);
   const isCustom = selectedTemplate === 'custom';
+  const isProductSales = selectedTemplate === 'product-sales';
 
   const reset = () => {
     setStep(1);
@@ -95,8 +371,43 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     setSelectedTemplate(null);
     setSelectedTasks(new Set());
     setCustomTaskInput('');
+    setCustomTaskDescription('');
     setCustomTasks([]);
     setAssignments({});
+    setProductName('');
+    setLogoDataUrl(null);
+    setLogoError('');
+    setRefAttachments([]);
+    setRefLinks([]);
+    setShowReferences(false);
+    setValueAmount('');
+    setValueCurrency('ZAR');
+    setValueVisibility('admins');
+    setValueVisibleUserIds([]);
+    setCardDisplay(DEFAULT_CARD_DISPLAY);
+    setShowValueSection(false);
+    setProjectType('internal');
+    setPlannedStart('');
+    setPlannedCompletion('');
+  };
+
+  const MAX_LOGO_BYTES = 1024 * 1024; // 1MB — keeps the DB row small since it's stored as a data URL
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoError('');
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Please choose an image file.');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setLogoError('Logo must be under 1MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setLogoDataUrl(reader.result as string);
+    reader.readAsDataURL(file);
+    if (logoInputRef.current) logoInputRef.current.value = '';
   };
 
   const handleSelectTemplate = (templateId: string) => {
@@ -121,9 +432,10 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     if (!customTaskInput.trim()) return;
     setCustomTasks([
       ...customTasks,
-      { title: customTaskInput.trim(), description: '', priority: 'medium', estimatedHours: 4, tags: [] },
+      { title: customTaskInput.trim(), description: customTaskDescription.trim(), priority: 'medium', estimatedHours: 4, tags: [] },
     ]);
     setCustomTaskInput('');
+    setCustomTaskDescription('');
   };
 
   const removeCustomTask = (i: number) => {
@@ -172,17 +484,30 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
 
       const projectName = name.trim();
 
-      createProject({
+      const projectId = createProject({
         name: projectName,
         description: description.trim(),
         templateId: selectedTemplate || 'custom',
-        icon: template?.icon || '🔧',
+        icon: logoDataUrl || template?.icon || '🔧',
         color: template?.color || '#6b7280',
         tasks: taskList,
         createdBy: user.id,
+        productName: isProductSales ? productName.trim() || undefined : undefined,
+        attachments: refAttachments.length > 0 ? refAttachments : undefined,
+        links: refLinks.length > 0 ? refLinks : undefined,
+        value: valueAmount.trim() !== '' ? Number(valueAmount) : undefined,
+        currency: valueAmount.trim() !== '' ? valueCurrency : undefined,
+        valueVisibility,
+        valueVisibleUserIds: valueVisibility === 'selected' && valueVisibleUserIds.length > 0 ? valueVisibleUserIds : undefined,
+        cardDisplay,
+        projectType,
+        plannedStartDate: plannedStart ? new Date(plannedStart) : undefined,
+        plannedCompletionDate: plannedCompletion ? new Date(plannedCompletion) : undefined,
       });
 
-      // Send project-invite notifications to each assigned member
+      // Members with a task assigned to them get the richer "assigned you N
+      // tasks" notification; every other team member still gets a plainer
+      // "new project" announcement so nobody misses that it was created.
       const assignedMembers = new Map<string, number>(); // userId → task count
       taskList.forEach((t) => {
         if (t.assignedTo && t.assignedTo !== user.id) {
@@ -195,11 +520,24 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
           userId: memberId,
           type: 'project-invite',
           title: 'Added to project',
-          message: `You've been added to "${projectName}" — ${taskCount} task${taskCount > 1 ? 's' : ''} assigned to you`,
+          message: `${user.name} created "${projectName}" and assigned you ${taskCount} task${taskCount > 1 ? 's' : ''}`,
           read: false,
-          actionUrl: '#projects',
+          actionUrl: `#projects?projectId=${projectId}`,
         });
       });
+
+      assignableMembers
+        .filter((m) => m.id !== user.id && !assignedMembers.has(m.id))
+        .forEach((member) => {
+          addNotification({
+            userId: member.id,
+            type: 'project-updated',
+            title: 'New project',
+            message: `${user.name} created a new project — "${projectName}"`,
+            read: false,
+            actionUrl: `#projects?projectId=${projectId}`,
+          });
+        });
     } catch (err) {
       console.error('[Projects] handleCreate error:', err);
     } finally {
@@ -297,6 +635,139 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                 />
               </div>
 
+              {/* Project Type — Internal vs External */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Project Type</label>
+                <select
+                  value={projectType}
+                  onChange={(e) => setProjectType(e.target.value as NonNullable<Project['projectType']>)}
+                  className={clsx(
+                    'w-full sm:w-56 rounded-lg px-4 py-2.5 text-sm',
+                    'bg-white border border-gray-300 text-gray-800',
+                    'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 cursor-pointer'
+                  )}
+                >
+                  {PROJECT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+
+              {/* Company logo */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                  Company Logo <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <div
+                    onClick={() => logoInputRef.current?.click()}
+                    className={clsx(
+                      'w-14 h-14 rounded-xl flex items-center justify-center cursor-pointer overflow-hidden flex-shrink-0 border-2 border-dashed transition-colors',
+                      logoDataUrl
+                        ? 'border-transparent'
+                        : 'border-gray-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-700/50 bg-gray-50 dark:bg-slate-800/50'
+                    )}
+                  >
+                    {logoDataUrl ? (
+                      <img src={logoDataUrl} alt="Logo preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <Building2 size={20} className="text-gray-300 dark:text-slate-600" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => logoInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-700/50 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                      >
+                        <ImageIcon size={12} />
+                        {logoDataUrl ? 'Change logo' : 'Upload logo'}
+                      </button>
+                      {logoDataUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setLogoDataUrl(null)}
+                          className="text-xs text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+                      Shown instead of the template icon on this project's cards. PNG/JPG, up to 1MB.
+                    </p>
+                    {logoError && <p className="text-[11px] text-red-500 mt-1">{logoError}</p>}
+                  </div>
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+
+              {/* Project References — optional, collapsed by default so it doesn't clutter the wizard */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowReferences(!showReferences)}
+                  className="flex items-center justify-between w-full text-left group"
+                >
+                  <span className="text-sm font-medium text-gray-700 dark:text-slate-300">
+                    Project References <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+                    {(refAttachments.length + refLinks.length) > 0 && (
+                      <span className="ml-1.5 text-xs text-purple-600 dark:text-purple-400 font-normal">
+                        {refAttachments.length + refLinks.length} added
+                      </span>
+                    )}
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className={clsx(
+                      'text-gray-400 dark:text-slate-500 group-hover:text-purple-500 transition-transform',
+                      showReferences && 'rotate-180'
+                    )}
+                  />
+                </button>
+                {showReferences && (
+                  <div className="mt-2 p-3 rounded-xl bg-gray-50/50 dark:bg-slate-800/20 border border-gray-200 dark:border-slate-700/50">
+                    <ReferencesSection
+                      attachments={refAttachments}
+                      onAttachmentsChange={setRefAttachments}
+                      links={refLinks}
+                      onLinksChange={setRefLinks}
+                      enablePaste={false}
+                      currentUserId={user?.id}
+                      currentUserName={user?.name}
+                      emptyHint="Add discovery meeting notes, requirements, proposals, wireframes, Figma/GitHub links, and more — before the project is even created"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Project Value + Card Display — optional, collapsed by default */}
+              <ProjectValueSection
+                amount={valueAmount}
+                onAmountChange={setValueAmount}
+                currency={valueCurrency}
+                onCurrencyChange={setValueCurrency}
+                visibility={valueVisibility}
+                onVisibilityChange={setValueVisibility}
+                visibleUserIds={valueVisibleUserIds}
+                onVisibleUserIdsChange={setValueVisibleUserIds}
+                cardDisplay={cardDisplay}
+                onCardDisplayChange={setCardDisplay}
+                assignableMembers={assignableMembers}
+                expanded={showValueSection}
+                onToggleExpanded={() => setShowValueSection(!showValueSection)}
+                plannedStart={plannedStart}
+                onPlannedStartChange={setPlannedStart}
+                plannedCompletion={plannedCompletion}
+                onPlannedCompletionChange={setPlannedCompletion}
+              />
+
               {/* Template cards */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-3">
@@ -334,6 +805,28 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                   ))}
                 </div>
               </div>
+
+              {/* Product name — only relevant for the Product Sales template */}
+              {isProductSales && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                    <ShoppingCart size={14} className="text-emerald-500" />
+                    Product Name <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    placeholder="e.g. Acme Pro Subscription"
+                    className={clsx(
+                      'w-full rounded-lg px-4 py-2.5 text-sm',
+                      'bg-white border border-gray-300 text-gray-800 placeholder-gray-400',
+                      'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                      'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                    )}
+                  />
+                </div>
+              )}
 
               {/* Next button */}
               <div className="flex justify-end pt-2">
@@ -432,7 +925,10 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                     type="text"
                     value={customTaskInput}
                     onChange={(e) => setCustomTaskInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); addCustomTask(); } }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); addCustomTask(); }
+                      if (e.key === 'Escape') setCustomTaskDescription('');
+                    }}
                     placeholder="Type a task title and press Enter..."
                     className={clsx(
                       'flex-1 rounded-lg px-4 py-2.5 text-sm',
@@ -448,15 +944,37 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                     <Plus size={16} />
                   </button>
                 </div>
+                {/* Description field — shown once a title has been typed */}
+                {customTaskInput.trim() && (
+                  <div className="mt-2">
+                    <textarea
+                      value={customTaskDescription}
+                      onChange={(e) => setCustomTaskDescription(e.target.value)}
+                      rows={2}
+                      placeholder="Task description (optional)…"
+                      className={clsx(
+                        'w-full rounded-lg px-4 py-2.5 text-sm resize-none',
+                        'bg-white border border-gray-200 text-gray-800 placeholder-gray-400',
+                        'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100 dark:placeholder-slate-500',
+                        'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                      )}
+                    />
+                  </div>
+                )}
                 {customTasks.length > 0 && (
                   <div className="mt-2 space-y-1.5">
                     {customTasks.map((ct, i) => (
-                      <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
-                        <div className="w-5 h-5 rounded-md bg-purple-600 text-white flex items-center justify-center flex-shrink-0">
+                      <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+                        <div className="w-5 h-5 rounded-md bg-purple-600 text-white flex items-center justify-center flex-shrink-0 mt-0.5">
                           <Check size={12} />
                         </div>
-                        <span className="flex-1 text-sm text-gray-800 dark:text-slate-200">{ct.title}</span>
-                        <button onClick={() => removeCustomTask(i)} className="text-gray-400 hover:text-red-500 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm text-gray-800 dark:text-slate-200">{ct.title}</span>
+                          {ct.description && (
+                            <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{ct.description}</p>
+                          )}
+                        </div>
+                        <button onClick={() => removeCustomTask(i)} className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0">
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -686,12 +1204,19 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   const [editingTaskValues, setEditingTaskValues] = useState<{ title: string; description: string; priority: string; estimatedHours: number; tags: string }>({ title: '', description: '', priority: 'medium', estimatedHours: 4, tags: '' });
   const suggestionRef = React.useRef<HTMLDivElement>(null);
   const addTaskInputRef = React.useRef<HTMLInputElement>(null);
+  const keepMockData = useSettingsStore((s) => s.keepMockData);
+  const [valueInfo, setValueInfo] = useState<{ value: number | null; currency: string | null } | null>(null);
+  const [valueHistory, setValueHistory] = useState<Array<Record<string, any>> | null>(null);
+  const [showValueHistory, setShowValueHistory] = useState(false);
 
   if (!project) return null;
 
   const assignedCount = project.tasks.filter((t) => t.assignedTo).length;
   const totalHours = project.tasks.reduce((sum, t) => sum + t.estimatedHours, 0);
   const sc = statusConfig[project.status];
+  const taskStats = getProjectTaskStats(project, boardTasks);
+  const timeProgress = getProjectTimeProgress(project);
+  const pace = getProjectPace(project, boardTasks);
 
   // Auto-update project status based on linked board task progress
   useEffect(() => {
@@ -704,8 +1229,21 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
     const allCompleted = linked.every((t) => t.status === 'completed');
     const anyActive = linked.some((t) => t.status === 'in-progress' || t.status === 'review');
     const derived = allCompleted ? 'completed' : anyActive ? 'active' : project.status === 'on-hold' ? 'on-hold' : linked.length > 0 ? 'planning' : project.status;
-    if (derived !== project.status) updateProject(project.id, { status: derived as any });
+    if (derived !== project.status) updateProject(project.id, { status: derived as any }, false);
   }, [boardTasks, project.tasks, project.id]);
+
+  // Project Value is never in the bulk project object — fetch it via the
+  // authorized get_project_value() RPC. History is only ever fetched for
+  // managers/admins (the same audience already allowed to edit the value),
+  // matching how the edit trigger is already permission-gated in the UI.
+  useEffect(() => {
+    let cancelled = false;
+    projectDb.getValue(project.id, keepMockData).then((res) => { if (!cancelled) setValueInfo(res); });
+    if (canManage) {
+      projectValueHistoryDb.fetchForProject(project.id, keepMockData).then((rows) => { if (!cancelled) setValueHistory(rows); });
+    }
+    return () => { cancelled = true; };
+  }, [project.id, keepMockData, canManage]);
 
   // Build suggestions: template tasks + industry tasks that haven't been added yet
   const existingTitles = new Set(project.tasks.map((t) => t.title.toLowerCase()));
@@ -754,7 +1292,10 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   };
 
   const handleCreateActualTask = (pt: ProjectTask) => {
-    // Create a real task in the taskStore linked to this project task
+    // Create a real task in the taskStore linked to this project task.
+    // Generate the id ourselves (forcedId) so we can deep-link the
+    // notifications below to this exact task instead of the generic list.
+    const newTaskId = uuidv4();
     addTask({
       title: pt.title,
       description: pt.description,
@@ -765,7 +1306,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       tags: pt.tags,
       progress: 0,
       projectId: project.id,
-    });
+    }, newTaskId);
 
     // Notify the current user that the task was added
     addNotification({
@@ -774,7 +1315,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       title: 'Task added to board',
       message: `"${pt.title}" has been added to your Tasks board from ${project.name}`,
       read: false,
-      actionUrl: '#tasks',
+      actionUrl: `#tasks?taskId=${newTaskId}`,
+      taskId: newTaskId,
     });
 
     // If an admin/manager added a task for someone else, notify the assignee too
@@ -783,9 +1325,10 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
         userId: pt.assignedTo,
         type: 'task-assigned',
         title: 'New task on your board',
-        message: `${currentUserName.split(' ')[0]} added "${pt.title}" to your Tasks board`,
+        message: `${currentUserName.split(' ')[0]} added "${pt.title}" to your Tasks board from ${project.name}`,
         read: false,
-        actionUrl: '#tasks',
+        actionUrl: `#tasks?taskId=${newTaskId}`,
+        taskId: newTaskId,
       });
     }
 
@@ -815,17 +1358,35 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
             </span>
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-slate-100">{project.name}</h1>
+              {project.productName && (
+                <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center gap-1">
+                  <ShoppingCart size={11} /> {project.productName}
+                </p>
+              )}
               {project.description && (
                 <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{project.description}</p>
               )}
-              <div className="flex items-center gap-2 mt-2 text-[11px] text-gray-400 dark:text-slate-500">
+              <div className="flex items-center flex-wrap gap-2 mt-2 text-[11px] text-gray-400 dark:text-slate-500">
                 <span>Created {new Date(project.createdAt).toLocaleDateString()}</span>
                 <span>&middot;</span>
                 <span className="capitalize">{project.templateId.replace('-', ' ')} template</span>
+                {project.projectType && (
+                  <>
+                    <span>&middot;</span>
+                    <span className="capitalize">{project.projectType}</span>
+                  </>
+                )}
+                {project.plannedStartDate && project.plannedCompletionDate && (
+                  <>
+                    <span>&middot;</span>
+                    <span>Planned {new Date(project.plannedStartDate).toLocaleDateString()} – {new Date(project.plannedCompletionDate).toLocaleDateString()}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {renderProjectLogo(project, 'w-11 h-11')}
             <span className={clsx('px-3 py-1 rounded-full text-xs font-semibold', sc.bg, sc.color)}>
               {sc.label}
             </span>
@@ -851,7 +1412,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className={clsx('grid grid-cols-1 gap-4', valueInfo && valueInfo.value !== null ? 'sm:grid-cols-4' : 'sm:grid-cols-3')}>
         <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
           <div className="flex items-center gap-2 text-gray-500 dark:text-slate-400 text-xs mb-1">
             <Layers size={14} /> Total Tasks
@@ -870,6 +1431,110 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
           </div>
           <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{totalHours}h</p>
         </div>
+        {valueInfo && valueInfo.value !== null && (
+          <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+            <div className="flex items-center gap-2 text-gray-500 dark:text-slate-400 text-xs mb-1">
+              <Wallet size={14} /> Project Value
+            </div>
+            <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">
+              {new Intl.NumberFormat(undefined, { style: 'currency', currency: valueInfo.currency || 'ZAR' }).format(valueInfo.value)}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Task breakdown + planned pace — auto-appears only when there's data to show it from, no new toggle needed */}
+      {(taskStats.completionPct !== null || timeProgress) && (
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700 space-y-4">
+          {taskStats.completionPct !== null && (
+            <div>
+              <div className="flex items-center justify-between text-xs text-gray-500 dark:text-slate-400 mb-2">
+                <span className="font-semibold text-gray-700 dark:text-slate-300">Task Completion</span>
+                <span>{taskStats.completionPct}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden mb-2">
+                <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${taskStats.completionPct}%` }} />
+              </div>
+              <div className="grid grid-cols-4 gap-2 text-center text-[11px] text-gray-500 dark:text-slate-400">
+                <div><span className="block text-sm font-bold text-gray-900 dark:text-slate-100">{taskStats.planned}</span>Planned</div>
+                <div><span className="block text-sm font-bold text-gray-900 dark:text-slate-100">{taskStats.inProgress}</span>In Progress</div>
+                <div><span className="block text-sm font-bold text-gray-900 dark:text-slate-100">{taskStats.completed}</span>Completed</div>
+                <div><span className="block text-sm font-bold text-gray-900 dark:text-slate-100">{taskStats.remaining}</span>Remaining</div>
+              </div>
+            </div>
+          )}
+          {timeProgress && (
+            <div>
+              <div className="flex items-center justify-between text-xs text-gray-500 dark:text-slate-400 mb-2">
+                <span className="font-semibold text-gray-700 dark:text-slate-300">Time Elapsed</span>
+                <span>{timeProgress.timeProgressPct}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden mb-2">
+                <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${timeProgress.timeProgressPct}%` }} />
+              </div>
+              <p className="text-[11px] text-gray-400 dark:text-slate-500">
+                {timeProgress.elapsedDays} of {timeProgress.totalDays} planned days elapsed &middot; {timeProgress.remainingDays} remaining
+              </p>
+            </div>
+          )}
+          {pace !== 'unknown' && (
+            <div className={clsx(
+              'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
+              pace === 'behind' && 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+              pace === 'ahead' && 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+              pace === 'on-pace' && 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+            )}>
+              {pace === 'behind' && <>⚠ Behind Planned Pace</>}
+              {pace === 'ahead' && <>✓ Ahead of Planned Pace</>}
+              {pace === 'on-pace' && <>On Pace</>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Value History — only for managers/admins (same audience as edit access) */}
+      {canManage && valueHistory && valueHistory.length > 0 && (
+        <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+          <button
+            type="button"
+            onClick={() => setShowValueHistory(!showValueHistory)}
+            className="flex items-center justify-between w-full text-left group"
+          >
+            <span className="text-sm font-semibold text-gray-700 dark:text-slate-300 inline-flex items-center gap-1.5">
+              <Wallet size={14} className="text-gray-400 dark:text-slate-500" /> Value History
+            </span>
+            <ChevronDown size={16} className={clsx('text-gray-400 dark:text-slate-500 transition-transform', showValueHistory && 'rotate-180')} />
+          </button>
+          {showValueHistory && (
+            <div className="mt-3 space-y-2">
+              {valueHistory.map((h) => {
+                const fmt = (v: number | null, c: string | null) => v === null ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency: c || 'ZAR' }).format(v);
+                return (
+                  <div key={h.id} className="text-xs text-gray-500 dark:text-slate-400 flex flex-wrap items-baseline gap-x-1.5">
+                    <span className="font-medium text-gray-700 dark:text-slate-300">{h.actor_name}</span>
+                    <span>changed Project Value</span>
+                    <span className="font-mono">{fmt(h.old_value, h.old_currency)} → {fmt(h.new_value, h.new_currency)}</span>
+                    <span className="text-gray-400 dark:text-slate-500">· {new Date(h.created_at).toLocaleString()}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Project References */}
+      <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+        <ReferencesSection
+          attachments={project.attachments || []}
+          onAttachmentsChange={(next) => updateProject(project.id, { attachments: next })}
+          links={project.links || []}
+          onLinksChange={(next) => updateProject(project.id, { links: next })}
+          title="Project References"
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          emptyHint="Discovery meetings, requirements, proposals, scope docs, wireframes, Figma/GitHub links, screenshots, and more — managed here without leaving the project"
+        />
       </div>
 
       {/* Task list */}
@@ -1324,19 +1989,98 @@ const PROJECT_STATUSES = [
 ] as const;
 
 interface EditProjectModalProps {
-  project: { id: string; name: string; description?: string; status: string };
+  project: {
+    id: string; name: string; description?: string; status: string; icon: string; templateId: string;
+    attachments?: Attachment[]; links?: TaskLink[];
+    valueVisibility?: Project['valueVisibility']; valueVisibleUserIds?: string[]; cardDisplay?: Project['cardDisplay'];
+    projectType?: Project['projectType']; plannedStartDate?: Date; plannedCompletionDate?: Date;
+  };
   onClose: () => void;
-  onSave: (id: string, updates: { name: string; description: string; status: string }) => void;
+  onSave: (id: string, updates: {
+    name: string; description: string; status: string; icon: string; attachments?: Attachment[]; links?: TaskLink[];
+    value?: number; currency?: string; valueVisibility?: Project['valueVisibility']; valueVisibleUserIds?: string[]; cardDisplay?: Project['cardDisplay'];
+    projectType?: Project['projectType']; plannedStartDate?: Date; plannedCompletionDate?: Date;
+  }) => void;
 }
 const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, onSave }) => {
+  const user = useUserStore((s) => s.user);
+  const assignableMembers = useUserStore((s) => s.assignableMembers);
+  const keepMockData = useSettingsStore((s) => s.keepMockData);
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description || '');
   const [status, setStatus] = useState(project.status);
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(
+    project.icon && project.icon.startsWith('data:image') ? project.icon : null
+  );
+  const [logoError, setLogoError] = useState('');
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [refAttachments, setRefAttachments] = useState<Attachment[]>(project.attachments || []);
+  const [refLinks, setRefLinks] = useState<TaskLink[]>(project.links || []);
+  const [valueAmount, setValueAmount] = useState('');
+  const [valueCurrency, setValueCurrency] = useState('ZAR');
+  const [valueVisibility, setValueVisibility] = useState<NonNullable<Project['valueVisibility']>>(project.valueVisibility || 'admins');
+  const [valueVisibleUserIds, setValueVisibleUserIds] = useState<string[]>(project.valueVisibleUserIds || []);
+  const [cardDisplay, setCardDisplay] = useState<NonNullable<Project['cardDisplay']>>({ ...DEFAULT_CARD_DISPLAY, ...(project.cardDisplay || {}) });
+  const [showValueSection, setShowValueSection] = useState(false);
+  const [projectType, setProjectType] = useState<NonNullable<Project['projectType']>>(project.projectType || 'internal');
+  const [plannedStart, setPlannedStart] = useState(toDateInputValue(project.plannedStartDate));
+  const [plannedCompletion, setPlannedCompletion] = useState(toDateInputValue(project.plannedCompletionDate));
+
+  // Prefill the current value/currency via the authorized RPC — never
+  // trust/derive this from the bulk project object, since it's
+  // deliberately never populated there. If the viewer isn't authorized to
+  // see it, getValue returns nulls and the field just stays blank (they
+  // simply can't prefill what they can't see — consistent with the
+  // enforcement model, not a bug).
+  useEffect(() => {
+    let cancelled = false;
+    projectDb.getValue(project.id, keepMockData).then((res) => {
+      if (cancelled || !res) return;
+      if (res.value !== null) setValueAmount(String(res.value));
+      if (res.currency) setValueCurrency(res.currency);
+    });
+    return () => { cancelled = true; };
+  }, [project.id, keepMockData]);
+
+  const MAX_LOGO_BYTES = 1024 * 1024; // 1MB — keeps the DB row small since it's stored as a data URL
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoError('');
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Please choose an image file.');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setLogoError('Logo must be under 1MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setLogoDataUrl(reader.result as string);
+    reader.readAsDataURL(file);
+    if (logoInputRef.current) logoInputRef.current.value = '';
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    onSave(project.id, { name: name.trim(), description: description.trim(), status });
+    const fallbackIcon = projectTemplates.find((t) => t.id === project.templateId)?.icon || '🔧';
+    onSave(project.id, {
+      name: name.trim(),
+      description: description.trim(),
+      status,
+      icon: logoDataUrl || fallbackIcon,
+      attachments: refAttachments,
+      links: refLinks,
+      value: valueAmount.trim() !== '' ? Number(valueAmount) : undefined,
+      currency: valueAmount.trim() !== '' ? valueCurrency : undefined,
+      valueVisibility,
+      valueVisibleUserIds: valueVisibility === 'selected' && valueVisibleUserIds.length > 0 ? valueVisibleUserIds : undefined,
+      cardDisplay,
+      projectType,
+      plannedStartDate: plannedStart ? new Date(plannedStart) : undefined,
+      plannedCompletionDate: plannedCompletion ? new Date(plannedCompletion) : undefined,
+    });
     onClose();
   };
 
@@ -1385,6 +2129,112 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
             />
           </div>
           <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Project Type</label>
+            <select
+              value={projectType}
+              onChange={(e) => setProjectType(e.target.value as NonNullable<Project['projectType']>)}
+              className={clsx(
+                'w-full px-3 py-2.5 rounded-xl text-sm border',
+                'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                'border-gray-200 dark:border-slate-600',
+                'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 cursor-pointer'
+              )}
+            >
+              {PROJECT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">
+              Company Logo <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+            </label>
+            <div className="flex items-center gap-3">
+              <div
+                onClick={() => logoInputRef.current?.click()}
+                className={clsx(
+                  'w-14 h-14 rounded-xl flex items-center justify-center cursor-pointer overflow-hidden flex-shrink-0 border-2 border-dashed transition-colors',
+                  logoDataUrl
+                    ? 'border-transparent'
+                    : 'border-gray-200 dark:border-slate-700 hover:border-purple-300 dark:hover:border-purple-700/50 bg-gray-50 dark:bg-slate-800/50'
+                )}
+              >
+                {logoDataUrl ? (
+                  <img src={logoDataUrl} alt="Logo preview" className="w-full h-full object-cover" />
+                ) : (
+                  <Building2 size={20} className="text-gray-300 dark:text-slate-600" />
+                )}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-700/50 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    <ImageIcon size={12} />
+                    {logoDataUrl ? 'Change logo' : 'Upload logo'}
+                  </button>
+                  {logoDataUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setLogoDataUrl(null)}
+                      className="text-xs text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+                  Shown as a circular badge on this project's cards. PNG/JPG, up to 1MB.
+                </p>
+                {logoError && <p className="text-[11px] text-red-500 mt-1">{logoError}</p>}
+              </div>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleLogoUpload}
+                className="hidden"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">
+              Project References <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
+            </label>
+            <div className="p-3 rounded-xl bg-gray-50/50 dark:bg-slate-800/20 border border-gray-200 dark:border-slate-700/50">
+              <ReferencesSection
+                attachments={refAttachments}
+                onAttachmentsChange={setRefAttachments}
+                links={refLinks}
+                onLinksChange={setRefLinks}
+                enablePaste={false}
+                currentUserId={user?.id}
+                currentUserName={user?.name}
+                title="Files & Links"
+                emptyHint="Upload docs, screenshots, or link Discovery Meetings, Figma, GitHub, and more"
+              />
+            </div>
+          </div>
+          <ProjectValueSection
+            amount={valueAmount}
+            onAmountChange={setValueAmount}
+            currency={valueCurrency}
+            onCurrencyChange={setValueCurrency}
+            visibility={valueVisibility}
+            onVisibilityChange={setValueVisibility}
+            visibleUserIds={valueVisibleUserIds}
+            onVisibleUserIdsChange={setValueVisibleUserIds}
+            cardDisplay={cardDisplay}
+            onCardDisplayChange={setCardDisplay}
+            assignableMembers={assignableMembers}
+            expanded={showValueSection}
+            onToggleExpanded={() => setShowValueSection(!showValueSection)}
+            plannedStart={plannedStart}
+            onPlannedStartChange={setPlannedStart}
+            plannedCompletion={plannedCompletion}
+            onPlannedCompletionChange={setPlannedCompletion}
+          />
+          <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Status</label>
             <select
               value={status}
@@ -1425,6 +2275,26 @@ export const Projects: React.FC = () => {
   const currentUserId = useUserStore((s) => s.user?.id ?? 'guest');
   const assignableMembers = useUserStore((s) => s.assignableMembers);
   const canManage = isAdmin() || isManager();
+  const { tasks: boardTasks } = useTaskStore();
+  const keepMockData = useSettingsStore((s) => s.keepMockData);
+
+  // Project Value is never in the bulk projects payload (server-enforced —
+  // see projectDb.fetchAll) — lazily fetch it per-project, only for
+  // projects whose card is actually configured to show it, via the
+  // authorized get_project_value() RPC. Cache in state so it's fetched once
+  // per project per session, not on every render.
+  const [projectValues, setProjectValues] = useState<Record<string, { value: number | null; currency: string | null }>>({});
+  useEffect(() => {
+    if (keepMockData) return; // mock mode never persists/reads real values
+    const toFetch = projects.filter((p) => p.cardDisplay?.value === true && !(p.id in projectValues));
+    if (toFetch.length === 0) return;
+    toFetch.forEach((p) => {
+      projectDb.getValue(p.id, keepMockData).then((res) => {
+        if (!res) return;
+        setProjectValues((prev) => ({ ...prev, [p.id]: res }));
+      });
+    });
+  }, [projects, keepMockData, projectValues]);
   const globalSearchQuery = useUIStore((s) => s.globalSearchQuery);
   const setGlobalSearchQuery = useUIStore((s) => s.setGlobalSearchQuery);
   const selectedProjectId = useUIStore((s) => s.activeProjectId);
@@ -1459,6 +2329,38 @@ export const Projects: React.FC = () => {
   const cancelLongPress = () => {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
   };
+
+  // ── Sort state — persisted per user; 'custom' defers to drag order ─────
+  const sortStorageKey = `project-sort-${currentUserId}`;
+  type ProjectSortBy = 'custom' | 'highlighted' | 'createdAt' | 'updatedAt' | 'name';
+  const [sortBy, setSortBy] = useState<ProjectSortBy>(() => {
+    try { return JSON.parse(localStorage.getItem(sortStorageKey) || 'null')?.sortBy || 'custom'; } catch { return 'custom'; }
+  });
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => {
+    try { return JSON.parse(localStorage.getItem(sortStorageKey) || 'null')?.sortDir || 'desc'; } catch { return 'desc'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(sortStorageKey, JSON.stringify({ sortBy, sortDir })); } catch {}
+  }, [sortBy, sortDir, sortStorageKey]);
+
+  const sortLabels: Record<ProjectSortBy, string> = {
+    custom: 'Custom Order',
+    highlighted: 'Highlighted First',
+    createdAt: 'Date Created',
+    updatedAt: 'Date Updated',
+    name: 'Name',
+  };
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target as Node)) {
+        setShowSortMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // ── Drag-to-reorder state ──────────────────────────────────────────────
   const storageKey = `project-order-${currentUserId}`;
@@ -1554,11 +2456,26 @@ export const Projects: React.FC = () => {
       })
     : projects;
 
-  // Apply user's custom order to the (possibly filtered) list
-  const orderedProjects = [...filteredProjects].sort((a, b) => {
+  // Apply the selected sort to the (possibly filtered) list.
+  // 'custom' defers to the user's drag order; 'highlighted' pins highlighted
+  // projects to the top (custom order as tie-breaker within each group);
+  // date/name sorts respect sortDir.
+  const customOrderCompare = (a: Project, b: Project) => {
     const ai = projectOrder.indexOf(a.id);
     const bi = projectOrder.indexOf(b.id);
     return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+  };
+  const orderedProjects = [...filteredProjects].sort((a, b) => {
+    if (sortBy === 'custom') return customOrderCompare(a, b);
+    if (sortBy === 'highlighted') {
+      const ah = highlightedProjects.has(a.id) ? 0 : 1;
+      const bh = highlightedProjects.has(b.id) ? 0 : 1;
+      return ah !== bh ? ah - bh : customOrderCompare(a, b);
+    }
+    const cmp = sortBy === 'name'
+      ? a.name.localeCompare(b.name)
+      : new Date(a[sortBy]).getTime() - new Date(b[sortBy]).getTime();
+    return sortDir === 'asc' ? cmp : -cmp;
   });
 
   if (selectedProjectId) {
@@ -1591,32 +2508,95 @@ export const Projects: React.FC = () => {
         )}
       </div>
 
-      {/* Search bar — synced with TopBar global search */}
+      {/* Search + sort — search synced with TopBar global search */}
       {projects.length > 0 && (
-        <div className="relative max-w-sm">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
-          <input
-            type="text"
-            value={globalSearchQuery}
-            onChange={(e) => setGlobalSearchQuery(e.target.value)}
-            placeholder="Search projects..."
-            className={clsx(
-              'w-full pl-9 pr-9 py-2 text-sm rounded-xl border',
-              'bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100',
-              'border-gray-200 dark:border-slate-700',
-              'placeholder-gray-400 dark:placeholder-slate-500',
-              'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 dark:focus:border-purple-500',
-              'transition-all'
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative max-w-sm w-full sm:flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500 pointer-events-none" />
+            <input
+              type="text"
+              value={globalSearchQuery}
+              onChange={(e) => setGlobalSearchQuery(e.target.value)}
+              placeholder="Search projects..."
+              className={clsx(
+                'w-full pl-9 pr-9 py-2 text-sm rounded-xl border',
+                'bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100',
+                'border-gray-200 dark:border-slate-700',
+                'placeholder-gray-400 dark:placeholder-slate-500',
+                'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 dark:focus:border-purple-500',
+                'transition-all'
+              )}
+            />
+            {globalSearchQuery && (
+              <button
+                onClick={() => setGlobalSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300"
+              >
+                <X size={14} />
+              </button>
             )}
-          />
-          {globalSearchQuery && (
-            <button
-              onClick={() => setGlobalSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300"
-            >
-              <X size={14} />
-            </button>
-          )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div ref={sortMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setShowSortMenu((v) => !v)}
+                className={clsx(
+                  'flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                  'bg-white border border-gray-200 text-gray-700',
+                  'dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200',
+                  'hover:border-purple-400 dark:hover:border-purple-500',
+                  showSortMenu && 'border-purple-500 dark:border-purple-500'
+                )}
+              >
+                {sortLabels[sortBy]}
+                <ChevronDown size={14} className={clsx('transition-transform', showSortMenu && 'rotate-180')} />
+              </button>
+
+              {showSortMenu && (
+                <div className={clsx(
+                  'absolute top-full left-0 mt-2 w-44 rounded-xl shadow-xl overflow-hidden z-50 py-1',
+                  'bg-white border border-gray-200',
+                  'dark:bg-slate-800 dark:border-slate-700'
+                )}>
+                  {(Object.keys(sortLabels) as ProjectSortBy[]).map((key) => {
+                    const isSelected = sortBy === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => { setSortBy(key); setShowSortMenu(false); }}
+                        className={clsx(
+                          'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
+                          isSelected
+                            ? 'bg-purple-50 text-purple-700 font-semibold dark:bg-purple-900/20 dark:text-purple-300'
+                            : 'text-gray-700 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-700/50'
+                        )}
+                      >
+                        <Check size={14} className={clsx(isSelected ? 'opacity-100' : 'opacity-0', 'flex-shrink-0')} />
+                        {sortLabels[key]}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {sortBy !== 'custom' && sortBy !== 'highlighted' && (
+              <button
+                onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+                title={sortDir === 'asc' ? 'Ascending — click for descending' : 'Descending — click for ascending'}
+                className={clsx(
+                  'p-2 rounded-xl border transition-colors',
+                  'bg-white border-gray-200 text-gray-600 hover:border-purple-400 hover:text-purple-600',
+                  'dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:border-purple-500 dark:hover:text-purple-400'
+                )}
+              >
+                {sortDir === 'asc' ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1659,7 +2639,7 @@ export const Projects: React.FC = () => {
             return (
               <div
                 key={project.id}
-                draggable
+                draggable={sortBy === 'custom'}
                 onDragStart={(e) => handleDragStart(e, project.id)}
                 onDragOver={(e) => handleDragOver(e, project.id)}
                 onDrop={(e) => handleDrop(e, project.id)}
@@ -1672,7 +2652,8 @@ export const Projects: React.FC = () => {
                 onTouchEnd={cancelLongPress}
                 onTouchMove={cancelLongPress}
                 className={clsx(
-                  'relative rounded-2xl border text-left transition-all duration-150 group cursor-grab active:cursor-grabbing',
+                  'relative rounded-2xl border text-left transition-all duration-150 group',
+                  sortBy === 'custom' && 'cursor-grab active:cursor-grabbing',
                   isHighlighted
                     ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/40 shadow-lg shadow-amber-500/10'
                     : 'bg-white dark:bg-slate-800/50',
@@ -1683,15 +2664,17 @@ export const Projects: React.FC = () => {
                 )}
               >
                 {/* Grip handle — visual affordance only; dragging is handled by the card div */}
-                <div className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 dark:text-slate-600 z-10 select-none pointer-events-none">
-                  <GripVertical size={16} />
-                </div>
+                {sortBy === 'custom' && (
+                  <div className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 dark:text-slate-600 z-10 select-none pointer-events-none">
+                    <GripVertical size={16} />
+                  </div>
+                )}
               <button
                 onClick={() => { if (didDragRef.current) return; if (longPressTriggered.current) { longPressTriggered.current = false; return; } setSelectedProjectId(project.id); }}
                 className="w-full p-5 pl-7 text-left cursor-inherit"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-start mb-3">
+                  <div className="flex items-center gap-3 pr-14">
                     <div
                       className="w-10 h-10 rounded-xl flex items-center justify-center"
                       style={{ backgroundColor: `${project.color}15`, color: project.color }}
@@ -1702,43 +2685,12 @@ export const Projects: React.FC = () => {
                       <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
                         {project.name}
                       </h3>
-                      <span className={clsx('text-[10px] font-semibold px-2 py-0.5 rounded-full', sc.bg, sc.color)}>
-                        {sc.label}
-                      </span>
+                      {project.cardDisplay?.status !== false && (
+                        <span className={clsx('text-[10px] font-semibold px-2 py-0.5 rounded-full', sc.bg, sc.color)}>
+                          {sc.label}
+                        </span>
+                      )}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {canManage && (
-                      <>
-                        {/* Edit button */}
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => { e.stopPropagation(); setEditProjectId(project.id); }}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setEditProjectId(project.id); } }}
-                          className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-blue-100 dark:hover:bg-blue-900/30 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all"
-                          title="Edit project"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </span>
-                        {/* Delete button */}
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteConfirmId(project.id);
-                            setDeleteConfirmInfo({ name: project.name, taskCount: project.tasks.length });
-                          }}
-                          onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setDeleteConfirmId(project.id); setDeleteConfirmInfo({ name: project.name, taskCount: project.tasks.length }); } }}
-                          className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-all"
-                          title="Delete project"
-                        >
-                          <Trash2 size={14} />
-                        </span>
-                      </>
-                    )}
-                    <ChevronRight size={16} className="text-gray-300 dark:text-slate-600 group-hover:text-purple-500 transition-colors" />
                   </div>
                 </div>
 
@@ -1759,17 +2711,82 @@ export const Projects: React.FC = () => {
                   )}
                 </div>
 
+                {/* Configurable card fields — Project Value / Progress / Project Manager /
+                    Project Type / Planned Completion. Each only renders when this
+                    project's Card Display config explicitly turns it on; a project
+                    that has never been configured (cardDisplay undefined) renders
+                    none of these, exactly as before this feature. */}
+                {(() => {
+                  const cd = project.cardDisplay;
+                  const showValue = cd?.value === true;
+                  const showProgress = cd?.progress === true;
+                  const showPM = cd?.projectManager === true;
+                  const showType = cd?.projectType === true;
+                  const showDue = cd?.plannedCompletion === true && !!project.plannedCompletionDate;
+                  if (!showValue && !showProgress && !showPM && !showType && !showDue) return null;
+                  const pv = projectValues[project.id];
+                  const stats = showProgress ? getProjectTaskStats(project, boardTasks) : null;
+                  const pm = showPM ? assignableMembers.find((m) => m.id === project.createdBy) : null;
+                  return (
+                    <div className="mb-3 space-y-1.5">
+                      {(showType || showDue) && (
+                        <div className="flex items-center gap-2">
+                          {showType && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700/50 dark:text-slate-300 capitalize">
+                              {project.projectType || 'internal'}
+                            </span>
+                          )}
+                          {showDue && (
+                            <span className="text-[10px] text-gray-400 dark:text-slate-500">
+                              Due: {new Date(project.plannedCompletionDate!).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {showValue && pv && pv.value !== null && (
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-slate-200">
+                          <Wallet size={12} className="text-purple-500" />
+                          {new Intl.NumberFormat(undefined, { style: 'currency', currency: pv.currency || 'ZAR' }).format(pv.value)}
+                        </div>
+                      )}
+                      {showProgress && stats && stats.completionPct !== null && (
+                        <div>
+                          <div className="flex items-center justify-between text-[10px] text-gray-400 dark:text-slate-500 mb-0.5">
+                            <span>Progress</span>
+                            <span>{stats.completionPct}%</span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+                            <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${stats.completionPct}%` }} />
+                          </div>
+                          <div className="text-[10px] text-gray-400 dark:text-slate-500 mt-0.5">
+                            {stats.completed} / {stats.total} Tasks Completed
+                          </div>
+                        </div>
+                      )}
+                      {showPM && pm && (
+                        <div className="text-[11px] text-gray-400 dark:text-slate-500">
+                          Project Manager: <span className="text-gray-600 dark:text-slate-300 font-medium">{pm.name}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
-                      <Layers size={12} /> {project.tasks.length} tasks
-                    </span>
-                    <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
-                      <Clock size={12} /> {totalHours}h
-                    </span>
+                    {project.cardDisplay?.taskCompletion !== false && (
+                      <>
+                        <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
+                          <Layers size={12} /> {project.tasks.length} tasks
+                        </span>
+                        <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
+                          <Clock size={12} /> {totalHours}h
+                        </span>
+                      </>
+                    )}
                   </div>
                   {/* Member avatars with tooltip */}
-                  {members.length > 0 && (() => {
+                  {project.cardDisplay?.team !== false && members.length > 0 && (() => {
                     const memberInfos: MemberInfo[] = members.map((uid) => {
                       const p = assignableMembers.find((t) => t.id === uid);
                       if (!p) return null;
@@ -1793,6 +2810,39 @@ export const Projects: React.FC = () => {
                   })()}
                 </div>
               </button>
+
+              {/* Company logo badge — floats in the card's top-right corner, above the button */}
+              {renderProjectLogo(project, 'w-[47px] h-[47px] absolute top-2.5 right-2.5 pointer-events-none z-10')}
+
+              {/* Edit / Delete — floats in the card's bottom-right corner */}
+              {canManage && (
+                <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 z-10">
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); setEditProjectId(project.id); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setEditProjectId(project.id); } }}
+                    className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 bg-white/90 dark:bg-slate-800/90 hover:bg-blue-100 dark:hover:bg-blue-900/30 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-all shadow-sm"
+                    title="Edit project"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteConfirmId(project.id);
+                      setDeleteConfirmInfo({ name: project.name, taskCount: project.tasks.length });
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setDeleteConfirmId(project.id); setDeleteConfirmInfo({ name: project.name, taskCount: project.tasks.length }); } }}
+                    className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 bg-white/90 dark:bg-slate-800/90 hover:bg-red-100 dark:hover:bg-red-900/30 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-all shadow-sm"
+                    title="Delete project"
+                  >
+                    <Trash2 size={14} />
+                  </span>
+                </div>
+              )}
               </div>
             );
           })}
@@ -1873,7 +2923,12 @@ export const Projects: React.FC = () => {
         const proj = projects.find((p) => p.id === editProjectId);
         return proj ? (
           <EditProjectModal
-            project={{ id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active' }}
+            project={{
+              id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active', icon: proj.icon, templateId: proj.templateId,
+              attachments: proj.attachments, links: proj.links,
+              valueVisibility: proj.valueVisibility, valueVisibleUserIds: proj.valueVisibleUserIds, cardDisplay: proj.cardDisplay,
+              projectType: proj.projectType, plannedStartDate: proj.plannedStartDate, plannedCompletionDate: proj.plannedCompletionDate,
+            }}
             onClose={() => setEditProjectId(null)}
             onSave={(id, updates) => updateProject(id, updates as any)}
           />

@@ -47,7 +47,7 @@ import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
 import { useChatStore } from '@stores/chatStore';
 import { NotificationType } from '@/types/index';
-import { isDbConnected } from '@/lib/supabase';
+import { isDbConnected, supabase } from '@/lib/supabase';
 import { authDb } from '@/lib/dataService';
 
 // ─── Demo-to-Real Auth Modal ──────────────────────────────────────────────────
@@ -648,6 +648,60 @@ export const SettingsPage: React.FC = () => {
   const [telegramEnabled, setTelegramEnabled] = useState(false);
   const [telegramUsername, setTelegramUsername] = useState('');
   const [telegramConnecting, setTelegramConnecting] = useState(false);
+  // Only used by the legacy handleConnectTelegram flow below, which this
+  // pass deliberately leaves untouched (see plan notes) — not used by the
+  // real chat_id-based linking flow, which now goes through Supabase Edge
+  // Functions instead.
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3005';
+
+  // Personal Telegram account link (separate from the bot-level toggle
+  // above) — maps this specific user to their Telegram from.id. Routed
+  // through the telegram-link Supabase Edge Function (replaces the old
+  // deleted Express backend's /api/telegram/* routes) via supabase.functions.invoke,
+  // which automatically attaches the current session's auth token.
+  const [telegramLinked, setTelegramLinked] = useState(false);
+  const [telegramLinkCode, setTelegramLinkCode] = useState<string | null>(null);
+  const [telegramLinking, setTelegramLinking] = useState(false);
+
+  useEffect(() => {
+    if (!user || !supabase) return;
+    supabase.functions.invoke('telegram-link/link-status', { method: 'GET' })
+      .then(({ data }) => setTelegramLinked(Boolean(data?.linked)))
+      .catch(() => {});
+  }, [user]);
+
+  const handleGenerateTelegramLinkCode = async () => {
+    if (!user || !supabase) return;
+    setTelegramLinking(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('telegram-link/link-code', { method: 'POST' });
+      if (error) throw error;
+      if (data?.success) {
+        setTelegramLinkCode(data.code);
+        window.open(data.deepLink, '_blank');
+      } else {
+        alert('Could not generate a link code: ' + (data?.error || 'Unknown error'));
+      }
+    } catch {
+      alert('Could not reach the Telegram linking service. Please try again.');
+    } finally {
+      setTelegramLinking(false);
+    }
+  };
+
+  const handleUnlinkTelegram = async () => {
+    if (!user || !supabase) return;
+    try {
+      const { data, error } = await supabase.functions.invoke('telegram-link/unlink', { method: 'POST' });
+      if (error) throw error;
+      if (data?.success) {
+        setTelegramLinked(false);
+        setTelegramLinkCode(null);
+      }
+    } catch {
+      alert('Could not reach the Telegram linking service. Please try again.');
+    }
+  };
 
   const handleConnectWhatsapp = () => {
     if (whatsappEnabled) {
@@ -663,7 +717,7 @@ export const SettingsPage: React.FC = () => {
     }, 1200);
   };
 
-  const handleConnectTelegram = () => {
+  const handleConnectTelegram = async () => {
     if (telegramEnabled) {
       setTelegramEnabled(false);
       setTelegramUsername('');
@@ -671,10 +725,24 @@ export const SettingsPage: React.FC = () => {
     }
     if (!telegramUsername.trim()) return;
     setTelegramConnecting(true);
-    setTimeout(() => {
-      setTelegramEnabled(true);
+    try {
+      const botToken = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
+      const res = await fetch(`${API_URL}/api/integrations/telegram/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTelegramEnabled(true);
+      } else {
+        alert('Telegram verification failed: ' + (data.error || 'Invalid token'));
+      }
+    } catch {
+      alert('Could not reach backend. Make sure your backend server is running.');
+    } finally {
       setTelegramConnecting(false);
-    }, 1200);
+    }
   };
 
   // When mock data toggle changes, immediately clear or restore all stores.
@@ -888,6 +956,16 @@ export const SettingsPage: React.FC = () => {
                     <Toggle
                       enabled={preferences.email}
                       onChange={(v) => updatePreferences({ email: v })}
+                    />
+                  </SettingRow>
+                  <SettingRow
+                    icon={<Send size={16} />}
+                    label="Telegram Notifications"
+                    description="Send notifications to your linked Telegram account"
+                  >
+                    <Toggle
+                      enabled={preferences.telegram}
+                      onChange={(v) => updatePreferences({ telegram: v })}
                     />
                   </SettingRow>
                   <SettingRow
@@ -1372,6 +1450,65 @@ export const SettingsPage: React.FC = () => {
                               Disconnect
                             </button>
                           </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Personal Telegram account link */}
+                  <div className="py-4 border-t border-gray-100 dark:border-slate-700/50">
+                    <div className="flex items-start gap-3">
+                      <div className={clsx(
+                        'flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center mt-0.5',
+                        telegramLinked ? 'bg-blue-100 dark:bg-blue-900/20' : 'bg-gray-100 dark:bg-slate-700/50'
+                      )}>
+                        <Send size={16} className={telegramLinked ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-slate-400'} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <p className="text-sm font-medium text-gray-900 dark:text-slate-100">Connect Telegram</p>
+                          {telegramLinked && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                              <Check size={8} />
+                              Telegram connected
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-slate-400 mb-3">
+                          Link your Telegram account so Purple Bee Bot knows it's you — create and see your own tasks from Telegram.
+                        </p>
+                        {!telegramLinked ? (
+                          <div className="flex flex-col gap-2 items-start">
+                            <button
+                              onClick={handleGenerateTelegramLinkCode}
+                              disabled={telegramLinking}
+                              className={clsx(
+                                'px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5',
+                                !telegramLinking
+                                  ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-500/20'
+                                  : 'bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-500 cursor-not-allowed'
+                              )}
+                            >
+                              {telegramLinking ? (
+                                <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Generating...</>
+                              ) : (
+                                <><Link2 size={12} /> Connect Telegram</>
+                              )}
+                            </button>
+                            {telegramLinkCode && (
+                              <p className="text-[11px] text-gray-500 dark:text-slate-400">
+                                Opened Telegram with code <span className="font-mono font-semibold">{telegramLinkCode}</span> — if it didn't open, message @PurpleBee2bot with <span className="font-mono">/start {telegramLinkCode}</span>. Expires in 10 minutes.
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={handleUnlinkTelegram}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-200 dark:border-red-700/40 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors flex items-center gap-1.5"
+                          >
+                            <Unlink2 size={12} />
+                            Unlink Telegram
+                          </button>
                         )}
                       </div>
                     </div>

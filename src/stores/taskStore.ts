@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { Task, TaskStatus, TaskPriority, TaskCollaborator } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
-import { taskDb, notificationDb } from '@/lib/dataService';
+import { taskDb, botTaskDb, taskActivityDb } from '@/lib/dataService';
+import { notifyUser, notifyUsers } from '@/lib/notify';
 
 import { useSettingsStore } from '@stores/settingsStore';
+import { useProjectStore } from '@stores/projectStore';
 
 /**
  * Returns true when mock/sample data mode is active.
@@ -36,31 +38,37 @@ export function setTaskUserContext(
 
 const getTeamContext = () => _ctx;
 
+/** Looks up the parent project's name for a task, for contextual notification messages. Returns undefined if the task has no project or it can't be found. */
+const getProjectName = (projectId?: string): string | undefined =>
+  projectId ? useProjectStore.getState().getProjectById(projectId)?.name : undefined;
+
 /**
- * Write a notification to the DB for the given recipient.
- * In mock mode: skipped (DB not used; bell shows pre-loaded mock data).
- * In live mode: inserts directly via notificationDb — avoids the
- * circular require() that fails in Vite's browser ESM context.
+ * Append an immutable activity-log entry for a task field change, upload,
+ * link, or lifecycle event. Fire-and-forget, same pattern as notifyUser() —
+ * never blocks or fails the action that triggered it. No-op in mock mode.
  */
-function notify(notification: {
-  userId: string;
-  type: import('@/types/index').NotificationType;
-  title: string;
-  message: string;
-  actionUrl?: string;
-  taskId?: string;
+function logActivity(entry: {
+  taskId: string;
+  taskTitle: string;
+  action: import('@/types/index').TaskActivityAction;
+  field?: string;
+  oldValue?: string;
+  newValue?: string;
 }) {
   if (isMockMode()) return;
-  notificationDb.insert(
+  const { userId, teamId, userName } = getTeamContext();
+  if (!userId) return;
+  taskActivityDb.insert(
     {
-      id: uuidv4(),
-      userId: notification.userId,
-      type: notification.type,
-      title: notification.title,
-      message: notification.message,
-      read: false,
-      actionUrl: notification.actionUrl,
-      taskId: notification.taskId,
+      taskId: entry.taskId,
+      taskTitle: entry.taskTitle,
+      teamId,
+      actorId: userId,
+      actorName: userName,
+      action: entry.action,
+      field: entry.field,
+      oldValue: entry.oldValue,
+      newValue: entry.newValue,
     },
     false,
   ).catch(() => {});
@@ -78,9 +86,18 @@ interface TaskStore {
   sortBy: 'dueDate' | 'priority' | 'created';
 
   // Actions
-  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  // forcedId lets bot-created tasks (WhatsApp/Telegram) use the ID the
+  // backend already generated for its confirmation link, instead of a
+  // second, different ID being minted here. skipPersist is set when the
+  // backend already wrote this task directly to Supabase (bot "database
+  // mode") — avoids a duplicate-key insert error from writing it again here.
+  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>, forcedId?: string, skipPersist?: boolean) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
-  deleteTask: (id: string) => void;
+  // requestingUserId enforces creator-only deletion: if the task has a
+  // createdBy and it doesn't match, the delete is refused (returns false).
+  // Tasks with no createdBy (e.g. legacy/unattributed) are always deletable —
+  // there's nothing to check against.
+  deleteTask: (id: string, requestingUserId?: string) => boolean;
   selectTask: (id: string | null) => void;
   setFilter: (filter: Partial<TaskStore['filter']>) => void;
   setSortBy: (sortBy: TaskStore['sortBy']) => void;
@@ -117,6 +134,7 @@ const mockTasks: Task[] = [
     estimatedHours: 12,
     actualHours: 8,
     projectId: 'proj-3',
+    createdBy: 'user-1', // self-created
   },
   {
     id: '2',
@@ -132,6 +150,7 @@ const mockTasks: Task[] = [
     progress: 0,
     estimatedHours: 10,
     projectId: 'proj-3',
+    createdBy: 'user-1', // admin assigned this to user-3 — user-3 cannot delete it
   },
   {
     id: '3',
@@ -148,6 +167,7 @@ const mockTasks: Task[] = [
     estimatedHours: 6,
     actualHours: 5,
     projectId: 'proj-1',
+    createdBy: 'user-4', // self-created
   },
   {
     id: '4',
@@ -163,6 +183,7 @@ const mockTasks: Task[] = [
     progress: 0,
     estimatedHours: 16,
     projectId: 'proj-3',
+    createdBy: 'user-1', // admin assigned this to user-5 — user-5 cannot delete it
   },
   {
     id: '5',
@@ -179,6 +200,7 @@ const mockTasks: Task[] = [
     estimatedHours: 14,
     actualHours: 12,
     projectId: 'proj-2',
+    createdBy: 'user-2', // self-created
   },
   {
     id: '6',
@@ -195,6 +217,7 @@ const mockTasks: Task[] = [
     estimatedHours: 20,
     actualHours: 8,
     projectId: 'proj-1',
+    createdBy: 'user-4', // manager assigned this to user-2 — user-2 cannot delete it
   },
   {
     id: '7',
@@ -210,6 +233,7 @@ const mockTasks: Task[] = [
     progress: 0,
     estimatedHours: 18,
     projectId: 'proj-2',
+    createdBy: 'user-2', // self-created
   },
   {
     id: '8',
@@ -226,6 +250,7 @@ const mockTasks: Task[] = [
     estimatedHours: 8,
     actualHours: 6,
     projectId: 'proj-3',
+    createdBy: 'user-4', // self-created
   },
   {
     id: '9',
@@ -242,6 +267,7 @@ const mockTasks: Task[] = [
     estimatedHours: 16,
     actualHours: 4,
     projectId: 'proj-3',
+    createdBy: 'user-5', // self-created
   },
   {
     id: '10',
@@ -258,6 +284,7 @@ const mockTasks: Task[] = [
     estimatedHours: 8,
     actualHours: 7,
     projectId: 'proj-3',
+    createdBy: 'user-3', // self-created
   },
 ];
 
@@ -278,32 +305,38 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   filter: {},
   sortBy: 'dueDate',
 
-  addTask: (taskData) => {
+  addTask: (taskData, forcedId, skipPersist) => {
     const { teamId, userId, userName } = getTeamContext();
     const newTask: Task = {
       ...taskData,
-      id: uuidv4(),
+      id: forcedId || uuidv4(),
       teamId: taskData.teamId || teamId || undefined,
       createdBy: userId || undefined,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
     set((state) => ({ tasks: [newTask, ...state.tasks] }));
-    // Persist to DB only when mock mode is OFF (fire-and-forget).
-    // Use the real user's id as the creator so RLS sees a valid author.
-    taskDb.insert(newTask, userId || taskData.assignedTo, isMockMode());
+    // Persist to DB only when mock mode is OFF (fire-and-forget), and only
+    // if it wasn't already written directly by the backend (bot "database
+    // mode") — otherwise this would be a duplicate insert of the same id.
+    // created_by is the real creator so RLS sees a valid author.
+    if (!skipPersist) taskDb.insert(newTask, newTask.createdBy || userId || undefined, isMockMode());
 
     // Notify the assignee if they're someone other than the creator
     if (newTask.assignedTo && newTask.assignedTo !== userId) {
-      notify({
-        userId: newTask.assignedTo,
+      const projectName = getProjectName(newTask.projectId);
+      notifyUser({
+        actorId: userId,
+        recipientId: newTask.assignedTo,
         type: 'task-assigned',
         title: 'New task assigned to you',
-        message: `${userName} assigned you "${newTask.title}"`,
+        message: `${userName} assigned "${newTask.title}" to you${projectName ? ` in ${projectName}` : ''}`,
         actionUrl: `#tasks?taskId=${newTask.id}`,
         taskId: newTask.id,
       });
     }
+
+    logActivity({ taskId: newTask.id, taskTitle: newTask.title, action: 'created' });
   },
 
   updateTask: (id, updates) => {
@@ -318,6 +351,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     taskDb.update(id, updates, isMockMode());
 
     const { userId, userName } = getTeamContext();
+    const projectName = getProjectName(prevTask?.projectId);
 
     // ── Notify assignee when the task is (re)assigned ──
     if (
@@ -327,11 +361,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       updates.assignedTo !== userId
     ) {
       const taskTitle = updates.title || prevTask?.title || 'a task';
-      notify({
-        userId: updates.assignedTo,
+      notifyUser({
+        actorId: userId,
+        recipientId: updates.assignedTo,
         type: 'task-assigned',
         title: 'Task assigned to you',
-        message: `${userName} assigned you "${taskTitle}"`,
+        message: `${userName} assigned "${taskTitle}" to you${projectName ? ` in ${projectName}` : ''}`,
         actionUrl: `#tasks?taskId=${id}`,
         taskId: id,
       });
@@ -345,24 +380,157 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       prevTask.createdBy !== userId
     ) {
       const taskTitle = prevTask.title;
-      const completerName = userName;
-      notify({
-        userId: prevTask.createdBy,
+      notifyUser({
+        actorId: userId,
+        recipientId: prevTask.createdBy,
         type: 'task-completed',
         title: 'Task completed',
-        message: `${completerName} completed "${taskTitle}"`,
+        message: `${userName} completed "${taskTitle}"${projectName ? ` in ${projectName}` : ''}`,
         actionUrl: `#tasks?taskId=${id}`,
         taskId: id,
       });
     }
+
+    // ── Notify creator (and assignee, if different) when a completed task is reopened ──
+    if (
+      updates.status !== undefined &&
+      updates.status !== 'completed' &&
+      prevTask?.status === 'completed'
+    ) {
+      const taskTitle = updates.title || prevTask.title;
+      const recipients = [prevTask.createdBy, prevTask.assignedTo].filter(
+        (uid): uid is string => !!uid
+      );
+      recipients.forEach((recipientId) => {
+        notifyUser({
+          actorId: userId,
+          recipientId,
+          type: 'task-reopened',
+          title: 'Task reopened',
+          message: `${userName} reopened "${taskTitle}"${projectName ? ` in ${projectName}` : ''}`,
+          actionUrl: `#tasks?taskId=${id}`,
+          taskId: id,
+        });
+      });
+    }
+
+    // ── Notify assignee when due date or priority changes (not on the assignee's own edit) ──
+    if (prevTask?.assignedTo && prevTask.assignedTo !== userId) {
+      const taskTitle = updates.title || prevTask.title;
+      if (
+        updates.dueDate !== undefined &&
+        updates.dueDate?.getTime() !== prevTask.dueDate?.getTime()
+      ) {
+        const formattedDate = updates.dueDate
+          ? updates.dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : 'no due date';
+        notifyUser({
+          actorId: userId,
+          recipientId: prevTask.assignedTo,
+          type: 'task-updated',
+          title: 'Due date changed',
+          message: `${userName} moved the due date for "${taskTitle}" to ${formattedDate}`,
+          actionUrl: `#tasks?taskId=${id}`,
+          taskId: id,
+        });
+      }
+      if (updates.priority !== undefined && updates.priority !== prevTask.priority) {
+        notifyUser({
+          actorId: userId,
+          recipientId: prevTask.assignedTo,
+          type: 'task-updated',
+          title: 'Priority changed',
+          message: `${userName} changed the priority of "${taskTitle}" to ${updates.priority}`,
+          actionUrl: `#tasks?taskId=${id}`,
+          taskId: id,
+        });
+      }
+    }
+
+    // ── Activity log — diff each field the caller actually touched ──
+    if (prevTask) {
+      const taskTitle = updates.title || prevTask.title;
+      const logField = (field: string, oldVal?: string, newVal?: string) => {
+        if (oldVal === newVal) return;
+        logActivity({ taskId: id, taskTitle, action: 'updated', field, oldValue: oldVal, newValue: newVal });
+      };
+      if (updates.title !== undefined) logField('title', prevTask.title, updates.title);
+      if (updates.description !== undefined) logField('description', prevTask.description, updates.description);
+      if (updates.status !== undefined) logField('status', prevTask.status, updates.status);
+      if (updates.priority !== undefined) logField('priority', prevTask.priority, updates.priority);
+      if (updates.assignedTo !== undefined) logField('assignedTo', prevTask.assignedTo, updates.assignedTo);
+      if (updates.dueDate !== undefined) {
+        logField('dueDate', prevTask.dueDate?.toISOString(), updates.dueDate?.toISOString());
+      }
+
+      if (updates.attachments !== undefined) {
+        const prevIds = new Set((prevTask.attachments || []).map((a) => a.id));
+        const nextIds = new Set(updates.attachments.map((a) => a.id));
+        const added = updates.attachments.filter((a) => !prevIds.has(a.id));
+        added.forEach((a) =>
+          logActivity({ taskId: id, taskTitle, action: 'attachment_added', newValue: a.name }));
+        (prevTask.attachments || []).filter((a) => !nextIds.has(a.id)).forEach((a) =>
+          logActivity({ taskId: id, taskTitle, action: 'attachment_removed', oldValue: a.name }));
+
+        // Notify the assignee (if someone else added it) so they don't have to re-open the task to notice
+        if (added.length > 0 && prevTask.assignedTo && prevTask.assignedTo !== userId) {
+          notifyUser({
+            actorId: userId,
+            recipientId: prevTask.assignedTo,
+            type: 'attachment-added',
+            title: 'New attachment',
+            message: added.length === 1
+              ? `${userName} added "${added[0].name}" to "${taskTitle}"`
+              : `${userName} added ${added.length} attachments to "${taskTitle}"`,
+            actionUrl: `#tasks?taskId=${id}`,
+            taskId: id,
+          });
+        }
+      }
+      if (updates.links !== undefined) {
+        const prevIds = new Set((prevTask.links || []).map((l) => l.id));
+        const nextIds = new Set(updates.links.map((l) => l.id));
+        updates.links.filter((l) => !prevIds.has(l.id)).forEach((l) =>
+          logActivity({ taskId: id, taskTitle, action: 'link_added', newValue: l.title }));
+        (prevTask.links || []).filter((l) => !nextIds.has(l.id)).forEach((l) =>
+          logActivity({ taskId: id, taskTitle, action: 'link_removed', oldValue: l.title }));
+      }
+      if (updates.subtasks !== undefined) {
+        logActivity({ taskId: id, taskTitle, action: 'subtask_changed' });
+      }
+    }
   },
 
-  deleteTask: (id) => {
+  deleteTask: (id, requestingUserId) => {
+    const task = get().tasks.find((t) => t.id === id);
+    if (!task) return false;
+    if (requestingUserId && task.createdBy && task.createdBy !== requestingUserId) {
+      return false; // not the creator — refuse, even if called directly
+    }
     set((state) => ({
-      tasks: state.tasks.filter((task) => task.id !== id),
+      tasks: state.tasks.filter((t) => t.id !== id),
       selectedTaskId: state.selectedTaskId === id ? null : state.selectedTaskId,
     }));
+    // Log before the delete so the FK is still valid at insert time — the
+    // row itself survives the task's deletion (task_id becomes null via
+    // ON DELETE SET NULL), preserving the audit trail permanently.
+    logActivity({ taskId: id, taskTitle: task.title, action: 'deleted' });
     taskDb.delete(id, isMockMode());
+
+    // Notify the assignee and creator (excluding whoever just deleted it) —
+    // no actionUrl/taskId since the task no longer exists to link to.
+    const { userId: actorId, userName } = getTeamContext();
+    notifyUsers(
+      [task.assignedTo, task.createdBy].filter((uid): uid is string => !!uid),
+      {
+        actorId,
+        type: 'update',
+        title: 'Task deleted',
+        message: `${userName} deleted "${task.title}"`,
+      }
+    );
+
+    return true;
   },
 
   selectTask: (id) => set({ selectedTaskId: id }),
@@ -456,7 +624,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     get().updateTask(id, { status: 'completed', progress: 100 });
   },
 
-  addCollaborator: (taskId, collaborator) =>
+  addCollaborator: (taskId, collaborator) => {
+    const task = get().tasks.find((t) => t.id === taskId);
     set((state) => ({
       tasks: state.tasks.map((task) =>
         task.id === taskId
@@ -470,9 +639,27 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
             }
           : task
       ),
-    })),
+    }));
 
-  removeCollaborator: (taskId, userId) =>
+    // Notify the invited collaborator (reuses the existing task-assigned
+    // type — an invite is a task-relevant responsibility just like an
+    // assignment; not adding a new NotificationType for this).
+    if (task) {
+      const { userId: actorId, userName } = getTeamContext();
+      notifyUser({
+        actorId,
+        recipientId: collaborator.userId,
+        type: 'task-assigned',
+        title: 'Added as collaborator',
+        message: `${userName} added you as a ${collaborator.role} on "${task.title}"`,
+        actionUrl: `#tasks?taskId=${taskId}`,
+        taskId,
+      });
+    }
+  },
+
+  removeCollaborator: (taskId, userId) => {
+    const task = get().tasks.find((t) => t.id === taskId);
     set((state) => ({
       tasks: state.tasks.map((task) =>
         task.id === taskId
@@ -485,7 +672,21 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
             }
           : task
       ),
-    })),
+    }));
+
+    if (task) {
+      const { userId: actorId, userName } = getTeamContext();
+      notifyUser({
+        actorId,
+        recipientId: userId,
+        type: 'update',
+        title: 'Removed from task',
+        message: `${userName} removed you as a collaborator on "${task.title}"`,
+        actionUrl: `#tasks?taskId=${taskId}`,
+        taskId,
+      });
+    }
+  },
 
   updateCollaboratorTime: (taskId, userId, minutes) =>
     set((state) => ({
@@ -511,12 +712,16 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     const mock = isMockMode();
     if (mock) return; // Mock mode ON → don't touch DB
     const { teamId } = getTeamContext();
-    const dbTasks = await taskDb.fetchAll(userId, false, teamId);
-    if (dbTasks === null) return; // DB error — keep current state
+    const [dbTasks, botTasks] = await Promise.all([
+      taskDb.fetchAll(userId, false, teamId),
+      botTaskDb.fetchAllForUser(userId, false),
+    ]);
+    if (dbTasks === null && botTasks === null) return; // DB error — keep current state
 
-    // Always replace in-memory state with DB data (empty array is correct
-    // for a fresh account — sample data is only shown when toggle is ON).
-    set({ tasks: dbTasks });
+    // bot_tasks and tasks use disjoint id spaces (both UUID, generated
+    // independently) — a plain concat is safe, no dedupe needed. Empty array
+    // is correct for a fresh account — sample data only shows when toggle ON.
+    set({ tasks: [...(dbTasks || []), ...(botTasks || [])] });
   },
 
   clearMockData: () => {
@@ -540,3 +745,95 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     }
   },
 }));
+
+// Listen for tasks created/deleted by the Telegram/WhatsApp bot via the
+// backend socket, and push a live task snapshot so the bot can show real
+// tasks (never hardcoded/hallucinated ones) for its Delete Task flow.
+import('@/lib/botSocket').then(({ getBotSocket }) => {
+  const socket = getBotSocket();
+
+  socket.on('task:bot-created', (payload: {
+    id: string; title: string; description?: string; projectId?: string; assignedTo?: string;
+    createdBy?: string;
+    priority: string; status: string; dueDate?: string; estimatedHours?: number;
+    tags?: string[]; subtasks?: { id: string; title: string; completed: boolean; createdAt: string }[];
+    sourceChannel: 'telegram' | 'whatsapp';
+    createdAt: string;
+    persisted?: boolean; // true when the backend already wrote this directly (bot "database mode")
+  }) => {
+    useTaskStore.getState().addTask({
+      title: payload.title,
+      description: payload.description,
+      status: (payload.status as any) || 'todo',
+      priority: (payload.priority as any) || 'medium',
+      projectId: payload.projectId,
+      assignedTo: payload.assignedTo,
+      createdBy: payload.createdBy,
+      dueDate: payload.dueDate ? new Date(payload.dueDate) : undefined,
+      estimatedHours: payload.estimatedHours,
+      sourceChannel: payload.sourceChannel,
+      tags: payload.tags || [],
+      subtasks: (payload.subtasks || []).map((s) => ({ ...s, createdAt: new Date(s.createdAt) })),
+      progress: 0,
+    }, payload.id, payload.persisted);
+    // Confirm back to the bot that this task was actually persisted, so its
+    // confirmation message (and task link) is only sent once this succeeds.
+    // (Harmless no-op from the bot's perspective in "database mode", where
+    // it already knows the write succeeded and isn't waiting on this ack.)
+    socket.emit('task:bot-created:ack', { id: payload.id });
+  });
+
+  socket.on('task:bot-updated', (payload: {
+    id: string; description?: string; status?: string; priority?: string; dueDate?: string;
+    estimatedHours?: number; tags?: string[]; progress?: number;
+    subtasksToAdd?: string[]; // reset mode: raw titles to append to the existing task
+    subtasks?: { id: string; title: string; completed: boolean; createdAt: string }[]; // database mode: already-merged final array
+    persisted?: boolean;
+  }) => {
+    const state = useTaskStore.getState();
+    const existing = state.tasks.find((t) => t.id === payload.id);
+    if (!existing) return;
+
+    const mergedSubtasks = payload.persisted
+      ? (payload.subtasks || []).map((s) => ({ ...s, createdAt: new Date(s.createdAt) }))
+      : [
+          ...(existing.subtasks || []),
+          ...(payload.subtasksToAdd || []).map((title, i) => ({
+            id: `chat-sub-${Date.now()}-${i}`,
+            title,
+            completed: false,
+            createdAt: new Date(),
+          })),
+        ];
+
+    state.updateTask(payload.id, {
+      description: payload.description,
+      status: (payload.status as any) || existing.status,
+      priority: (payload.priority as any) || existing.priority,
+      dueDate: payload.dueDate ? new Date(payload.dueDate) : existing.dueDate,
+      estimatedHours: payload.estimatedHours,
+      tags: payload.tags || existing.tags,
+      progress: payload.persisted && payload.progress !== undefined ? payload.progress : existing.progress,
+      subtasks: mergedSubtasks,
+    });
+    socket.emit('task:bot-updated:ack', { id: payload.id });
+  });
+
+  socket.on('task:bot-deleted', (payload: { id: string }) => {
+    useTaskStore.getState().deleteTask(payload.id);
+  });
+
+  const pushSnapshot = () => {
+    const tasks = useTaskStore.getState().tasks;
+    socket.emit('tasks:sync', tasks.map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      projectId: t.projectId,
+      assignedTo: t.assignedTo,
+      createdBy: t.createdBy,
+    })));
+  };
+  socket.on('connect', pushSnapshot);
+  useTaskStore.subscribe(pushSnapshot);
+});

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Notification, NotificationType } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
-import { notificationDb } from '@/lib/dataService';
+import { notificationDb, authDb } from '@/lib/dataService';
 import { supabase, isDbConnected } from '@/lib/supabase';
 import { useSettingsStore } from '@stores/settingsStore';
 
@@ -13,6 +13,10 @@ const isMockMode = () => useSettingsStore.getState().keepMockData;
 
 // Module-level channel reference so we can clean it up on logout/mode-change
 let _realtimeChannel: ReturnType<NonNullable<typeof supabase>['channel']> | null = null;
+
+// Module-level user id, set by hydrateFromDb — lets updatePreferences persist
+// to the DB without needing a notification row to exist yet to infer it from.
+let _currentUserId: string | null = null;
 
 // ─── Notification preferences ───────────────────────────────────────────
 export interface NotificationPreferences {
@@ -28,6 +32,7 @@ export interface NotificationPreferences {
   // Delivery
   inApp: boolean;
   email: boolean;
+  telegram: boolean;
   sound: boolean;
   desktop: boolean;
 
@@ -47,6 +52,7 @@ const defaultPreferences: NotificationPreferences = {
   aiInsights: true,
   inApp: true,
   email: true,
+  telegram: true,
   sound: true,
   desktop: false,
   quietHoursEnabled: false,
@@ -80,12 +86,40 @@ export const notificationCategoryConfig: Record<
     bgColor: 'bg-emerald-100 dark:bg-emerald-900/30',
     emoji: '✅',
   },
+  'task-reopened': {
+    label: 'Reopened',
+    group: 'Tasks',
+    color: 'text-orange-600 dark:text-orange-400',
+    bgColor: 'bg-orange-100 dark:bg-orange-900/30',
+    emoji: '↩️',
+  },
+  'task-updated': {
+    label: 'Task Updated',
+    group: 'Tasks',
+    color: 'text-blue-600 dark:text-blue-400',
+    bgColor: 'bg-blue-100 dark:bg-blue-900/30',
+    emoji: '✏️',
+  },
+  'attachment-added': {
+    label: 'Attachment',
+    group: 'Tasks',
+    color: 'text-cyan-600 dark:text-cyan-400',
+    bgColor: 'bg-cyan-100 dark:bg-cyan-900/30',
+    emoji: '📎',
+  },
   'project-invite': {
     label: 'Project Invite',
     group: 'Tasks',
     color: 'text-violet-600 dark:text-violet-400',
     bgColor: 'bg-violet-100 dark:bg-violet-900/30',
     emoji: '📂',
+  },
+  'project-updated': {
+    label: 'Project Updated',
+    group: 'Tasks',
+    color: 'text-violet-600 dark:text-violet-400',
+    bgColor: 'bg-violet-100 dark:bg-violet-900/30',
+    emoji: '📁',
   },
   'mention': {
     label: 'Mention',
@@ -320,7 +354,11 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         'task-assigned': 'taskAssigned',
         'task-due': 'taskDue',
         'task-completed': 'taskCompleted',
+        'task-reopened': 'taskCompleted',
+        'task-updated': 'updates',
+        'attachment-added': 'updates',
         'project-invite': 'projectInvite',
+        'project-updated': 'projectInvite',
         'mention': 'mentions',
         'update': 'updates',
         'ai-insight': 'aiInsights',
@@ -354,12 +392,14 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
 
   removeNotification: (id) => {
     set((state) => {
-      const notification = state.notifications.find((n) => n.id === id);
+      const notifications = state.notifications.filter((n) => n.id !== id);
       return {
-        notifications: state.notifications.filter((n) => n.id !== id),
-        unreadCount: notification && !notification.read ? state.unreadCount - 1 : state.unreadCount,
+        notifications,
+        unreadCount: notifications.filter((n) => !n.read).length,
       };
     });
+    // Persist the dismissal so it doesn't reappear on refresh (live mode only)
+    notificationDb.delete(id, isMockMode());
   },
 
   markAsRead: (id) => {
@@ -385,6 +425,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   markGroupAsRead: (type) => {
+    const idsToMark = get().notifications.filter((n) => n.type === type && !n.read).map((n) => n.id);
     set((state) => {
       const unreadOfType = state.notifications.filter((n) => n.type === type && !n.read).length;
       return {
@@ -394,6 +435,9 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         unreadCount: Math.max(0, state.unreadCount - unreadOfType),
       };
     });
+    // Persist each one so the read-state survives a reload and syncs across
+    // tabs/devices — this previously only updated local state.
+    idsToMark.forEach((id) => notificationDb.markRead(id, isMockMode()));
   },
 
   clearAll: () => {
@@ -403,6 +447,9 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
   },
 
   clearRead: () => {
+    // Persist removal of read notifications so they don't reappear on refresh
+    const readIds = get().notifications.filter((n) => n.read).map((n) => n.id);
+    readIds.forEach((id) => notificationDb.delete(id, isMockMode()));
     set((state) => ({
       notifications: state.notifications.filter((n) => !n.read),
     }));
@@ -417,6 +464,11 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     const updated = { ...get().preferences, ...prefs };
     set({ preferences: updated });
     try { localStorage.setItem('purplebee-notif-prefs', JSON.stringify(updated)); } catch {}
+    // Also persist to the account (cross-device) — fire-and-forget, mirrors
+    // every other store's write pattern. No-op in mock mode / no user yet.
+    if (!isMockMode() && _currentUserId) {
+      authDb.updateNotificationPreferences(_currentUserId, updated).catch(() => {});
+    }
   },
 
   resetPreferences: () => {
@@ -451,6 +503,16 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
    */
   hydrateFromDb: async (userId: string) => {
     if (isMockMode()) return;
+    _currentUserId = userId;
+    // Pull cross-device notification preferences, if this account has ever
+    // saved any — falls back to whatever's already in localStorage/defaults
+    // for accounts that haven't touched Settings since this was added.
+    authDb.getProfile(userId).then((profile) => {
+      const dbPrefs = profile?.notification_preferences as Partial<NotificationPreferences> | null;
+      if (dbPrefs && Object.keys(dbPrefs).length > 0) {
+        set((state) => ({ preferences: { ...state.preferences, ...dbPrefs } }));
+      }
+    }).catch(() => {});
     const rows = await notificationDb.fetchAll(userId, false);
     // rows may be null (DB error) or [] (no notifications yet) — both are fine
     const mapped: Notification[] = (rows as Array<Record<string, any>> || []).map((r) => ({
@@ -507,10 +569,49 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
           // added optimistically (same-user actions)
           set((state) => {
             if (state.notifications.some((n) => n.id === incoming.id)) return state;
+            const notifications = [incoming, ...state.notifications];
             return {
-              notifications: [incoming, ...state.notifications],
-              unreadCount: state.unreadCount + (incoming.read ? 0 : 1),
+              notifications,
+              unreadCount: notifications.filter((n) => !n.read).length,
             };
+          });
+        }
+      )
+      // UPDATE — keeps read/unread state in sync across browser tabs and devices.
+      // When one tab marks a notification read, every other open session updates too.
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const r = payload.new as Record<string, any>;
+          set((state) => {
+            const notifications = state.notifications.map((n) =>
+              n.id === r.id ? { ...n, read: !!r.read } : n
+            );
+            return { notifications, unreadCount: notifications.filter((n) => !n.read).length };
+          });
+        }
+      )
+      // DELETE — removes dismissed/cleared notifications in every open session.
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const removedId = (payload.old as Record<string, any>)?.id;
+          if (!removedId) return;
+          set((state) => {
+            const notifications = state.notifications.filter((n) => n.id !== removedId);
+            return { notifications, unreadCount: notifications.filter((n) => !n.read).length };
           });
         }
       )
@@ -522,6 +623,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       supabase.removeChannel(_realtimeChannel);
       _realtimeChannel = null;
     }
+    _currentUserId = null;
   },
 
   getGroupedNotifications: () => {
