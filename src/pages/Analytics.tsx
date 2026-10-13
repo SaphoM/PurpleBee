@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import clsx from 'clsx';
 import {
   BarChart, Bar, Line, AreaChart, Area, PieChart, Pie, Cell, RadialBarChart, RadialBar,
@@ -18,12 +18,72 @@ import {
   Award,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@components/Card';
+import { useToastStore } from '@components/Toast';
 import { useTaskStore } from '@stores/taskStore';
 import { useUIStore } from '@stores/uiStore';
 import { useUserStore } from '@stores/userStore';
-import { format, subDays, isPast, isToday } from 'date-fns';
+import { useInactivityTracker, InactivityState, formatDuration } from '@/lib/inactivityTracker';
+import { activityLogDb, ActivityLogRow } from '@/lib/dataService';
+import { useSettingsStore } from '@stores/settingsStore';
+import { format, subDays, isPast, isToday, formatDistanceToNow } from 'date-fns';
 
 type TimeRange = '7d' | '14d' | '30d' | '90d';
+
+// ── Activity & Progress Monitor: freshness defaults ─────────────────────────
+// No server-side update schedule is configured yet, so these are the
+// configurable defaults the freshness states are measured against.
+const FRESHNESS_DUE_HOURS = 24;   // within this → up to date
+const FRESHNESS_STALE_HOURS = 48; // beyond this → stale / overdue
+
+const inactivityLabel: Record<InactivityState, string> = {
+  'recently-active': 'Less than 1 hour',
+  'activity-slowing': '1–4 hours',
+  'extended-inactive': '4–8 hours',
+  'inactive-most-of-day': '8–24 hours',
+  'prolonged-inactive': 'More than 24 hours',
+};
+
+const freshnessMeta: Record<
+  'up-to-date' | 'due' | 'stale' | 'no-activity' | 'unverified',
+  { label: string; className: string }
+> = {
+  'up-to-date': {
+    label: 'Up to date',
+    className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+  },
+  due: {
+    label: 'Due for an update',
+    className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  },
+  stale: {
+    label: 'Stale / overdue',
+    className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  },
+  'no-activity': {
+    label: 'No activity recorded',
+    className: 'bg-gray-100 text-gray-600 dark:bg-slate-700/60 dark:text-slate-400',
+  },
+  unverified: {
+    label: 'Unable to verify',
+    className: 'bg-gray-100 text-gray-600 dark:bg-slate-700/60 dark:text-slate-400',
+  },
+};
+
+const eventMeta: Record<string, { emoji: string; label: string }> = {
+  login: { emoji: '🔐', label: 'Successful login' },
+  signup: { emoji: '✨', label: 'Account created' },
+  logout: { emoji: '🚪', label: 'Logout' },
+  upload: { emoji: '📎', label: 'Upload completed' },
+  upload_failed: { emoji: '⚠️', label: 'Upload failed' },
+  task_created: { emoji: '➕', label: 'Task created' },
+  task_updated: { emoji: '✏️', label: 'Task updated' },
+  task_completed: { emoji: '✅', label: 'Task completed' },
+  task_deleted: { emoji: '🗑️', label: 'Task deleted' },
+  project_created: { emoji: '📁', label: 'Project created' },
+  data_import: { emoji: '🔄', label: 'Data imported' },
+  data_import_failed: { emoji: '❌', label: 'Data import failed' },
+  setting_changed: { emoji: '⚙️', label: 'Setting changed' },
+};
 
 // Generate realistic mock data for charts
 const generateWeeklyData = () => {
@@ -132,9 +192,122 @@ export const Analytics: React.FC = () => {
   const { tasks: allTasks, getTasksForUser } = useTaskStore();
   const { darkMode } = useUIStore();
   const { canViewAllTasks, getEffectiveUserId } = useUserStore();
+  const keepMockData = useSettingsStore((s) => s.keepMockData);
 
   // Scope tasks — when "viewing as" another user, show their tasks
   const tasks = canViewAllTasks() ? allTasks : getTasksForUser(getEffectiveUserId());
+
+  // ── Activity & Progress Monitor: inactivity tracking + cross-tab toasts ──
+  // Deduplication lives in the tracker (shared event ids in localStorage),
+  // so opening the app in three tabs still shows exactly one notice.
+  const { lastActivity, inactivityString, currentState, isInactive, minutesSinceActivity } =
+    useInactivityTracker({
+      onInactivityChange: (durationMinutes, state, isNewForThisTab) => {
+        if (!isNewForThisTab || state === 'recently-active') return;
+        useToastStore.getState().addToast({
+          type: state === 'activity-slowing' ? 'info' : 'error',
+          title: state === 'activity-slowing' ? 'Activity slowing down' : 'Inactivity warning',
+          message: `No meaningful activity for ${formatDuration(durationMinutes)}.`,
+          duration: 8000,
+        });
+      },
+    });
+
+  // ── Audit trail (activity_log): real login / upload / task events ──────
+  const effectiveUserId = getEffectiveUserId();
+  const [activityLog, setActivityLog] = useState<ActivityLogRow[] | null>(null); // null = loading
+  const [activityLogFailed, setActivityLogFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setActivityLog(null);
+    setActivityLogFailed(false);
+    if (!effectiveUserId) {
+      setActivityLog([]);
+      return;
+    }
+    activityLogDb
+      .fetchRecent(effectiveUserId, { days: 30, limit: 100 }, keepMockData)
+      .then((rows) => {
+        if (cancelled) return;
+        if (rows === null) {
+          setActivityLogFailed(true);
+          setActivityLog([]);
+        } else {
+          setActivityLog(rows);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setActivityLogFailed(true);
+        setActivityLog([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveUserId, keepMockData]);
+
+  // Derived monitor metrics — every value comes from the real task store or
+  // the real activity_log rows; nothing is faked when data is missing.
+  const tracker = useMemo(() => {
+    const byUpdated = [...tasks].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    const completedList = byUpdated.filter((t) => t.status === 'completed');
+    const lastCompletedTask = completedList[0] ?? null;
+    const completedToday = completedList.filter((t) => isToday(new Date(t.updatedAt))).length;
+    const pendingCount = tasks.filter((t) => t.status === 'todo').length;
+    const overdueCount = tasks.filter(
+      (t) => t.dueDate && isPast(new Date(t.dueDate)) && t.status !== 'completed'
+    ).length;
+    const lastUpdatedTask = byUpdated[0] ?? null;
+    const avgProgress = tasks.length
+      ? Math.round(tasks.reduce((sum, t) => sum + (t.progress || 0), 0) / tasks.length)
+      : null;
+
+    const log = activityLog ?? [];
+    const lastLoginEvent = log.find((e) => e.eventType === 'login') ?? null;
+    const lastUploadEvent =
+      log.find((e) => e.eventType === 'upload' && e.outcome === 'success') ?? null;
+    const uploadsToday = log.filter(
+      (e) => e.eventType === 'upload' && e.outcome === 'success' && isToday(e.eventTimestamp)
+    ).length;
+    const failedUploads = log.filter(
+      (e) => e.eventType === 'upload_failed' || (e.eventType === 'upload' && e.outcome === 'failure')
+    ).length;
+
+    // Last successful data update across the signals we actually track.
+    const timestamps: number[] = [];
+    if (lastLoginEvent) timestamps.push(+lastLoginEvent.eventTimestamp);
+    if (lastUploadEvent) timestamps.push(+lastUploadEvent.eventTimestamp);
+    if (lastCompletedTask) timestamps.push(+new Date(lastCompletedTask.updatedAt));
+    if (lastUpdatedTask) timestamps.push(+new Date(lastUpdatedTask.updatedAt));
+    const lastDataUpdate = timestamps.length ? new Date(Math.max(...timestamps)) : null;
+    const hoursSinceUpdate = lastDataUpdate ? (+Date.now() - +lastDataUpdate) / 3_600_000 : null;
+
+    let freshness: 'up-to-date' | 'due' | 'stale' | 'no-activity' | 'unverified';
+    if (activityLogFailed && !lastCompletedTask && !lastUpdatedTask) freshness = 'unverified';
+    else if (!lastDataUpdate) freshness = 'no-activity';
+    else if ((hoursSinceUpdate ?? 0) <= FRESHNESS_DUE_HOURS) freshness = 'up-to-date';
+    else if ((hoursSinceUpdate ?? 0) <= FRESHNESS_STALE_HOURS) freshness = 'due';
+    else freshness = 'stale';
+
+    return {
+      lastCompletedTask,
+      completedToday,
+      pendingCount,
+      overdueCount,
+      lastUpdatedTask,
+      avgProgress,
+      lastLoginEvent,
+      lastUploadEvent,
+      uploadsToday,
+      failedUploads,
+      lastDataUpdate,
+      hoursSinceUpdate,
+      freshness,
+      timeline: log.slice(0, 20),
+    };
+  }, [tasks, activityLog, activityLogFailed]);
+
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
 
   const chartTooltipStyle = darkMode
@@ -696,6 +869,432 @@ export const Analytics: React.FC = () => {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ══════════ Activity & Progress Monitor ══════════ */}
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">
+            Activity &amp; Progress Monitor
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-slate-400">
+            Last login, uploads, task progress, data freshness and inactivity — from real activity records
+          </p>
+        </div>
+
+        {/* Row 1: Last Login · Last Upload */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader title="Last Login" subtitle="Successful sign-ins and current presence" />
+            <CardContent>
+              {activityLog === null ? (
+                <p className="text-sm text-gray-500 dark:text-slate-400">Loading activity…</p>
+              ) : activityLogFailed ? (
+                <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+                  Unable to verify last login — the activity log could not be reached.
+                </p>
+              ) : tracker.lastLoginEvent ? (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                      Last login
+                    </p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-slate-100">
+                      {formatDistanceToNow(tracker.lastLoginEvent.eventTimestamp, { addSuffix: true })}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-slate-400">
+                      {format(tracker.lastLoginEvent.eventTimestamp, 'EEE, MMM d, yyyy HH:mm')}
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-slate-400">
+                    {tracker.lastLoginEvent.metadata?.source === 'session_restore'
+                      ? 'Restored from a persisted session'
+                      : 'Signed in with email and password'}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-slate-400">
+                  No login recorded yet — login events appear here after your first sign-in.
+                </p>
+              )}
+
+              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-700/50 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className={clsx(
+                      'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold',
+                      isInactive
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    )}
+                  >
+                    <span aria-hidden="true">{isInactive ? '●' : '●'}</span>
+                    {isInactive ? 'Inactive' : 'Active'}
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-slate-400">
+                    {inactivityLabel[currentState]} · {inactivityString}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-slate-400">
+                  Last meaningful activity:{' '}
+                  {format(lastActivity, 'EEE, MMM d, yyyy HH:mm')} ({minutesSinceActivity} min ago).
+                  Presence is approximate — a hidden or closed tab is not treated as a logout.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader title="Last Upload" subtitle="Confirmed file saves only" />
+            <CardContent>
+              {activityLog === null ? (
+                <p className="text-sm text-gray-500 dark:text-slate-400">Loading activity…</p>
+              ) : activityLogFailed ? (
+                <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+                  Unable to verify uploads — the activity log could not be reached.
+                </p>
+              ) : tracker.lastUploadEvent ? (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                      Last successful upload
+                    </p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-slate-100">
+                      {formatDistanceToNow(tracker.lastUploadEvent.eventTimestamp, { addSuffix: true })}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-slate-400">
+                      {format(tracker.lastUploadEvent.eventTimestamp, 'EEE, MMM d, yyyy HH:mm')}
+                      {typeof tracker.lastUploadEvent.metadata?.count === 'number'
+                        ? ` · ${tracker.lastUploadEvent.metadata.count} file(s)`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 dark:text-slate-400">
+                  No uploads recorded yet — attachments added to tasks show up here after they save.
+                </p>
+              )}
+
+              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-slate-700/50 grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                    Uploads today
+                  </p>
+                  <p className="text-lg font-bold text-gray-900 dark:text-slate-100">
+                    {activityLog === null ? '—' : tracker.uploadsToday}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                    Failed uploads
+                  </p>
+                  <p
+                    className={clsx(
+                      'text-lg font-bold',
+                      tracker.failedUploads > 0
+                        ? 'text-red-600 dark:text-red-400'
+                        : 'text-gray-900 dark:text-slate-100'
+                    )}
+                  >
+                    {activityLog === null ? '—' : tracker.failedUploads}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-gray-500 dark:text-slate-400">
+                An upload counts only after the application confirms the file was saved — selecting a
+                file is not counted.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Row 2: Task Completion & Progress */}
+        <Card>
+          <CardHeader title="Task Completion & Progress" subtitle="Live from your task list" />
+          <CardContent>
+            {tasks.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-slate-400">
+                No tasks recorded yet — create a task to start tracking progress.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                      Most recently completed
+                    </p>
+                    {tracker.lastCompletedTask ? (
+                      <>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                          {tracker.lastCompletedTask.title}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-slate-400">
+                          {format(new Date(tracker.lastCompletedTask.updatedAt), 'EEE, MMM d, yyyy HH:mm')}{' '}
+                          · {formatDistanceToNow(new Date(tracker.lastCompletedTask.updatedAt), { addSuffix: true })}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-slate-400">
+                        No completed tasks yet
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <p className="text-xs font-medium text-gray-400 dark:text-slate-500">Completed today</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-slate-100">
+                        {tracker.completedToday}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-gray-400 dark:text-slate-500">Pending</p>
+                      <p className="text-lg font-bold text-gray-900 dark:text-slate-100">
+                        {tracker.pendingCount}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-gray-400 dark:text-slate-500">Overdue</p>
+                      <p
+                        className={clsx(
+                          'text-lg font-bold',
+                          tracker.overdueCount > 0
+                            ? 'text-red-600 dark:text-red-400'
+                            : 'text-gray-900 dark:text-slate-100'
+                        )}
+                      >
+                        {tracker.overdueCount}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                      Most recent update
+                    </p>
+                    {tracker.lastUpdatedTask ? (
+                      <>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                          {tracker.lastUpdatedTask.title}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-slate-400">
+                          {formatDistanceToNow(new Date(tracker.lastUpdatedTask.updatedAt), { addSuffix: true })}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-gray-500 dark:text-slate-400">No task updates yet</p>
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-xs font-medium text-gray-400 dark:text-slate-500">
+                        Average progress
+                      </p>
+                      <p className="text-xs font-bold text-gray-900 dark:text-slate-100">
+                        {tracker.avgProgress === null ? '—' : `${tracker.avgProgress}%`}
+                      </p>
+                    </div>
+                    <div className="h-2 bg-gray-100 dark:bg-slate-700/50 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-purple-500 rounded-full transition-all"
+                        style={{ width: `${tracker.avgProgress ?? 0}%` }}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+                      {tracker.completedToday === 0
+                        ? 'No completed tasks recorded today'
+                        : `${tracker.completedToday} completed today`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Row 3: Daily Activity & Data Freshness */}
+        <Card>
+          <CardHeader
+            title="Daily Activity & Data Freshness"
+            subtitle={`Expected meaningful update within ${FRESHNESS_DUE_HOURS}h — stale after ${FRESHNESS_STALE_HOURS}h (configurable defaults)`}
+            action={
+              <span
+                className={clsx(
+                  'inline-block px-2.5 py-1 rounded-full text-xs font-semibold',
+                  freshnessMeta[tracker.freshness].className
+                )}
+              >
+                {freshnessMeta[tracker.freshness].label}
+              </span>
+            }
+          />
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                  Last successful data update
+                </p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                  {activityLog === null && !tracker.lastDataUpdate
+                    ? 'Loading…'
+                    : tracker.lastDataUpdate
+                      ? format(tracker.lastDataUpdate, 'EEE, MMM d, yyyy HH:mm')
+                      : 'No activity recorded'}
+                </p>
+                {tracker.hoursSinceUpdate !== null && (
+                  <p className="text-xs text-gray-500 dark:text-slate-400">
+                    {tracker.hoursSinceUpdate < 1
+                      ? 'Less than an hour ago'
+                      : `${Math.floor(tracker.hoursSinceUpdate)} hours ago`}
+                  </p>
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                  Last login
+                </p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                  {tracker.lastLoginEvent
+                    ? formatDistanceToNow(tracker.lastLoginEvent.eventTimestamp, { addSuffix: true })
+                    : activityLogFailed
+                      ? 'Unable to verify'
+                      : activityLog === null
+                        ? 'Loading…'
+                        : 'No login recorded'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                  Last successful upload
+                </p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                  {tracker.lastUploadEvent
+                    ? formatDistanceToNow(tracker.lastUploadEvent.eventTimestamp, { addSuffix: true })
+                    : activityLogFailed
+                      ? 'Unable to verify'
+                      : activityLog === null
+                        ? 'Loading…'
+                        : 'No uploads recorded'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                  Last completed task
+                </p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                  {tracker.lastCompletedTask
+                    ? formatDistanceToNow(new Date(tracker.lastCompletedTask.updatedAt), { addSuffix: true })
+                    : 'No completed tasks recorded'}
+                </p>
+              </div>
+            </div>
+            <p className="mt-4 text-xs text-gray-500 dark:text-slate-400">
+              Freshness is derived from real recorded events (login, upload, task changes) — never
+              from page loads alone. Scheduled background jobs would lower these thresholds once
+              configured.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Row 4: Inactivity Monitoring */}
+        <Card>
+          <CardHeader title="Inactivity Monitoring" subtitle="Hour-based intervals since last meaningful action" />
+          <CardContent>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{inactivityString}</p>
+              <span
+                className={clsx(
+                  'inline-flex px-2.5 py-1 rounded-full text-xs font-semibold',
+                  isInactive
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                )}
+              >
+                {inactivityLabel[currentState]}
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
+              Exact timestamp: {format(lastActivity, 'EEE, MMM d, yyyy HH:mm:ss')} · recalculated as
+              the clock advances and on refresh, from the persisted timestamp.
+            </p>
+            <ul className="mt-3 space-y-1 text-xs text-gray-500 dark:text-slate-400 list-disc list-inside">
+              <li>Meaningful actions (task create/update/complete, uploads) reset the clock.</li>
+              <li>Passive page viewing does not count as activity.</li>
+              <li>
+                Cross-tab coordination via BroadcastChannel: the same threshold shows one toast, not
+                one per open tab.
+              </li>
+            </ul>
+          </CardContent>
+        </Card>
+
+        {/* Row 5: Recent Activity Timeline */}
+        <Card>
+          <CardHeader
+            title="Recent Activity Timeline"
+            subtitle="Audit history — last 30 days, newest first"
+          />
+          <CardContent>
+            {activityLog === null ? (
+              <div className="py-6 text-center">
+                <p className="text-sm text-gray-500 dark:text-slate-400">Loading activity…</p>
+              </div>
+            ) : activityLogFailed ? (
+              <div className="py-6 text-center">
+                <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+                  Unable to load the activity timeline. Task metrics above still reflect live data.
+                </p>
+              </div>
+            ) : tracker.timeline.length === 0 ? (
+              <div className="py-6 text-center">
+                <ListChecks size={24} className="mx-auto mb-2 text-gray-300 dark:text-slate-600" />
+                <p className="text-sm text-gray-500 dark:text-slate-400">
+                  No activity recorded yet — logins, uploads and task changes will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="max-h-96 overflow-y-auto">
+                {tracker.timeline.map((event) => {
+                  const meta = eventMeta[event.eventType] ?? { emoji: '•', label: event.eventType };
+                  const failed = event.outcome === 'failure';
+                  const detail =
+                    (event.metadata?.taskTitle as string | undefined) ||
+                    (event.metadata?.projectTitle as string | undefined);
+                  return (
+                    <div
+                      key={event.id}
+                      className="flex items-start gap-3 py-2.5 border-b border-gray-100 dark:border-slate-700/40 last:border-0"
+                    >
+                      <span className="w-6 text-center text-base leading-6" aria-hidden="true">
+                        {meta.emoji}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className={clsx(
+                            'text-sm font-medium truncate',
+                            failed
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-gray-800 dark:text-slate-200'
+                          )}
+                        >
+                          {meta.label}
+                          {failed ? ' (failed)' : ''}
+                          {detail ? ` — ${detail}` : ''}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-slate-400">
+                          {format(event.eventTimestamp, 'MMM d, yyyy HH:mm')} ·{' '}
+                          {formatDistanceToNow(event.eventTimestamp, { addSuffix: true })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -7,7 +7,7 @@ import { useSettingsStore } from '@stores/settingsStore';
 import { useTaskStore, setTaskUserContext } from '@stores/taskStore';
 import { useProjectStore, setProjectUserContext } from '@stores/projectStore';
 import { supabase, isDbConnected, setRememberMe } from '@/lib/supabase';
-import { authDb } from '@/lib/dataService';
+import { authDb, activityLogDb } from '@/lib/dataService';
 
 export type AppRole = 'admin' | 'manager' | 'user';
 
@@ -443,6 +443,13 @@ export const useUserStore = create<UserStore>((set, get) => ({
         return false;
       }
       await restoreUserSession(result.user, set, get);
+      // Track successful login in activity log (fire-and-forget, never blocks auth)
+      activityLogDb.insert({
+        userId: result.user.id,
+        eventType: 'login',
+        outcome: 'success',
+        metadata: { source: 'email_password' }
+      }, useSettingsStore.getState().keepMockData).catch(() => {});
       set({ isLoading: false });
       return true;
     } catch (err: unknown) {
@@ -510,6 +517,13 @@ export const useUserStore = create<UserStore>((set, get) => ({
       const session = await authDb.getSession();
       if (session?.user) {
         await restoreUserSession(session.user, set, get);
+        // Track session restore (login) in activity log (fire-and-forget)
+        activityLogDb.insert({
+          userId: session.user.id,
+          eventType: 'login',
+          outcome: 'success',
+          metadata: { source: 'session_restore' }
+        }, useSettingsStore.getState().keepMockData).catch(() => {});
       }
     } catch (err) {
       console.warn('[userStore] initSession: error restoring session', err);

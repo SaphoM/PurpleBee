@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { Task, TaskStatus, TaskPriority, TaskCollaborator } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
-import { taskDb, botTaskDb, taskActivityDb } from '@/lib/dataService';
+import { taskDb, botTaskDb, taskActivityDb, activityLogDb } from '@/lib/dataService';
 import { notifyUser, notifyUsers } from '@/lib/notify';
+import { recordMeaningfulActivity } from '@/lib/inactivityTracker';
 
 import { useSettingsStore } from '@stores/settingsStore';
 import { useProjectStore } from '@stores/projectStore';
@@ -337,6 +338,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     }
 
     logActivity({ taskId: newTask.id, taskTitle: newTask.title, action: 'created' });
+    recordMeaningfulActivity();
   },
 
   updateTask: (id, updates) => {
@@ -349,6 +351,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       ),
     }));
     taskDb.update(id, updates, isMockMode());
+    recordMeaningfulActivity();
 
     const { userId, userName } = getTeamContext();
     const projectName = getProjectName(prevTask?.projectId);
@@ -389,6 +392,16 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         actionUrl: `#tasks?taskId=${id}`,
         taskId: id,
       });
+      // Track task completion in activity log (fire-and-forget)
+      if (userId) {
+        activityLogDb.insert({
+          userId,
+          eventType: 'task_completed',
+          outcome: 'success',
+          recordId: id,
+          metadata: { taskTitle }
+        }, isMockMode()).catch(() => {});
+      }
     }
 
     // ── Notify creator (and assignee, if different) when a completed task is reopened ──
@@ -486,6 +499,18 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
             taskId: id,
           });
         }
+
+        // Record a successful upload in the activity log (only after the
+        // attachment diff confirmed new files were saved on the task).
+        if (added.length > 0 && userId) {
+          activityLogDb.insert({
+            userId,
+            eventType: 'upload',
+            outcome: 'success',
+            recordId: id,
+            metadata: { count: added.length, taskTitle }
+          }, isMockMode()).catch(() => {});
+        }
       }
       if (updates.links !== undefined) {
         const prevIds = new Set((prevTask.links || []).map((l) => l.id));
@@ -516,6 +541,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     // ON DELETE SET NULL), preserving the audit trail permanently.
     logActivity({ taskId: id, taskTitle: task.title, action: 'deleted' });
     taskDb.delete(id, isMockMode());
+    recordMeaningfulActivity();
 
     // Notify the assignee and creator (excluding whoever just deleted it) —
     // no actionUrl/taskId since the task no longer exists to link to.

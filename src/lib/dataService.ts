@@ -185,6 +185,17 @@ export const taskDb = {
       .from('tasks')
       .insert(toDbInsert(task, createdBy));
     if (error) { console.error('[dataService] tasks.insert', error); return false; }
+    // Track task creation in activity log (fire-and-forget)
+    const userId = createdBy || task.createdBy || undefined;
+    if (userId) {
+      activityLogDb.insert({
+        userId,
+        eventType: 'task_created',
+        outcome: 'success',
+        recordId: task.id,
+        metadata: { taskTitle: task.title, hasAttachments: !!task.attachments?.length }
+      }, mockMode).catch(() => {});
+    }
     if (task.subtasks && task.subtasks.length > 0) {
       subtaskDb.replaceForTask(task.id, task.subtasks, mockMode);
     }
@@ -501,6 +512,17 @@ export const projectDb = {
     if (!shouldPersist(mockMode)) return true;
     const { error: projErr } = await supabase!.from('projects').insert(project);
     if (projErr) { console.error('[dataService] projects.insertWithTasks project', projErr); return false; }
+    // Track project creation in activity log (fire-and-forget, valid actor only)
+    const projectCreatedBy = project.created_by as string | undefined;
+    if (projectCreatedBy) {
+      activityLogDb.insert({
+        userId: projectCreatedBy,
+        eventType: 'project_created',
+        outcome: 'success',
+        recordId: project.id as string | undefined,
+        metadata: { projectTitle: String(project.name || project.title || ''), taskCount: tasks.length }
+      }, mockMode).catch(() => {});
+    }
     if (tasks.length === 0) return true;
     const { error: tasksErr } = await supabase!.from('project_tasks').insert(tasks);
     if (tasksErr) { console.error('[dataService] projects.insertWithTasks tasks', tasksErr); return false; }
@@ -1222,5 +1244,91 @@ export const inviteDb = {
     }
 
     return invite;
+  },
+};
+
+/** Insert an activity log entry — fire-and-forget, never blocks UI */
+/** Row shape returned by activityLogDb.fetchRecent (dates pre-parsed). */
+export interface ActivityLogRow {
+  id: string;
+  userId: string;
+  eventType: string;
+  eventTimestamp: Date;
+  recordId: string | null;
+  outcome: 'success' | 'failure';
+  metadata: Record<string, any> | null;
+}
+
+export const activityLogDb = {
+  /**
+   * Fire-and-forget insert — never blocks or throws, so callers awaiting it
+   * (login, session restore) can never fail because auditing failed. Errors
+   * are logged and reported as `false` instead.
+   */
+  async insert(entry: {
+    userId: string;
+    eventType: string;
+    outcome?: 'success' | 'failure';
+    recordId?: string;
+    metadata?: Record<string, any>;
+  }, mockMode?: boolean): Promise<boolean> {
+    if (!entry.userId) return false; // no valid actor — never write bogus rows
+    if (!shouldPersist(mockMode)) return true;
+    try {
+      const { error } = await supabase!.from('activity_log').insert({
+        user_id: entry.userId,
+        event_type: entry.eventType,
+        event_timestamp: new Date().toISOString(),
+        record_id: entry.recordId || null,
+        outcome: entry.outcome ?? 'success',
+        metadata: entry.metadata || null,
+      });
+      if (error) { console.error('[dataService] activity_log.insert', error); return false; }
+      return true;
+    } catch (err) {
+      console.error('[dataService] activity_log.insert threw', err);
+      return false;
+    }
+  },
+
+  /**
+   * Fetch a user's recent activity-log rows (RLS scopes to own rows).
+   * Returns null on DB error so callers can distinguish "no data" from
+   * "could not verify".
+   */
+  async fetchRecent(
+    userId: string,
+    opts?: { days?: number; limit?: number },
+    mockMode?: boolean
+  ): Promise<ActivityLogRow[] | null> {
+    if (!userId) return null;
+    // Mock/disconnected mode: nothing is persisted — an honest empty list,
+    // not an error. Null is reserved for "tried and could not verify".
+    if (!shouldPersist(mockMode)) return [];
+    try {
+      const days = opts?.days ?? 30;
+      const limit = opts?.limit ?? 50;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const { data, error } = await supabase!
+        .from('activity_log')
+        .select('id, user_id, event_type, event_timestamp, record_id, outcome, metadata')
+        .eq('user_id', userId)
+        .gte('event_timestamp', since)
+        .order('event_timestamp', { ascending: false })
+        .limit(limit);
+      if (error) { console.error('[dataService] activity_log.fetchRecent', error); return null; }
+      return (data ?? []).map((r) => ({
+        id: r.id as string,
+        userId: r.user_id as string,
+        eventType: r.event_type as string,
+        eventTimestamp: new Date(r.event_timestamp as string),
+        recordId: (r.record_id as string | null) ?? null,
+        outcome: (r.outcome as 'success' | 'failure') ?? 'success',
+        metadata: (r.metadata as Record<string, any> | null) ?? null,
+      }));
+    } catch (err) {
+      console.error('[dataService] activity_log.fetchRecent threw', err);
+      return null;
+    }
   },
 };
