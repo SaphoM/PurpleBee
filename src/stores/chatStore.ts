@@ -465,7 +465,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // a few times rather than leaving a dead listener in place.
           if (status === 'SUBSCRIBED') return;
           if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-            if (_typingChannels[conversationId] === channel) delete _typingChannels[conversationId];
+            // Re-entry/staleness guard: only the channel currently registered
+            // for this conversation may tear itself down. removeChannel() on an
+            // already-leaving channel fires CLOSED again synchronously — without
+            // this check the handler re-entered itself (removeChannel → leave →
+            // CLOSED → removeChannel → …) until the stack overflowed
+            // ("Maximum call stack size exceeded" on every chat unmount), and a
+            // stale CLOSED from a retired channel could tear down its fresh
+            // replacement. unsubscribeTyping() clears the map entry before it
+            // starts removing, so its own teardown takes this early-return path.
+            if (_typingChannels[conversationId] !== channel) return;
+            delete _typingChannels[conversationId];
             if (supabase) supabase.removeChannel(channel);
             if (_typingRefCounts[conversationId] && attempt < 3) {
               setTimeout(() => createChannel(attempt + 1), 300 * (attempt + 1));

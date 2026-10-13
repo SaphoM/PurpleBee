@@ -330,12 +330,14 @@ export const useUserStore = create<UserStore>((set, get) => ({
 
       if (!inviteError && inviteData) {
         for (const inv of inviteData) {
-          // Look up the profile for this invited email
+          // Look up the profile for this invited email. maybeSingle(): most
+          // pending invitees haven't signed up yet, and .single() turned that
+          // expected zero-row case into a noisy 406 (PGRST116) on every load.
           const { data: profileRow } = await supabase!
             .from('profiles')
             .select('id, name, email, avatar, role, title, department')
             .eq('email', inv.email)
-            .single();
+            .maybeSingle();
 
           if (profileRow && !seenIds.has(profileRow.id)) {
             seenIds.add(profileRow.id);
