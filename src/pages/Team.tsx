@@ -74,7 +74,7 @@ const mockExtendedData: Record<string, { department: string; title: string; join
 // Invite modal
 const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'user' | 'admin'>('user');
+  const [role, setRole] = useState<'user' | 'manager' | 'admin'>('user');
   const [selectedDepts, setSelectedDepts] = useState<string[]>(['General']);
   const [customDepts, setCustomDepts] = useState<string[]>([]);
   const [addingCustom, setAddingCustom] = useState(false);
@@ -239,7 +239,7 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
               />
               <select
                 value={role}
-                onChange={(e) => setRole(e.target.value as 'user' | 'admin')}
+                onChange={(e) => setRole(e.target.value as 'user' | 'manager' | 'admin')}
                 className={clsx(
                   'rounded-lg px-3 py-2.5 text-sm font-medium',
                   'bg-gray-50 border border-gray-200 text-gray-700',
@@ -248,6 +248,7 @@ const InviteModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpe
                 )}
               >
                 <option value="user">Member</option>
+                <option value="manager">Manager</option>
                 <option value="admin">Admin</option>
               </select>
             </div>

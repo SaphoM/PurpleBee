@@ -1195,55 +1195,29 @@ export const inviteDb = {
     return data;
   },
 
-  /** Fetch invite by token */
+  /** Fetch invite by token.
+   *  Goes through the SECURITY DEFINER helper `get_invite_by_token` instead
+   *  of a direct table read: the invites table deliberately has no SELECT
+   *  policy (so invites can't be enumerated), and the accept page must work
+   *  before sign-up (anon). Possession of the exact token is the capability. */
   async getByToken(token: string) {
     if (!isDbConnected()) return null;
     const { data, error } = await supabase!
-      .from('invites')
-      .select('*, teams(name), profiles!invites_invited_by_fkey(name, email)')
-      .eq('token', token)
-      .single();
+      .rpc('get_invite_by_token', { p_token: token });
     if (error) { console.error('[dataService] inviteDb.getByToken', error); return null; }
     return data;
   },
 
-  /** Accept an invite (used after sign-up via invite link) */
+  /** Accept an invite (used after sign-up via invite link).
+   *  One atomic SECURITY DEFINER call — the invitee is a brand-new 'user'
+   *  who cannot insert into team_members under RLS themselves. Returns the
+   *  invite row, or null when the token is invalid/expired/already used. */
   async accept(token: string, userId: string) {
     if (!isDbConnected()) return null;
-    // Fetch the invite
-    const invite = await this.getByToken(token);
-    if (!invite || invite.status !== 'pending') return null;
-    if (new Date(invite.expires_at) < new Date()) return null;
-
-    // Mark accepted
-    await supabase!
-      .from('invites')
-      .update({ status: 'accepted', accepted_by: userId, updated_at: new Date().toISOString() })
-      .eq('id', invite.id);
-
-    // Add to team if not already a member
-    const { data: existing } = await supabase!
-      .from('team_members')
-      .select('id')
-      .eq('team_id', invite.team_id)
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (!existing) {
-      await supabase!
-        .from('team_members')
-        .insert({ team_id: invite.team_id, user_id: userId, role: invite.role });
-    }
-
-    // Apply the pre-assigned department from the invite to the new member's profile
-    if (invite.department) {
-      await supabase!
-        .from('profiles')
-        .update({ department: invite.department })
-        .eq('id', userId);
-    }
-
-    return invite;
+    const { data, error } = await supabase!
+      .rpc('accept_invite', { p_token: token, p_user_id: userId });
+    if (error) { console.error('[dataService] inviteDb.accept', error); return null; }
+    return data;
   },
 };
 
