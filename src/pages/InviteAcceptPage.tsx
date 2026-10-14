@@ -42,8 +42,17 @@ export const InviteAcceptPage: React.FC<{ token: string }> = ({ token }) => {
       } else {
         setInvite(data as InviteData);
 
-        // If user is already authenticated (came via magic link), auto-accept
-        if (user) {
+        // The invite is addressed to a specific email — never auto-accept it
+        // as a different signed-in account (the DB rejects this too; this
+        // guard turns it into a clear message instead of a doomed RPC that
+        // the failure branch below would misread as "already accepted").
+        const mismatch =
+          !!data.email && !!user && data.email.toLowerCase() !== user.email.toLowerCase();
+        if (user && mismatch) {
+          setError(
+            `This invite was sent to ${data.email}, but you're signed in as ${user.email}. Sign out and open the link with the invited account.`
+          );
+        } else if (user) {
           setAccepting(true);
           const result = await inviteDb.accept(token, user.id);
           if (result) {
@@ -73,6 +82,14 @@ export const InviteAcceptPage: React.FC<{ token: string }> = ({ token }) => {
 
   const handleAccept = async () => {
     if (!user || !invite) return;
+    // Defense in depth — normally the effect above already shows the mismatch
+    // error card before this button renders (the DB enforces it regardless).
+    if (invite.email && invite.email.toLowerCase() !== user.email.toLowerCase()) {
+      setError(
+        `This invite was sent to ${invite.email}, but you're signed in as ${user.email}. Sign out and open the link with the invited account.`
+      );
+      return;
+    }
     setAccepting(true);
     const result = await inviteDb.accept(token, user.id);
     if (result) {

@@ -255,7 +255,16 @@ async function restoreUserSession(
     sessionStorage.removeItem('purplebee-invite-token');
     try {
       const { inviteDb } = await import('@/lib/dataService');
-      await inviteDb.accept(pendingToken, supaUser.id);
+      // Only consume the invite when it is addressed to this account —
+      // accept_invite rejects mismatches server-side, and skipping the call
+      // avoids a guaranteed-failing RPC (and a confusing console error) when a
+      // stale token is replayed by a different signed-in user.
+      const pendingInvite = await inviteDb.getByToken(pendingToken);
+      const inviteEmail = pendingInvite?.email?.toLowerCase();
+      const myEmail = supaUser.email?.toLowerCase();
+      if (!inviteEmail || (myEmail && inviteEmail === myEmail)) {
+        await inviteDb.accept(pendingToken, supaUser.id);
+      }
       try {
         const team = await authDb.getTeamForUser(supaUser.id);
         if (team) set({ currentTeamId: team.team_id, currentTeamName: team.team?.name || null });
