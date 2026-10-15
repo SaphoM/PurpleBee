@@ -364,6 +364,12 @@ export interface ChatMessage {
   text: string;
   timestamp: Date;
   readBy: string[];
+  /** WhatsApp-style: users whose client received the message (any receipt row). */
+  deliveredBy?: string[];
+  /** WhatsApp-style: users who actually opened/saw it (receipt row with read_at). */
+  seenBy?: string[];
+  /** Client-side send lifecycle for the 1-tick -> 2-tick progression. */
+  status?: 'sending' | 'sent' | 'failed';
   replyTo?: ReplyRef;
   attachments?: Attachment[];
   reactions?: MessageReaction[];

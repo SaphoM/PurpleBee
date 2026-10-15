@@ -663,7 +663,7 @@ export const chatDb = {
     // to only the current user (which happens with !inner + .eq()).
     const { data, error } = await supabase!
       .from('conversations')
-      .select('*, conversation_participants(*, profile:profiles(id, name, avatar, role))')
+      .select('*, conversation_participants(*, profile:profiles(id, name, avatar, role, last_seen_at))')
       .in('id', convIds)
       .order('updated_at', { ascending: false });
     if (error) { console.error('[dataService] chat.fetchConversations', error); return null; }
@@ -679,7 +679,8 @@ export const chatDb = {
         *,
         sender:profiles!sender_id(name, avatar),
         reactions:message_reactions(*),
-        attachments:attachments(*)
+        attachments:attachments(*),
+        reads:message_reads(user_id, read_at)
       `)
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
@@ -695,6 +696,56 @@ export const chatDb = {
       .update({ unread_count: 0, last_read_at: new Date().toISOString() })
       .eq('conversation_id', conversationId)
       .eq('user_id', userId);
+
+    // Also write per-message seen receipts (message_reads) so senders get
+    // the blue double-tick. Rows are upserted: a delivered-only row (no
+    // read_at) becomes seen; existing seen rows are refreshed harmlessly.
+    // Fire-and-forget — unread badge clearing above already succeeded.
+    try {
+      const { data: unread } = await supabase!
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .neq('sender_id', userId)
+        .limit(500);
+      if (unread && unread.length > 0) {
+        await supabase!
+          .from('message_reads')
+          .upsert(
+            unread.map((m) => ({ message_id: m.id, user_id: userId, read_at: new Date().toISOString() })),
+            { onConflict: 'message_id,user_id' }
+          );
+      }
+    } catch (err) {
+      console.warn('[dataService] chat.markConversationRead receipts', err);
+    }
+  },
+
+  /**
+   * Delivery receipt: record that this user's client received the message
+   * (double grey tick for the sender). read_at stays null until the message
+   * is actually viewed (markConversationRead). Upsert — receiving the same
+   * message twice (reconnect/replay) must not create duplicate rows.
+   */
+  async markMessageDelivered(messageId: string, userId: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return;
+    const { error } = await supabase!
+      .from('message_reads')
+      .upsert(
+        { message_id: messageId, user_id: userId, read_at: null },
+        { onConflict: 'message_id,user_id', ignoreDuplicates: true }
+      );
+    if (error) console.warn('[dataService] chat.markMessageDelivered', error);
+  },
+
+  /** Heartbeat: persist "last seen" for the WhatsApp-style presence display. */
+  async touchLastSeen(userId: string, mockMode?: boolean) {
+    if (!shouldPersist(mockMode)) return;
+    const { error } = await supabase!
+      .from('profiles')
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq('id', userId);
+    if (error) console.warn('[dataService] profiles.touchLastSeen', error);
   },
 
   /** Increment unread_count for a specific participant in a conversation */
@@ -724,7 +775,8 @@ export const chatDb = {
         *,
         sender:profiles!sender_id(name, avatar),
         reactions:message_reactions(*),
-        attachments:attachments(*)
+        attachments:attachments(*),
+        reads:message_reads(user_id, read_at)
       `)
       .eq('id', messageId)
       .single();
@@ -932,7 +984,7 @@ export const chatDb = {
     if (teamId) {
       const { data, error } = await supabase!
         .from('team_members')
-        .select('user_id, role, profiles!inner(id, name, email, avatar, role, title, department)')
+        .select('user_id, role, profiles!inner(id, name, email, avatar, role, title, department, last_seen_at)')
         .eq('team_id', teamId);
       if (error) { console.error('[dataService] chat.fetchTeamMembers', error); return null; }
       return data;

@@ -771,6 +771,7 @@ export const Team: React.FC = () => {
         avatar: profile.avatar,
         role: profile.role === 'admin' ? 'admin' : 'member',
         online: chatMember?.online ?? false,
+        lastSeen: chatMember?.lastSeen,
       };
 
       const assigned = tasks.filter((t) => t.assignedTo === profile.id);

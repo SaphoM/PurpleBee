@@ -41,6 +41,10 @@ let _messageChannel: RealtimeChannel | null = null;
 
 // ─── Realtime presence — tracks who is online across the team ────────
 let _presenceChannel: RealtimeChannel | null = null;
+// ─── Realtime receipts — live delivered/seen tick updates (message_reads)
+let _receiptChannel: RealtimeChannel | null = null;
+// ─── Heartbeat writing profiles.last_seen_at (WhatsApp-style last seen)
+let _lastSeenTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Aggregate DB reaction rows into the app's { emoji, users[] } shape */
 function aggregateReactions(rows: { emoji: string; user_id: string }[]): { emoji: string; users: string[] }[] {
@@ -53,8 +57,12 @@ function aggregateReactions(rows: { emoji: string; user_id: string }[]): { emoji
   return Array.from(map, ([emoji, users]) => ({ emoji, users }));
 }
 
-/** Map a raw Supabase message row (with joined sender/reactions/attachments) to ChatMessage */
+/** Map a raw Supabase message row (with joined sender/reactions/attachments/reads) to ChatMessage */
 function dbRowToMessage(m: any): ChatMessage {
+  // WhatsApp-style receipts: a message_reads row = delivered; read_at set = seen.
+  const reads: { user_id: string; read_at: string | null }[] = m.reads || [];
+  const deliveredBy = Array.from(new Set(reads.map((r) => r.user_id))) as string[];
+  const seenBy = reads.filter((r) => r.read_at).map((r) => r.user_id);
   return {
     id: m.id,
     conversationId: m.conversation_id,
@@ -63,7 +71,10 @@ function dbRowToMessage(m: any): ChatMessage {
     senderAvatar: m.sender?.avatar,
     text: m.text,
     timestamp: new Date(m.created_at),
-    readBy: [m.sender_id],
+    readBy: [m.sender_id, ...seenBy],
+    deliveredBy,
+    seenBy,
+    status: 'sent',
     attachments: (m.attachments || []).map((a: any) => ({
       id: a.id,
       name: a.name,
@@ -361,6 +372,8 @@ interface ChatStore {
   restoreMockData: (userId: string) => void;
   subscribeMessages: () => void;
   unsubscribeMessages: () => void;
+  subscribeReceipts: () => void;
+  unsubscribeReceipts: () => void;
   subscribePresence: (teamId: string | null) => void;
   unsubscribePresence: () => void;
 
@@ -604,6 +617,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       text: trimmed,
       timestamp: new Date(),
       readBy: [currentUserId],
+      deliveredBy: [],
+      seenBy: [],
+      status: 'sending',
       ...(attachments && attachments.length > 0 ? { attachments } : {}),
       ...(taskRef ? { taskRef } : {}),
       ...(replyTo ? { replyTo } : {}),
@@ -641,7 +657,18 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     chatDb.sendMessage(
       { id: newMessage.id, conversationId, senderId: currentUserId, text: trimmed, taskRef: taskRef ?? undefined, replyTo: replyTo ?? undefined },
       mock
-    );
+    ).then((ok) => {
+      // 1-tick (sending) -> 2-tick (sent/delivered) progression for the bubble
+      set((state) => {
+        const list = state.messages[conversationId];
+        if (!list) return state;
+        const idx = list.findIndex((m) => m.id === newMessage.id);
+        if (idx === -1) return state;
+        const copy = [...list];
+        copy[idx] = { ...copy[idx], status: ok ? 'sent' : 'failed' };
+        return { messages: { ...state.messages, [conversationId]: copy } };
+      });
+    });
     if (attachments && attachments.length > 0) {
       chatDb.insertAttachments(newMessage.id, attachments, currentUserId, mock);
     }
@@ -1161,6 +1188,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           avatar,
           role: (row.role || p.role || 'user') as 'admin' | 'member',
           online: uid === userId,
+          lastSeen: p.last_seen_at ? new Date(p.last_seen_at) : undefined,
         };
       });
     } else {
@@ -1205,6 +1233,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             avatar: known?.avatar || profile.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${cp.user_id}`,
             role: (cp.role || profile.role || 'member') as 'admin' | 'member',
             online: cp.user_id === userId,
+            lastSeen: known?.lastSeen || (profile.last_seen_at ? new Date(profile.last_seen_at) : undefined),
           };
         });
 
@@ -1317,6 +1346,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     // Start (or restart) realtime subscriptions
     get().unsubscribeMessages();
     get().subscribeMessages();
+    get().unsubscribeReceipts();
+    get().subscribeReceipts();
     get().unsubscribePresence();
     get().subscribePresence(teamId);
   },
@@ -1337,13 +1368,67 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           // Skip our own optimistically-added messages
           if (payload.new.sender_id === currentUserId) return;
 
-          // Only process conversations the user is a participant in
-          if (!get().conversations.some((c) => c.id === convId)) return;
-
           // Avoid duplicates (only relevant when messages are already loaded)
           if ((get().messages[convId] || []).some((m) => m.id === msgId)) return;
 
           const isActive = activeConversationId === convId;
+
+          // Conversation not loaded yet (e.g. a brand-new DM someone just
+          // started with us, or a channel created while we were offline) —
+          // pull it in so the message isn't silently dropped.
+          if (!get().conversations.some((c) => c.id === convId)) {
+            try {
+              const [convRes, membersRes] = await Promise.all([
+                supabase!.from('conversations').select('*').eq('id', convId).single(),
+                supabase!
+                  .from('conversation_participants')
+                  .select('user_id, role, unread_count, profile:profiles(id, name, avatar, role, last_seen_at)')
+                  .eq('conversation_id', convId),
+              ]);
+              const dc = convRes.data;
+              const memberRows = membersRes.data || [];
+              if (dc && memberRows.some((r: any) => r.user_id === currentUserId)) {
+                const known = get().teamMembers;
+                const participants: ChatParticipant[] = memberRows.map((cp: any) => {
+                  const k = known.find((rp) => rp.userId === cp.user_id);
+                  const prof = cp.profile || {};
+                  return {
+                    userId: cp.user_id,
+                    name: k?.name || prof.name || cp.user_id,
+                    avatar: k?.avatar || prof.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${cp.user_id}`,
+                    role: (cp.role || prof.role || 'member') as 'admin' | 'member',
+                    online: cp.user_id === currentUserId || (k?.online ?? false),
+                    lastSeen: k?.lastSeen || (prof.last_seen_at ? new Date(prof.last_seen_at) : undefined),
+                  };
+                });
+                const other = participants.find((pp) => pp.userId !== currentUserId);
+                const freshConv: Conversation = {
+                  id: convId,
+                  type: dc.type,
+                  name: dc.type === 'dm' ? other?.name || dc.name : dc.name,
+                  description: dc.description || undefined,
+                  participants,
+                  taskId: dc.task_id || undefined,
+                  taskTitle: dc.task_title || undefined,
+                  teamId: dc.team_id || undefined,
+                  unreadCount: 0, // ① below applies the live +1 (DB already has it from the sender)
+                  pinned: dc.pinned,
+                  createdAt: new Date(dc.created_at),
+                  updatedAt: new Date(dc.updated_at),
+                };
+                set((state) => ({
+                  conversations: [freshConv, ...state.conversations],
+                  messages: { ...state.messages, [convId]: state.messages[convId] || [] },
+                }));
+              }
+            } catch (err) {
+              console.warn('[chatStore] could not load conversation for incoming message', err);
+            }
+          }
+
+          // Delivery receipt — our client received it (double grey tick for sender).
+          // If the thread is open, markAsRead below writes the seen receipt too.
+          chatDb.markMessageDelivered(msgId, currentUserId, false);
 
           // ① Immediately update the in-memory badge from the raw Realtime payload —
           //    no async wait, so the count appears the moment the message arrives.
@@ -1383,6 +1468,78 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (_messageChannel && supabase) {
       supabase.removeChannel(_messageChannel);
       _messageChannel = null;
+    }
+  },
+
+  subscribeReceipts: () => {
+    if (!supabase || _receiptChannel) return;
+    _receiptChannel = supabase
+      .channel('purplebee-receipts')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'message_reads' },
+        (payload) => {
+          const row = payload.new as { message_id?: string; user_id?: string; read_at?: string | null } | undefined;
+          if (!row?.message_id || !row?.user_id) return; // DELETE payloads carry no usable new row
+          const readerId = row.user_id;
+          const isSeen = !!row.read_at;
+
+          set((state) => {
+            let changed = false;
+
+            const merge = (m: ChatMessage): ChatMessage => {
+              const deliveredBy = (m.deliveredBy || []).includes(readerId)
+                ? m.deliveredBy!
+                : [...(m.deliveredBy || []), readerId];
+              const seenBy = isSeen
+                ? (m.seenBy || []).includes(readerId) ? m.seenBy! : [...(m.seenBy || []), readerId]
+                : m.seenBy || [];
+              const readBy = isSeen && !m.readBy.includes(readerId) ? [...m.readBy, readerId] : m.readBy;
+              if (deliveredBy === m.deliveredBy && seenBy === m.seenBy && readBy === m.readBy) return m;
+              changed = true;
+              return { ...m, deliveredBy, seenBy, readBy };
+            };
+
+            // Update the message in every conversation thread that holds it
+            let messagesChanged = false;
+            const nextMessages: Record<string, ChatMessage[]> = {};
+            for (const [cid, list] of Object.entries(state.messages)) {
+              const idx = list.findIndex((m) => m.id === row.message_id);
+              if (idx === -1) { nextMessages[cid] = list; continue; }
+              const merged = merge(list[idx]);
+              if (merged !== list[idx]) {
+                const copy = [...list];
+                copy[idx] = merged;
+                nextMessages[cid] = copy;
+                messagesChanged = true;
+              } else {
+                nextMessages[cid] = list;
+              }
+            }
+
+            // …and the conversation's lastMessage so the sidebar ticks update
+            const conversations = state.conversations.map((c) => {
+              const lm = c.lastMessage;
+              if (!lm || lm.id !== row.message_id) return c;
+              const mergedLm = merge(lm);
+              return mergedLm !== lm ? { ...c, lastMessage: mergedLm } : c;
+            });
+
+            if (!changed) return state;
+            return {
+              messages: messagesChanged ? nextMessages : state.messages,
+              conversations,
+            };
+          });
+        }
+      )
+      .subscribe();
+  },
+
+  unsubscribeReceipts: () => {
+    if (_receiptChannel && supabase) {
+      supabase.removeChannel(_receiptChannel);
+      _receiptChannel = null;
     }
   },
 
@@ -1454,11 +1611,27 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED' && _presenceChannel) {
           await _presenceChannel.track({ userId: currentUserId, name: currentUserName });
+          // WhatsApp-style last seen: stamp now on connect and keep a light
+          // heartbeat while the app is open, so other members see an accurate
+          // "last seen" instead of an in-memory value lost on refresh.
+          chatDb.touchLastSeen(currentUserId, false);
+          if (_lastSeenTimer) clearInterval(_lastSeenTimer);
+          _lastSeenTimer = setInterval(() => {
+            const uid = get().currentUserId;
+            if (uid) chatDb.touchLastSeen(uid, false);
+          }, 45000);
         }
       });
   },
 
   unsubscribePresence: () => {
+    if (_lastSeenTimer) {
+      clearInterval(_lastSeenTimer);
+      _lastSeenTimer = null;
+      // Final stamp so "last seen" freezes at disconnect time
+      const uid = get().currentUserId;
+      if (uid) chatDb.touchLastSeen(uid, false);
+    }
     if (_presenceChannel && supabase) {
       supabase.removeChannel(_presenceChannel);
       _presenceChannel = null;
