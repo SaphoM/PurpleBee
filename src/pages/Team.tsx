@@ -429,7 +429,11 @@ const MemberDetailModal: React.FC<{
                 {member.department}
               </span>
               <span className="text-xs text-gray-400 dark:text-slate-500">
-                {member.member.online ? 'Online' : `Last seen ${member.member.lastSeen ? formatDistanceToNow(member.member.lastSeen, { addSuffix: true }) : 'recently'}`}
+                {member.member.online
+                  ? 'Online'
+                  : member.member.lastSeen
+                    ? `Last seen ${formatDistanceToNow(member.member.lastSeen, { addSuffix: true })}`
+                    : 'Never been online'}
               </span>
             </div>
           </div>
@@ -1048,6 +1052,15 @@ export const Team: React.FC = () => {
                     <span className={clsx('inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold mt-1.5', deptStyle.bg, deptStyle.color)}>
                       {m.department}
                     </span>
+                    <p className="text-[11px] mt-1.5 text-gray-500 dark:text-slate-400">
+                      {m.member.online ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-medium">Online</span>
+                      ) : m.member.lastSeen ? (
+                        <>Last seen {formatDistanceToNow(new Date(m.member.lastSeen), { addSuffix: true })}</>
+                      ) : (
+                        'Never been online'
+                      )}
+                    </p>
                   </div>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleMessage(m.member.userId); }}

@@ -482,6 +482,8 @@ interface ProjectStore {
   removeProjectTask: (projectId: string, taskId: string) => void;
   updateProjectTask: (projectId: string, taskId: string, updates: Partial<ProjectTask>) => void;
   assignProjectTask: (projectId: string, taskId: string, userId: string) => void;
+  /** Bulk: assign EVERY task in the project to one person (admin/manager action). Returns count changed. */
+  assignAllProjectTasks: (projectId: string, userId: string) => number;
   linkProjectTask: (projectId: string, projectTaskId: string, linkedTaskId: string) => void;
 
   // Queries
@@ -846,6 +848,54 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   assignProjectTask: (projectId, taskId, userId) => {
     get().updateProjectTask(projectId, taskId, { assignedTo: userId });
+  },
+
+  /**
+   * One-click "Assign all to…" — reassigns every task in the project to the
+   * chosen member so admins/managers don't have to repeat the per-task
+   * dropdown over and over. Persists each task and sends ONE summary
+   * notification (same pattern as the creation wizard), not one per task.
+   */
+  assignAllProjectTasks: (projectId, userId) => {
+    const project = get().projects.find((p) => p.id === projectId);
+    if (!project) return 0;
+    const toAssign = project.tasks.filter((t) => t.assignedTo !== userId);
+    if (toAssign.length === 0) return 0;
+
+    set((state) => {
+      const next = state.projects.map((p) =>
+        p.id === projectId
+          ? {
+              ...p,
+              tasks: p.tasks.map((t) => (t.assignedTo !== userId ? { ...t, assignedTo: userId } : t)),
+              updatedAt: new Date(),
+            }
+          : p
+      );
+      persistProjects(next);
+      return { projects: next };
+    });
+
+    // Persist every changed task (project_tasks.assigned_to) — same write the
+    // per-task dropdown does, just batched here.
+    toAssign.forEach((t) => {
+      projectDb.updateTask(t.id, { assigned_to: userId }, isMockMode());
+    });
+
+    // Single summary notification for the assignee.
+    if (isValidUuid(userId)) {
+      const { userId: currentUserId, userName } = getTeamContext();
+      notifyUser({
+        actorId: currentUserId,
+        recipientId: userId,
+        type: 'task-assigned',
+        title: 'Tasks assigned to you',
+        message: `${userName} assigned you ${toAssign.length} task${toAssign.length > 1 ? 's' : ''} in ${project.name}`,
+        actionUrl: `#projects?projectId=${projectId}`,
+      });
+    }
+
+    return toAssign.length;
   },
 
   linkProjectTask: (projectId, projectTaskId, linkedTaskId) => {

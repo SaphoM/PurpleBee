@@ -1179,7 +1179,7 @@ const industrySuggestions: Record<string, { title: string; description: string; 
 
 // ── Project Detail View ────────────────────────────────────────────────
 const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ projectId, onBack }) => {
-  const { getProjectById, updateProject, assignProjectTask, removeProjectTask, addProjectTask, updateProjectTask } = useProjectStore();
+  const { getProjectById, updateProject, assignProjectTask, assignAllProjectTasks, removeProjectTask, addProjectTask, updateProjectTask } = useProjectStore();
   const { addTask, tasks: boardTasks } = useTaskStore();
   const { isAdmin, isManager } = useUserStore();
   const currentUserId = useUserStore((s) => s.user?.id);
@@ -1541,17 +1541,58 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       <div>
         <div className="flex items-center justify-between mb-4 gap-3">
           <h2 className="text-lg font-bold text-gray-900 dark:text-slate-100">Project Tasks</h2>
-          <button
-            onClick={() => setShowAddTask(true)}
-            className={clsx(
-              'px-4 py-2 sm:px-3 sm:py-1.5 rounded-lg text-sm sm:text-xs font-medium flex items-center gap-1.5',
-              'bg-purple-100 text-purple-700 hover:bg-purple-200',
-              'dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50',
-              'transition-colors'
+          <div className="flex items-center gap-2">
+            {canManage && project.tasks.length > 0 && (
+              <select
+                value=""
+                onChange={(e) => {
+                  const memberId = e.target.value;
+                  if (!memberId) return;
+                  const member = assignableMembers.find((m) => m.id === memberId);
+                  const memberName = member?.name || 'that member';
+                  const count = assignAllProjectTasks(project.id, memberId);
+                  if (count > 0) {
+                    addToast({
+                      type: 'success',
+                      title: 'All tasks assigned',
+                      message: `${count} task${count > 1 ? 's' : ''} now assigned to ${memberName}`,
+                      duration: 4000,
+                    });
+                  } else {
+                    addToast({
+                      type: 'info',
+                      title: 'Already assigned',
+                      message: `Every task is already assigned to ${memberName}`,
+                      duration: 3500,
+                    });
+                  }
+                }}
+                className={clsx(
+                  'px-3 py-2 sm:py-1.5 rounded-lg text-sm sm:text-xs font-medium cursor-pointer',
+                  'bg-emerald-100 text-emerald-700 hover:bg-emerald-200',
+                  'dark:bg-emerald-900/30 dark:text-emerald-300 dark:hover:bg-emerald-900/50',
+                  'transition-colors'
+                )}
+                title="Assign every task in this project to one person"
+              >
+                <option value="">Assign all to…</option>
+                {assignableMembers.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
             )}
-          >
-            <Plus size={14} /> Add Task
-          </button>
+            <button
+              onClick={() => setShowAddTask(true)}
+              className={clsx(
+                'px-4 py-2 sm:px-3 sm:py-1.5 rounded-lg text-sm sm:text-xs font-medium flex items-center gap-1.5',
+                'bg-purple-100 text-purple-700 hover:bg-purple-200',
+                'dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50',
+                'transition-colors'
+              )}
+            >
+              <Plus size={14} /> Add Task
+            </button>
+          </div>
         </div>
 
         {showAddTask && (
