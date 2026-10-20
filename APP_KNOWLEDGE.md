@@ -252,8 +252,8 @@ message or add a photo → Post. It disappears after 24 hours.
 
 **View someone's status** — tap their circle in the statuses row.
 
-**Change your profile picture** — Settings → Account → hover your avatar →
-click the camera → choose an image (up to 5 MB).
+**Change your profile picture** — Settings → Account → click your avatar
+(the small camera badge on it) → choose an image (up to 5 MB).
 
 **Change your password** — Settings → Account → Change password → current +
 new password. (If you've forgotten it, use "Forgot password?" on the login

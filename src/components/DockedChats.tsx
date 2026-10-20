@@ -704,7 +704,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
               >
                 <Paperclip size={14} />
               </button>
-              <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
+              <input ref={fileInputRef} type="file" multiple className="sr-only" onChange={handleFileSelect} />
               <input
                 ref={inputRef}
                 type="text"

@@ -1495,7 +1495,7 @@ export const Chat: React.FC = () => {
                     ref={fileInputRef}
                     type="file"
                     multiple
-                    className="hidden"
+                    className="sr-only"
                     onChange={handleFileSelect}
                     accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.csv"
                   />
@@ -1884,7 +1884,7 @@ export const Chat: React.FC = () => {
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.csv" />
+                <input ref={fileInputRef} type="file" multiple className="sr-only" onChange={handleFileSelect} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.csv" />
                 <button onClick={() => fileInputRef.current?.click()} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 dark:text-slate-500 dark:hover:bg-slate-700 transition-colors" title="Attach file">
                   <Paperclip size={18} />
                 </button>
@@ -2039,7 +2039,7 @@ export const Chat: React.FC = () => {
               ref={statusImageRef}
               type="file"
               accept="image/*"
-              className="hidden"
+              className="sr-only"
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 e.target.value = '';

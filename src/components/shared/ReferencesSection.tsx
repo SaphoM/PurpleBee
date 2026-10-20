@@ -191,7 +191,7 @@ export const ReferencesSection: React.FC<ReferencesSectionProps> = ({
             multiple
             accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.csv,.json,.md"
             onChange={handleFileUpload}
-            className="hidden"
+            className="sr-only"
           />
         </div>
       </div>

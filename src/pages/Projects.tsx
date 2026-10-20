@@ -703,7 +703,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                     type="file"
                     accept="image/*"
                     onChange={handleLogoUpload}
-                    className="hidden"
+                    className="sr-only"
                   />
                 </div>
               </div>
@@ -2234,7 +2234,7 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
                 type="file"
                 accept="image/*"
                 onChange={handleLogoUpload}
-                className="hidden"
+                className="sr-only"
               />
             </div>
           </div>

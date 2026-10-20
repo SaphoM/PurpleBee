@@ -625,7 +625,6 @@ export const SettingsPage: React.FC = () => {
   const isRecoveryMode = window.location.hash.includes('recovery=true');
 
   // ── Profile picture upload → public avatars bucket → profiles.avatar ──
-  const avatarFileRef = React.useRef<HTMLInputElement>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const { addToast } = useToastStore();
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1187,30 +1186,29 @@ export const SettingsPage: React.FC = () => {
                   {user && (
                     <div className="space-y-5">
                       <div className="flex items-center gap-4">
-                        <div className="group relative flex-shrink-0">
+                        <div className="group relative flex-shrink-0 w-16 h-16 rounded-2xl focus-within:ring-2 focus-within:ring-purple-500" title="Change profile picture">
                           <img
                             src={user.avatar}
                             alt={user.name}
                             className="w-16 h-16 rounded-2xl ring-2 ring-gray-200 dark:ring-slate-700 object-cover bg-gray-100 dark:bg-slate-700/50"
                           />
-                          <button
-                            type="button"
-                            onClick={() => avatarFileRef.current?.click()}
-                            disabled={uploadingAvatar}
-                            title="Change profile picture"
-                            className="absolute inset-0 rounded-2xl bg-black/45 opacity-0 group-hover:opacity-100 focus:opacity-100 flex items-center justify-center transition-opacity disabled:cursor-wait"
-                          >
-                            {uploadingAvatar
-                              ? <Loader2 size={18} className="text-white animate-spin" />
-                              : <Camera size={18} className="text-white" />}
-                          </button>
+                          {/* The file input itself sits over the photo, so clicking or
+                              tapping the avatar opens the native picker in every
+                              browser — no hover, no JS .click() on a hidden input. */}
                           <input
-                            ref={avatarFileRef}
                             type="file"
                             accept="image/*"
-                            className="hidden"
+                            disabled={uploadingAvatar}
                             onChange={handleAvatarUpload}
+                            aria-label="Change profile picture"
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-wait"
                           />
+                          {/* Decorative badge — never blocks clicks (pointer-events-none) */}
+                          <span className="pointer-events-none absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-purple-600 shadow dark:border-slate-800">
+                            {uploadingAvatar
+                              ? <Loader2 size={11} className="text-white animate-spin" />
+                              : <Camera size={11} className="text-white" />}
+                          </span>
                         </div>
                         <div>
                           <p className="text-lg font-bold text-gray-900 dark:text-slate-100">{user.name}</p>
