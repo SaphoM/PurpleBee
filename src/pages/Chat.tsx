@@ -23,6 +23,8 @@ import {
   SmilePlus,
   CornerUpLeft,
   Trash2,
+  Mic,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 const TelegramIcon = ({ size = 16 }: { size?: number }) => (
@@ -32,6 +34,8 @@ const TelegramIcon = ({ size = 16 }: { size?: number }) => (
 );
 import { useChatStore } from '@stores/chatStore';
 import { useUserStore } from '@stores/userStore';
+import { useSettingsStore } from '@stores/settingsStore';
+import { chatDb, statusDb, type StatusRow } from '@/lib/dataService';
 import { ConversationType, Attachment, ReplyRef, ChatMessage } from '@/types/index';
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
@@ -164,6 +168,7 @@ const downloadAttachment = (attachment: Attachment) => {
 
 const AttachmentBubble: React.FC<{ attachment: Attachment; isMe: boolean; compact?: boolean }> = ({ attachment, isMe, compact }) => {
   const isImage = attachment.type.startsWith('image/');
+  const isAudio = attachment.type.startsWith('audio/');
   const iconSize = compact ? 12 : 16;
   const dlIconSize = compact ? 12 : 14;
   return (
@@ -171,7 +176,16 @@ const AttachmentBubble: React.FC<{ attachment: Attachment; isMe: boolean; compac
       'mt-1.5 rounded-lg overflow-hidden border',
       isMe ? 'border-white/20' : 'border-gray-200 dark:border-slate-600',
     )}>
-      {isImage && attachment.previewUrl ? (
+      {isAudio ? (
+        /* Voice message — inline player (WhatsApp-style) */
+        <div
+          className={clsx('flex items-center gap-2 px-2 py-1.5', isMe ? 'bg-white/10' : 'bg-gray-50 dark:bg-slate-700/50')}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Mic size={iconSize} className={clsx('flex-shrink-0', isMe ? 'text-white/70' : 'text-purple-500')} />
+          <audio controls preload="metadata" src={attachment.url} className={compact ? 'w-36 h-8' : 'w-56 h-9'} />
+        </div>
+      ) : isImage && attachment.previewUrl ? (
         <div className="relative group">
           <img src={attachment.previewUrl} alt={attachment.name} className={clsx(compact ? 'max-w-[160px] max-h-[120px]' : 'max-w-[240px] max-h-[180px]', 'object-cover rounded-lg')} />
           <button
@@ -406,6 +420,26 @@ export const Chat: React.FC = () => {
   const isSendingRef = useRef(false);
   const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Voice recording (WhatsApp-style voice notes) ──
+  const canRecord = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof window !== 'undefined' && typeof MediaRecorder !== 'undefined';
+  const [isRecording, setIsRecording] = useState(false);
+  const [recSeconds, setRecSeconds] = useState(0);
+  const [isSendingVoice, setIsSendingVoice] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recChunksRef = useRef<Blob[]>([]);
+  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recCancelledRef = useRef(false);
+  const recConvIdRef = useRef<string | null>(null);
+
+  // ── WhatsApp-style statuses (24h) ──
+  const [statuses, setStatuses] = useState<StatusRow[]>([]);
+  const [statusViewerId, setStatusViewerId] = useState<string | null>(null);
+  const [showStatusComposer, setShowStatusComposer] = useState(false);
+  const [statusText, setStatusText] = useState('');
+  const [statusImage, setStatusImage] = useState<File | null>(null);
+  const [postingStatus, setPostingStatus] = useState(false);
+  const statusImageRef = useRef<HTMLInputElement>(null);
+
   const conversations = getFilteredConversations();
   // Direct tab: every team member is always reachable, even without an
   // existing DM — members without an open DM are listed as one click away.
@@ -428,6 +462,149 @@ export const Chat: React.FC = () => {
     : [];
   const activeConversation = useChatStore((s) => s.conversations.find((c) => c.id === s.activeConversationId));
   const activeMessages = activeConversationId ? getConversationMessages(activeConversationId) : [];
+  const currentUserAvatar = useChatStore((s) => s.currentUserAvatar);
+  const viewingStatus = statuses.find((st) => st.id === statusViewerId) || null;
+  const statusImagePreview = statusImage ? URL.createObjectURL(statusImage) : null;
+
+  const loadStatuses = React.useCallback(async () => {
+    const teamId = useUserStore.getState().currentTeamId;
+    if (!teamId) return;
+    const rows = await statusDb.fetchActive(teamId, useSettingsStore.getState().keepMockData);
+    if (rows) setStatuses(rows);
+  }, []);
+
+  // Load statuses, self-clean expired rows, live-refresh on insert/delete
+  useEffect(() => {
+    loadStatuses();
+    const uid = useUserStore.getState().user?.id;
+    if (uid) statusDb.cleanupExpired(uid, useSettingsStore.getState().keepMockData);
+    const unsub = statusDb.subscribe(() => { loadStatuses(); });
+    return () => unsub();
+  }, [loadStatuses]);
+
+  // Viewer target expired or was deleted while open → close it
+  useEffect(() => {
+    if (statusViewerId && statuses.length >= 0 && !statuses.some((st) => st.id === statusViewerId)) {
+      setStatusViewerId(null);
+    }
+  }, [statuses, statusViewerId]);
+
+  // ── Voice recording engine ──────────────────────────────────────────
+  const formatRecTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+  const finishVoiceNote = async (blob: Blob) => {
+    const convId = recConvIdRef.current;
+    recConvIdRef.current = null;
+    if (!convId) return;
+    setIsSendingVoice(true);
+    try {
+      const url = await chatDb.uploadVoiceNote(currentUserId, blob, useSettingsStore.getState().keepMockData);
+      if (!url) {
+        addToast({ type: 'error', title: 'Voice message failed', message: 'Could not upload the recording — please try again', duration: 5000 });
+        return;
+      }
+      const att: Attachment = {
+        id: uuidv4(),
+        name: `Voice message · ${format(new Date(), 'MMM d, HH:mm')}`,
+        url,
+        type: blob.type || 'audio/webm',
+        size: blob.size,
+        uploadedAt: new Date(),
+      };
+      sendMessage(convId, '', [att]);
+    } finally {
+      setIsSendingVoice(false);
+    }
+  };
+
+  const stopRecording = (cancelled = false) => {
+    recCancelledRef.current = cancelled;
+    if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state !== 'inactive') rec.stop();
+    else if (cancelled) { setIsRecording(false); recConvIdRef.current = null; }
+  };
+
+  const startRecording = async () => {
+    if (!canRecord || isRecording || isSendingVoice) return;
+    if (!activeConversationId) {
+      addToast({ type: 'info', title: 'Open a chat first', message: 'Pick a conversation to send a voice message', duration: 3500 });
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported?.(m)) || '';
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      recChunksRef.current = [];
+      recCancelledRef.current = false;
+      recConvIdRef.current = activeConversationId;
+      rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) recChunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setIsRecording(false);
+        const wasCancelled = recCancelledRef.current;
+        const chunks = recChunksRef.current;
+        recChunksRef.current = [];
+        if (wasCancelled) return;
+        const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+        if (blob.size < 300) return;
+        void finishVoiceNote(blob);
+      };
+      rec.start();
+      mediaRecorderRef.current = rec;
+      setIsRecording(true);
+      setRecSeconds(0);
+      recTimerRef.current = setInterval(() => setRecSeconds((sec) => sec + 1), 1000);
+    } catch (err) {
+      console.warn('[chat] microphone unavailable', err);
+      addToast({ type: 'error', title: 'Microphone unavailable', message: 'Allow microphone access to record a voice message', duration: 5000 });
+    }
+  };
+
+  // ── Status composer ────────────────────────────────────────────────
+  const postStatus = async () => {
+    const teamId = useUserStore.getState().currentTeamId;
+    if (!teamId) return;
+    if (!statusText.trim() && !statusImage) return;
+    setPostingStatus(true);
+    try {
+      const keepMock = useSettingsStore.getState().keepMockData;
+      let mediaUrl: string | null = null;
+      let mediaType: string | undefined;
+      if (statusImage) {
+        mediaUrl = await statusDb.uploadImage(currentUserId, statusImage, keepMock);
+        if (!mediaUrl) {
+          addToast({ type: 'error', title: 'Upload failed', message: 'Could not upload the photo — please try again', duration: 5000 });
+          return;
+        }
+        mediaType = 'image';
+      }
+      const ok = await statusDb.post(
+        { userId: currentUserId, teamId, text: statusText.trim() || undefined, mediaUrl: mediaUrl || undefined, mediaType },
+        keepMock
+      );
+      if (ok) {
+        addToast({ type: 'success', title: 'Status posted', message: 'It disappears automatically after 24 hours', duration: 4000 });
+        setShowStatusComposer(false);
+        setStatusText('');
+        setStatusImage(null);
+        await loadStatuses();
+      } else {
+        addToast({ type: 'error', title: 'Could not post status', message: 'Please try again', duration: 5000 });
+      }
+    } finally {
+      setPostingStatus(false);
+    }
+  };
+
+  const deleteOwnStatus = async (id: string) => {
+    const ok = await statusDb.remove(id, useSettingsStore.getState().keepMockData);
+    setStatusViewerId(null);
+    if (ok) {
+      addToast({ type: 'info', title: 'Status deleted', message: 'It is no longer visible to your team', duration: 3500 });
+      await loadStatuses();
+    }
+  };
 
   // Scroll to bottom whenever new messages arrive
   useEffect(() => {
@@ -608,6 +785,68 @@ export const Chat: React.FC = () => {
       )}>
         {/* Sidebar - Conversation List */}
         <div className="w-full md:w-80 lg:w-96 flex-shrink-0 border-r border-gray-200 dark:border-slate-700/50 flex flex-col">
+          {/* WhatsApp-style statuses (24h) */}
+          <div className="px-3 pt-3 pb-2 border-b border-gray-100 dark:border-slate-700/30">
+            <div className="flex gap-3 overflow-x-auto scrollbar-hide">
+              {/* My status */}
+              {(() => {
+                const myStatus = statuses.find((st) => st.userId === currentUserId);
+                return (
+                  <button
+                    onClick={() => (myStatus ? setStatusViewerId(myStatus.id) : setShowStatusComposer(true))}
+                    className="flex flex-col items-center gap-1 w-16 flex-shrink-0 group"
+                    title={myStatus ? 'View my status' : 'Add status'}
+                  >
+                    <div className="relative">
+                      <div className={clsx('w-14 h-14 rounded-full p-0.5', myStatus ? 'bg-gradient-to-tr from-purple-500 via-pink-500 to-amber-400' : 'bg-gray-200 dark:bg-slate-600')}>
+                        <img
+                          src={currentUserAvatar}
+                          alt="You"
+                          className="w-full h-full rounded-full object-cover border-2 border-white dark:border-slate-800 bg-gray-100 dark:bg-slate-700"
+                        />
+                      </div>
+                      {!myStatus && (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center border-2 border-white dark:border-slate-800">
+                          <Plus size={11} />
+                        </span>
+                      )}
+                      {myStatus && (
+                        <span className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/25 transition-colors" />
+                      )}
+                    </div>
+                    <p className="text-[10px] text-gray-500 dark:text-slate-400 truncate w-full text-center">
+                      {myStatus ? 'My status' : 'Add status'}
+                    </p>
+                  </button>
+                );
+              })()}
+              {/* Team members with an active status */}
+              {statuses.filter((st) => st.userId !== currentUserId).map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setStatusViewerId(st.id)}
+                  className="flex flex-col items-center gap-1 w-16 flex-shrink-0"
+                  title={`${st.userName}'s status`}
+                >
+                  <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-purple-500 via-pink-500 to-amber-400">
+                    <img
+                      src={st.userAvatar}
+                      alt={st.userName}
+                      className="w-full h-full rounded-full object-cover border-2 border-white dark:border-slate-800 bg-gray-100 dark:bg-slate-700"
+                    />
+                  </div>
+                  <p className="text-[10px] text-gray-500 dark:text-slate-400 truncate w-full text-center">
+                    {st.userName.split(' ')[0]}
+                  </p>
+                </button>
+              ))}
+              {statuses.length === 1 && statuses[0]?.userId === currentUserId && (
+                <p className="self-center text-[10px] text-gray-400 dark:text-slate-500 pr-1">
+                  Nobody else has a status yet
+                </p>
+              )}
+            </div>
+          </div>
           {/* Category Tabs */}
           <div className="p-3 border-b border-gray-100 dark:border-slate-700/30">
             <div className="flex gap-1 overflow-x-auto scrollbar-hide">
@@ -1267,6 +1506,20 @@ export const Chat: React.FC = () => {
                   >
                     <Paperclip size={18} />
                   </button>
+                  {canRecord && (
+                    <button
+                      onClick={() => (isRecording ? stopRecording() : startRecording())}
+                      className={clsx(
+                        'p-2 rounded-lg transition-colors',
+                        isRecording
+                          ? 'text-red-500 bg-red-50 dark:bg-red-900/20'
+                          : 'text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-300'
+                      )}
+                      title={isRecording ? 'Stop & send voice message' : 'Record voice message'}
+                    >
+                      <Mic size={18} />
+                    </button>
+                  )}
                   <input
                     ref={inputRef}
                     type="text"
@@ -1635,6 +1888,20 @@ export const Chat: React.FC = () => {
                 <button onClick={() => fileInputRef.current?.click()} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 dark:text-slate-500 dark:hover:bg-slate-700 transition-colors" title="Attach file">
                   <Paperclip size={18} />
                 </button>
+                {canRecord && (
+                  <button
+                    onClick={() => (isRecording ? stopRecording() : startRecording())}
+                    className={clsx(
+                      'p-2 rounded-lg transition-colors',
+                      isRecording
+                        ? 'text-red-500 bg-red-50 dark:bg-red-900/20'
+                        : 'text-gray-400 hover:text-gray-500 hover:bg-gray-100 dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-300'
+                    )}
+                    title={isRecording ? 'Stop & send voice message' : 'Record voice message'}
+                  >
+                    <Mic size={18} />
+                  </button>
+                )}
                 <input
                   ref={inputRef}
                   type="text"
@@ -1688,6 +1955,169 @@ export const Chat: React.FC = () => {
       )}
 
       {/* New DM Modal */}
+      {/* Voice recording pill (visible while recording) */}
+      {isRecording && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[250] flex items-center gap-3 px-4 py-3 rounded-2xl bg-gray-900 dark:bg-slate-900 text-white shadow-2xl border border-red-500/40">
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+          </span>
+          <span className="text-sm font-medium tabular-nums">
+            {isSendingVoice ? 'Sending voice message…' : `Recording ${formatRecTime(recSeconds)}`}
+          </span>
+          <button
+            onClick={() => stopRecording(true)}
+            disabled={isSendingVoice}
+            title="Cancel recording"
+            className="p-2 rounded-full hover:bg-white/10 text-red-300 disabled:opacity-50 transition-colors"
+          >
+            <Trash2 size={16} />
+          </button>
+          <button
+            onClick={() => stopRecording()}
+            disabled={isSendingVoice}
+            title="Send voice message"
+            className="p-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white disabled:opacity-50 transition-colors"
+          >
+            <Mic size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Status composer (WhatsApp-style 24h status) */}
+      {showStatusComposer && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowStatusComposer(false)} />
+          <div className="relative w-full max-w-md rounded-2xl bg-white dark:bg-slate-800 shadow-xl border border-gray-200 dark:border-slate-700 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-900 dark:text-slate-100">Add status</h3>
+              <button onClick={() => setShowStatusComposer(false)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700" title="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <textarea
+              value={statusText}
+              onChange={(e) => setStatusText(e.target.value)}
+              rows={3}
+              placeholder="What's on your mind? Disappears after 24 hours…"
+              className="w-full rounded-xl px-3.5 py-2.5 text-sm resize-none bg-gray-50 border border-gray-200 text-gray-800 placeholder-gray-400 dark:bg-slate-800/50 dark:border-slate-700 dark:text-slate-100 dark:placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+            />
+            {statusImagePreview && (
+              <div className="relative inline-block">
+                <img src={statusImagePreview} alt="Status preview" className="max-h-48 rounded-xl object-cover" />
+                <button
+                  onClick={() => setStatusImage(null)}
+                  className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/55 text-white hover:bg-black/75"
+                  title="Remove photo"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => statusImageRef.current?.click()}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+                title="Add a photo"
+              >
+                <ImageIcon size={16} /> {statusImage ? 'Change photo' : 'Photo'}
+              </button>
+              <button
+                onClick={postStatus}
+                disabled={postingStatus || (!statusText.trim() && !statusImage)}
+                className={clsx(
+                  'px-4 py-2 rounded-xl text-sm font-semibold transition-all',
+                  statusText.trim() || statusImage
+                    ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 shadow-md shadow-purple-500/20'
+                    : 'bg-gray-100 text-gray-400 dark:bg-slate-700/50 dark:text-slate-600 cursor-not-allowed'
+                )}
+              >
+                {postingStatus ? 'Posting…' : 'Post status'}
+              </button>
+            </div>
+            <input
+              ref={statusImageRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (f) {
+                  if (!f.type.startsWith('image/')) {
+                    addToast({ type: 'error', title: 'Not an image', message: 'Please choose an image file', duration: 4000 });
+                    return;
+                  }
+                  if (f.size > 5 * 1024 * 1024) {
+                    addToast({ type: 'error', title: 'File too large', message: 'Status photos must be under 5 MB', duration: 4000 });
+                    return;
+                  }
+                  setStatusImage(f);
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Status viewer */}
+      {viewingStatus && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/85" onClick={() => setStatusViewerId(null)} />
+          <div className="relative w-full max-w-lg rounded-2xl overflow-hidden bg-white dark:bg-slate-800 shadow-2xl">
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-slate-700/50">
+              <img
+                src={viewingStatus.userAvatar}
+                alt={viewingStatus.userName}
+                className="w-9 h-9 rounded-full object-cover bg-gray-100 dark:bg-slate-700"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900 dark:text-slate-100 truncate">
+                  {viewingStatus.userId === currentUserId ? 'Your status' : viewingStatus.userName}
+                </p>
+                <p className="text-[11px] text-gray-400 dark:text-slate-500">
+                  {format(viewingStatus.createdAt, 'MMM d, HH:mm')} · Expires {formatDistanceToNow(viewingStatus.expiresAt, { addSuffix: true })}
+                </p>
+              </div>
+              <button
+                onClick={() => setStatusViewerId(null)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700"
+                title="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            {viewingStatus.mediaType === 'image' && viewingStatus.mediaUrl ? (
+              <img src={viewingStatus.mediaUrl} alt="" className="w-full max-h-[55vh] object-contain bg-black" />
+            ) : null}
+            {viewingStatus.text && (
+              <p className="px-5 py-4 text-gray-800 dark:text-slate-200 text-sm leading-relaxed whitespace-pre-wrap">
+                {viewingStatus.text}
+              </p>
+            )}
+            {!viewingStatus.text && !viewingStatus.mediaUrl && (
+              <p className="px-5 py-4 text-sm text-gray-400 dark:text-slate-500">This status is empty.</p>
+            )}
+            {viewingStatus.userId === currentUserId && (
+              <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-100 dark:border-slate-700/50">
+                <button
+                  onClick={() => { setStatusViewerId(null); setShowStatusComposer(true); }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+                >
+                  Add new status
+                </button>
+                <button
+                  onClick={() => deleteOwnStatus(viewingStatus.id)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                >
+                  <Trash2 size={13} /> Delete status
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <NewDMModal isOpen={showNewDM} onClose={() => setShowNewDM(false)} />
     </div>
   );

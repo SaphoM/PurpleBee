@@ -37,6 +37,7 @@ import {
   Lock,
   KeyRound,
   CheckCircle2,
+  Camera,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@components/Card';
 import { useNotificationStore, NotificationPreferences, notificationCategoryConfig } from '@stores/notificationStore';
@@ -49,6 +50,7 @@ import { useChatStore } from '@stores/chatStore';
 import { NotificationType } from '@/types/index';
 import { isDbConnected, supabase } from '@/lib/supabase';
 import { authDb } from '@/lib/dataService';
+import { useToastStore } from '@components/Toast';
 
 // ─── Demo-to-Real Auth Modal ──────────────────────────────────────────────────
 // Shown when a Quick Login (demo) user tries to turn off mock data.
@@ -621,6 +623,33 @@ export const SettingsPage: React.FC = () => {
 
   // Detect recovery mode — user arrived via password reset email link
   const isRecoveryMode = window.location.hash.includes('recovery=true');
+
+  // ── Profile picture upload → public avatars bucket → profiles.avatar ──
+  const avatarFileRef = React.useRef<HTMLInputElement>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const { addToast } = useToastStore();
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !user) return;
+    if (!file.type.startsWith('image/')) {
+      addToast({ type: 'error', title: 'Not an image', message: 'Please choose an image file', duration: 4000 });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      addToast({ type: 'error', title: 'File too large', message: 'Profile pictures must be under 5 MB', duration: 4000 });
+      return;
+    }
+    setUploadingAvatar(true);
+    const url = await authDb.uploadAvatar(user.id, file);
+    if (url) {
+      await useUserStore.getState().updateMyAvatar(url);
+      addToast({ type: 'success', title: 'Profile picture updated', message: 'Your new photo now shows everywhere in PurpleBee', duration: 4000 });
+    } else {
+      addToast({ type: 'error', title: 'Upload failed', message: 'Could not upload the picture — please try again', duration: 5000 });
+    }
+    setUploadingAvatar(false);
+  };
   const { preferences, updatePreferences, resetPreferences } = useNotificationStore();
   const { user, isQuickLoginUser } = useUserStore();
   const { darkMode, toggleDarkMode } = useUIStore();
@@ -1158,11 +1187,31 @@ export const SettingsPage: React.FC = () => {
                   {user && (
                     <div className="space-y-5">
                       <div className="flex items-center gap-4">
-                        <img
-                          src={user.avatar}
-                          alt={user.name}
-                          className="w-16 h-16 rounded-2xl ring-2 ring-gray-200 dark:ring-slate-700"
-                        />
+                        <div className="group relative flex-shrink-0">
+                          <img
+                            src={user.avatar}
+                            alt={user.name}
+                            className="w-16 h-16 rounded-2xl ring-2 ring-gray-200 dark:ring-slate-700 object-cover bg-gray-100 dark:bg-slate-700/50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => avatarFileRef.current?.click()}
+                            disabled={uploadingAvatar}
+                            title="Change profile picture"
+                            className="absolute inset-0 rounded-2xl bg-black/45 opacity-0 group-hover:opacity-100 focus:opacity-100 flex items-center justify-center transition-opacity disabled:cursor-wait"
+                          >
+                            {uploadingAvatar
+                              ? <Loader2 size={18} className="text-white animate-spin" />
+                              : <Camera size={18} className="text-white" />}
+                          </button>
+                          <input
+                            ref={avatarFileRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleAvatarUpload}
+                          />
+                        </div>
                         <div>
                           <p className="text-lg font-bold text-gray-900 dark:text-slate-100">{user.name}</p>
                           <p className="text-sm text-gray-500 dark:text-slate-400">{user.email}</p>

@@ -95,6 +95,8 @@ interface UserStore {
   loadAssignableMembers: () => Promise<void>;
   /** Update a team member's profile (name, title, department, role). Persists to DB in live mode. */
   updateMember: (userId: string, updates: Partial<Pick<TeamProfile, 'name' | 'title' | 'department' | 'role'>>) => Promise<void>;
+  /** Change my own profile picture: optimistic in every store + persist to profiles.avatar */
+  updateMyAvatar: (avatarUrl: string) => Promise<void>;
 
   // Ensure the user has a team and stash its id. Auto-creates one if missing.
   ensureTeam: () => Promise<string | null>;
@@ -394,6 +396,41 @@ export const useUserStore = create<UserStore>((set, get) => ({
     if (!keepMockData) {
       const teamId = get().currentTeamId;
       await authDb.updateProfile(userId, teamId, updates as Record<string, string>);
+    }
+  },
+
+  updateMyAvatar: async (avatarUrl) => {
+    const { user, currentTeamId } = get();
+    if (!user) return;
+    // Optimistic: own user object + own row in the members list
+    set((state) => ({
+      user: state.user ? { ...state.user, avatar: avatarUrl } : state.user,
+      assignableMembers: state.assignableMembers.map((m) =>
+        m.id === user.id ? { ...m, avatar: avatarUrl } : m
+      ),
+    }));
+    const { keepMockData } = useSettingsStore.getState();
+    if (!keepMockData) {
+      await authDb.updateProfile(user.id, currentTeamId, { avatar: avatarUrl });
+      // Sync this session's chat view (presence row + DM participants) — dynamic
+      // import mirrors chatStore's lazy userStore access and avoids a cycle.
+      try {
+        const { useChatStore } = await import('./chatStore');
+        useChatStore.setState((state) => ({
+          currentUserAvatar: avatarUrl,
+          teamMembers: state.teamMembers.map((m) =>
+            m.userId === user.id ? { ...m, avatar: avatarUrl } : m
+          ),
+          conversations: state.conversations.map((c) => ({
+            ...c,
+            participants: c.participants.map((pp) =>
+              pp.userId === user.id ? { ...pp, avatar: avatarUrl } : pp
+            ),
+          })),
+        }));
+      } catch {
+        /* chat not hydrated yet — next hydrate picks the new avatar up */
+      }
     }
   },
 

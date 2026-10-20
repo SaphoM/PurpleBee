@@ -998,6 +998,125 @@ export const chatDb = {
     if (error) { console.error('[dataService] chat.fetchTeamMembers solo', error); return null; }
     return data?.map((p: any) => ({ user_id: p.id, role: p.role, profiles: p })) || null;
   },
+
+  /**
+   * Upload a voice recording to the attachments bucket and return a
+   * long-lived signed URL (the bucket is private — participants play the
+   * signed URL directly, no auth header needed).
+   */
+  async uploadVoiceNote(userId: string, blob: Blob, mockMode?: boolean): Promise<string | null> {
+    if (!shouldPersist(mockMode)) return null;
+    const ext = blob.type.includes('mpeg') ? 'mp3' : blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
+    const path = `voice/${userId}/vn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error } = await supabase!.storage
+      .from('attachments')
+      .upload(path, blob, { contentType: blob.type || 'audio/webm', upsert: false });
+    if (error) { console.error('[dataService] chat.uploadVoiceNote', error); return null; }
+    const { data } = await supabase!.storage.from('attachments').createSignedUrl(path, 60 * 60 * 24 * 3650);
+    return data?.signedUrl || null;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// STATUSES — WhatsApp-style 24h posts (one active status per user)
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface StatusRow {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  text?: string;
+  mediaUrl?: string;
+  mediaType?: string;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export const statusDb = {
+  /** Active (not yet expired) statuses of a team, newest first */
+  async fetchActive(teamId: string, mockMode?: boolean): Promise<StatusRow[] | null> {
+    if (!shouldPersist(mockMode)) return null;
+    const { data, error } = await supabase!
+      .from('user_statuses')
+      .select('*, profile:profiles(name, avatar)')
+      .eq('team_id', teamId)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false });
+    if (error) { console.error('[dataService] status.fetchActive', error); return null; }
+    return (data || []).map((r: any) => ({
+      id: r.id,
+      userId: r.user_id,
+      userName: r.profile?.name || 'Member',
+      userAvatar: r.profile?.avatar,
+      text: r.text || undefined,
+      mediaUrl: r.media_url || undefined,
+      mediaType: r.media_type || undefined,
+      createdAt: new Date(r.created_at),
+      expiresAt: new Date(r.expires_at),
+    }));
+  },
+
+  /** Post my status for the team — replaces my previous one (WhatsApp: one at a time) */
+  async post(
+    input: { userId: string; teamId: string; text?: string; mediaUrl?: string; mediaType?: string },
+    mockMode?: boolean
+  ): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return false;
+    await supabase!.from('user_statuses')
+      .delete()
+      .eq('user_id', input.userId)
+      .eq('team_id', input.teamId);
+    const { error } = await supabase!.from('user_statuses').insert({
+      user_id: input.userId,
+      team_id: input.teamId,
+      text: input.text || null,
+      media_url: input.mediaUrl || null,
+      media_type: input.mediaType || null,
+    });
+    if (error) { console.error('[dataService] status.post', error); return false; }
+    return true;
+  },
+
+  async remove(id: string, mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('user_statuses').delete().eq('id', id);
+    if (error) { console.error('[dataService] status.remove', error); return false; }
+    return true;
+  },
+
+  /** Self-cleanup of my expired rows (everyone else's disappear from queries at expiry) */
+  async cleanupExpired(userId: string, mockMode?: boolean): Promise<void> {
+    if (!shouldPersist(mockMode)) return;
+    await supabase!.from('user_statuses')
+      .delete()
+      .eq('user_id', userId)
+      .lt('expires_at', new Date().toISOString());
+  },
+
+  /** Upload a status photo to the attachments bucket → signed URL valid past the 24h window */
+  async uploadImage(userId: string, file: File, mockMode?: boolean): Promise<string | null> {
+    if (!shouldPersist(mockMode)) return null;
+    const ext = ((file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'jpg';
+    const path = `statuses/${userId}/st-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error } = await supabase!.storage
+      .from('attachments')
+      .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false });
+    if (error) { console.error('[dataService] status.uploadImage', error); return null; }
+    const { data } = await supabase!.storage.from('attachments').createSignedUrl(path, 60 * 60 * 24 * 7);
+    return data?.signedUrl || null;
+  },
+
+  /** Live story-strip updates — insert/delete events on user_statuses. Returns unsubscribe. */
+  subscribe(onChange: () => void): () => void {
+    const sb = supabase;
+    if (!sb) return () => {};
+    const channel = sb
+      .channel('purplebee-statuses')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_statuses' }, () => onChange())
+      .subscribe();
+    return () => { sb.removeChannel(channel); };
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1082,7 +1201,7 @@ export const authDb = {
   async updateProfile(
     userId: string,
     teamId: string | null,
-    updates: { name?: string; title?: string; department?: string; role?: string }
+    updates: { name?: string; title?: string; department?: string; role?: string; avatar?: string }
   ) {
     if (!isDbConnected()) return false;
     const profilePayload: Record<string, unknown> = {};
@@ -1090,6 +1209,7 @@ export const authDb = {
     if (updates.title !== undefined) profilePayload.title = updates.title;
     if (updates.department !== undefined) profilePayload.department = updates.department;
     if (updates.role !== undefined) profilePayload.role = updates.role;
+    if (updates.avatar !== undefined) profilePayload.avatar = updates.avatar;
     if (Object.keys(profilePayload).length > 0) {
       const { error } = await supabase!.from('profiles').update(profilePayload).eq('id', userId);
       if (error) { console.error('[dataService] auth.updateProfile profiles', error); return false; }
@@ -1104,6 +1224,22 @@ export const authDb = {
       if (error) { console.error('[dataService] auth.updateProfile team_members', error); }
     }
     return true;
+  },
+
+  /**
+   * Upload a new profile picture to the public `avatars` bucket (RLS only
+   * allows your own folder) and return its public URL for profiles.avatar.
+   */
+  async uploadAvatar(userId: string, file: File): Promise<string | null> {
+    if (!isDbConnected()) return null;
+    const ext = ((file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'png';
+    const path = `${userId}/avatar-${Date.now().toString(36)}.${ext}`;
+    const { error } = await supabase!.storage
+      .from('avatars')
+      .upload(path, file, { contentType: file.type || 'image/png', upsert: false });
+    if (error) { console.error('[dataService] avatars.upload', error); return null; }
+    const { data } = supabase!.storage.from('avatars').getPublicUrl(path);
+    return data?.publicUrl || null;
   },
 
   /** Persist notification preferences (in-app/email/per-category toggles) so they follow the account across devices, not just localStorage on one browser. */
