@@ -4,6 +4,12 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    // Local dev: /api/* goes to the Express server (server.js, default port 10000)
+    proxy: {
+      '/api': 'http://localhost:10000',
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

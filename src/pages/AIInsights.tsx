@@ -29,6 +29,7 @@ import {
   Rocket,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@components/Card';
+import { AIAssistantWidget } from '@components/AIAssistantWidget';
 import { useTaskStore } from '@stores/taskStore';
 import { useUserStore } from '@stores/userStore';
 import { Task, TaskPriority } from '@/types/index';
@@ -902,6 +903,9 @@ export const AIInsights: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      {/* In-app assistant — this widget is rendered only on the AI Insights page */}
+      <AIAssistantWidget />
     </div>
   );
 };
