@@ -666,6 +666,9 @@ CREATE POLICY "Subtasks follow parent task access"
   );
 
 -- ─── Attachments ──────────────────────────────────────────────────────────────
+-- Task attachments follow the parent task; chat attachments (voice notes,
+-- files — task_id IS NULL, message_id set) follow the parent MESSAGE, so
+-- every conversation participant (not just the uploader) can see them.
 CREATE POLICY "Attachments follow parent access"
   ON public.attachments FOR ALL
   TO authenticated
@@ -673,6 +676,8 @@ CREATE POLICY "Attachments follow parent access"
     uploaded_by = auth.uid()
     OR task_id IN (SELECT id FROM public.tasks WHERE assigned_to = auth.uid() OR created_by = auth.uid())
     OR public.is_admin_or_manager()
+    OR (message_id IS NOT NULL
+        AND EXISTS (SELECT 1 FROM public.messages m WHERE m.id = attachments.message_id))
   );
 
 -- ─── Task Links ───────────────────────────────────────────────────────────────

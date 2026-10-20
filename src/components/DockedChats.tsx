@@ -28,6 +28,7 @@ import { useUserStore } from '@stores/userStore';
 import { ConversationType, Attachment, TaskRef, ReplyRef, ChatMessage, Conversation } from '@/types/index';
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
+import { QuickReactionPicker } from '@components/shared/QuickReactionPicker';
 import { format, isToday, isYesterday } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -126,6 +127,17 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSendingRef = useRef(false);
   const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Close the quick-reaction popup on clicks elsewhere — it is rendered in a
+  // portal now, so it no longer collapses together with the message bubble.
+  useEffect(() => {
+    if (!reactionPickerMsgId) return;
+    const handle = () => setReactionPickerMsgId(null);
+    // Delay so the opening click (or an emoji pick inside the popup) always
+    // finishes before the listener is attached.
+    const timer = setTimeout(() => document.addEventListener('click', handle), 0);
+    return () => { clearTimeout(timer); document.removeEventListener('click', handle); };
+  }, [reactionPickerMsgId]);
 
   const conv = conversations.find((c) => c.id === conversationId);
   const messages = getConversationMessages(conversationId);
@@ -508,11 +520,13 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                         <SmilePlus size={10} className="text-gray-400" />
                       </button>
                       {reactionPickerMsgId === msg.id && (
-                        <div className={clsx('absolute -bottom-7 flex gap-0.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-full px-1 py-0.5 shadow-lg z-10', isMe ? 'left-0' : 'right-0')}>
-                          {['👍','❤️','😂','🔥','👏','🎉'].map((emoji) => (
-                            <button key={emoji} onClick={() => { toggleReaction(conversationId, msg.id, emoji); setReactionPickerMsgId(null); }} className="w-5 h-5 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 text-[10px]">{emoji}</button>
-                          ))}
-                        </div>
+                        <QuickReactionPicker
+                          anchorRef={reactionBtnRef}
+                          size="sm"
+                          align={isMe ? 'left' : 'right'}
+                          onPick={(emoji) => { toggleReaction(conversationId, msg.id, emoji); setReactionPickerMsgId(null); }}
+                          onClose={() => setReactionPickerMsgId(null)}
+                        />
                       )}
                       {/* Reaction bar */}
                       {reactions.length > 0 && (

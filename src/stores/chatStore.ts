@@ -670,10 +670,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         copy[idx] = { ...copy[idx], status: ok ? 'sent' : 'failed' };
         return { messages: { ...state.messages, [conversationId]: copy } };
       });
+      // Attachments are inserted ONLY after the message row exists:
+      // attachments.message_id has a FK to messages(id), and firing both
+      // inserts concurrently raced — when the attachment row landed first it
+      // failed FK validation and the voice note was silently lost (the sender
+      // still saw it optimistically; nobody else ever received it).
+      if (ok && attachments && attachments.length > 0) {
+        chatDb.insertAttachments(newMessage.id, attachments, currentUserId, mock);
+      }
     });
-    if (attachments && attachments.length > 0) {
-      chatDb.insertAttachments(newMessage.id, attachments, currentUserId, mock);
-    }
 
     // ── Notify recipients (NOT the sender) on every sent message ──
     // Enterprise rule: a sender never receives an unread notification for a

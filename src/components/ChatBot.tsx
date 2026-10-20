@@ -1030,6 +1030,7 @@ export const ChatBot: React.FC = () => {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
+          aria-label="Open the Purple Bee Bot chat"
           className={clsx(
             'fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50',
             'w-14 h-14 rounded-full',
@@ -1049,7 +1050,7 @@ export const ChatBot: React.FC = () => {
       {isOpen && (
         <div
           className={clsx(
-            'fixed bottom-0 right-0 sm:bottom-6 sm:right-6 z-50',
+            'fixed bottom-0 right-0 sm:bottom-6 sm:right-6 z-[260]',
             'w-full sm:w-96 h-[100dvh] sm:h-[560px] flex flex-col',
             'bg-white dark:bg-slate-900',
             'border-0 sm:border border-gray-200 dark:border-slate-700',

@@ -128,7 +128,7 @@ export const AIAssistantWidget: React.FC = () => {
       <button
         onClick={() => setOpen(true)}
         className={clsx(
-          'fixed bottom-6 right-6 z-[250] flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full',
+          'fixed bottom-24 right-6 z-[250] flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full',
           'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700',
           'text-white text-sm font-medium shadow-lg shadow-purple-500/25',
           'transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5'
@@ -141,15 +141,17 @@ export const AIAssistantWidget: React.FC = () => {
     );
   }
 
-  // ── Expanded: chat window ──
+  // ── Expanded: chat window. Stacked 6rem above the bottom edge so the
+  // WhatsApp/Telegram ChatBot button (bottom-4/6, z-50) stays visible and
+  // clickable underneath — the AI panel must never hide it. ──
   return (
     <div
       className={clsx(
-        'fixed bottom-6 right-6 z-[250] w-[21rem] sm:w-[24rem]',
+        'fixed bottom-24 right-6 z-[250] w-[21rem] sm:w-[24rem]',
         'flex flex-col overflow-hidden rounded-2xl',
         'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700',
         'shadow-2xl shadow-black/20',
-        'h-[30rem] max-h-[calc(100vh-6rem)]'
+        'h-[30rem] max-h-[calc(100vh-14rem)]'
       )}
       role="dialog"
       aria-label="PurpleBee assistant"

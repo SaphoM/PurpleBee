@@ -41,6 +41,7 @@ import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
 import { useToastStore } from '@components/Toast';
 import { ChangeOwnAvatarBadge } from '@components/shared/ChangeOwnAvatarBadge';
+import { QuickReactionPicker } from '@components/shared/QuickReactionPicker';
 import { linkifyText } from '@/utils/linkify';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
@@ -533,9 +534,18 @@ export const Chat: React.FC = () => {
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Ask for clean speech capture: browser-side echo cancellation, noise
+      // suppression and automatic gain (mic level normalisation).
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
       const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported?.(m)) || '';
-      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      // 96 kbps mono Opus/AAC is well above speech quality needs — the codec
+      // defaults are tuned for tiny WebRTC packets and sound muffled.
+      const rec = new MediaRecorder(stream, {
+        ...(mime ? { mimeType: mime } : {}),
+        audioBitsPerSecond: 96_000,
+      });
       recChunksRef.current = [];
       recCancelledRef.current = false;
       recConvIdRef.current = activeConversationId;
@@ -1399,27 +1409,19 @@ export const Chat: React.FC = () => {
                               >
                                 <SmilePlus size={12} />
                               </button>
-                              {/* Quick reaction picker for this message */}
+                              {/* Quick reaction picker for this message — portal +
+                                  fixed positioning so the scrolling message list can
+                                  never clip the emojis on small screens */}
                               {reactionPickerMsgId === msg.id && (
-                                <div className={clsx(
-                                  'absolute -bottom-9 z-50 flex items-center gap-0.5 p-1 rounded-full',
-                                  'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 shadow-lg',
-                                  isMe ? 'left-0' : 'right-0',
-                                )}>
-                                  {['👍','❤️','😂','🔥','👏','🎉'].map((emoji) => (
-                                    <button
-                                      key={emoji}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleReaction(msg.conversationId, msg.id, emoji);
-                                        setReactionPickerMsgId(null);
-                                      }}
-                                      className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors text-sm"
-                                    >
-                                      {emoji}
-                                    </button>
-                                  ))}
-                                </div>
+                                <QuickReactionPicker
+                                  anchorRef={reactionBtnRef}
+                                  align={isMe ? 'left' : 'right'}
+                                  onPick={(emoji) => {
+                                    toggleReaction(msg.conversationId, msg.id, emoji);
+                                    setReactionPickerMsgId(null);
+                                  }}
+                                  onClose={() => setReactionPickerMsgId(null)}
+                                />
                               )}
                             </div>
                             {/* Reaction bar */}
