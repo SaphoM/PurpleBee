@@ -635,8 +635,8 @@ export const SettingsPage: React.FC = () => {
       addToast({ type: 'error', title: 'Not an image', message: 'Please choose an image file', duration: 4000 });
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      addToast({ type: 'error', title: 'File too large', message: 'Profile pictures must be under 5 MB', duration: 4000 });
+    if (file.size > 15 * 1024 * 1024) {
+      addToast({ type: 'error', title: 'File too large', message: 'Photos must be under 15 MB — big camera photos are resized automatically', duration: 4000 });
       return;
     }
     setUploadingAvatar(true);
@@ -645,7 +645,7 @@ export const SettingsPage: React.FC = () => {
       await useUserStore.getState().updateMyAvatar(url);
       addToast({ type: 'success', title: 'Profile picture updated', message: 'Your new photo now shows everywhere in PurpleBee', duration: 4000 });
     } else {
-      addToast({ type: 'error', title: 'Upload failed', message: 'Could not upload the picture — please try again', duration: 5000 });
+      addToast({ type: 'error', title: 'Upload failed', message: 'Could not read that photo — please try a JPG or PNG under 15 MB', duration: 5000 });
     }
     setUploadingAvatar(false);
   };

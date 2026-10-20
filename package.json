@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "sync:knowledge": "node scripts/sync-assistant-knowledge.mjs",
+    "deploy:assistant": "npm run sync:knowledge && SUPABASE_ACCESS_TOKEN=$(cat ~/.supabase/access-token 2>/dev/null) supabase functions deploy ai-chat --project-ref kpiridirhzrzmbcwdxyb"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

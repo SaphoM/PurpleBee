@@ -4,12 +4,8 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
-  server: {
-    // Local dev: /api/* goes to the Express server (server.js, default port 10000)
-    proxy: {
-      '/api': 'http://localhost:10000',
-    },
-  },
+  // Note: the in-app assistant no longer uses a local /api proxy — it calls
+  // the `ai-chat` Supabase Edge Function directly (see AIAssistantWidget).
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

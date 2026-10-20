@@ -1,12 +1,30 @@
 import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import { Bot, Send, Minus, X } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 /**
  * In-app assistant for the AI Insights page ONLY.
- * Talks exclusively to our own POST /api/chat endpoint (server.js), which
- * holds the LLM key server-side — the browser never sees provider details.
+ * Talks exclusively to our own `ai-chat` Supabase Edge Function, which holds
+ * the LLM key as a server-side secret — the browser never sees provider
+ * details. (It replaced POST /api/chat: the deployed site is a static build,
+ * so the Express route never ran on it.)
+ * Requires a signed-in session: the function rejects anonymous callers.
  */
+
+/** Pull the friendly { error } JSON out of a functions-invoke failure —
+ * supabase-js may hand it back as { error, context: Response } or throw it,
+ * so both shapes run through this helper. */
+const describeInvokeError = async (err: unknown): Promise<string | null> => {
+  const ctx = (err as { context?: Response } | null | undefined)?.context;
+  if (!ctx || typeof ctx.json !== 'function') return null;
+  try {
+    const body = (await ctx.json()) as { error?: unknown };
+    return typeof body?.error === 'string' ? body.error : null;
+  } catch {
+    return null;
+  }
+};
 
 interface AssistantMessage {
   id: string;
@@ -48,23 +66,54 @@ export const AIAssistantWidget: React.FC = () => {
     setInput('');
     setLoading(true);
     try {
-      const resp = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: history
-            .slice(-10)
-            .map((m) => ({ role: m.role, content: m.content })),
-        }),
-      });
-      const data = await resp.json().catch(() => ({} as { reply?: string; error?: string }));
-      if (!resp.ok || !data.reply) {
-        setError(data.error || 'Something went wrong, please try again');
-      } else {
+      if (!supabase) {
+        setError('The assistant is unavailable in demo mode — sign in to use it.');
+        return;
+      }
+      // Explicit user JWT: the function only accepts signed-in callers (the
+      // public anon key alone is rejected with 401).
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) {
+        setError('Please sign in to use the assistant.');
+        return;
+      }
+
+      let data: { reply?: string; error?: string } = {};
+      let failure: unknown = null;
+      let status: number | undefined;
+      try {
+        const resp = await supabase.functions.invoke('ai-chat', {
+          headers: { Authorization: `Bearer ${token}` },
+          body: {
+            messages: history
+              .slice(-10)
+              .map((m) => ({ role: m.role, content: m.content })),
+          },
+        });
+        data = (resp.data as { reply?: string; error?: string } | null) ?? {};
+        if (resp.error) {
+          failure = resp.error;
+          status = (resp.error as { context?: Response }).context?.status;
+        }
+      } catch (err) {
+        failure = err;
+        status = (err as { context?: Response }).context?.status;
+      }
+
+      if (failure) {
+        const friendly =
+          (await describeInvokeError(failure)) ||
+          (status === 401 ? 'Please sign in to use the assistant.' : null);
+        setError(friendly || 'Something went wrong, please try again');
+      } else if (typeof data.reply === 'string' && data.reply) {
+        const reply = data.reply;
         setMessages((cur) => [
           ...cur,
-          { id: `a-${Date.now()}`, role: 'assistant', content: data.reply as string },
+          { id: `a-${Date.now()}`, role: 'assistant', content: reply },
         ]);
+      } else {
+        setError(data.error || 'Something went wrong, please try again');
       }
     } catch {
       setError('Something went wrong, please try again');

@@ -20,6 +20,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent } from '@components/Card';
+import { ChangeOwnAvatarBadge } from '@components/shared/ChangeOwnAvatarBadge';
 import { useChatStore } from '@stores/chatStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore } from '@stores/projectStore';
@@ -409,6 +410,11 @@ const MemberDetailModal: React.FC<{
               'absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-3 border-white dark:border-slate-800',
               member.member.online ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-slate-600'
             )} />
+            {/* Camera badge on MY own card only (getState() instead of the
+                useUserStore() hook — this component early-returns above) */}
+            {member.member.userId === useUserStore.getState().user?.id && (
+              <ChangeOwnAvatarBadge className="bottom-1 left-1" />
+            )}
           </div>
         </div>
 

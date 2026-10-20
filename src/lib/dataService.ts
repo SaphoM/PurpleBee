@@ -17,6 +17,8 @@
  */
 
 import { supabase, isDbConnected } from './supabase';
+import { elapsedMinutesSince } from '@/utils/time';
+import { prepareAvatarImage } from '@/lib/image';
 import type { Task, TaskStatus, TaskPriority, Subtask, TaskActivityEntry, TaskActivityAction } from '@/types/index';
 
 // ── Central gate ──────────────────────────────────────────────────────
@@ -285,6 +287,86 @@ const toTaskFromBot = (row: DbBotTask): Task => ({
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// TIME TRACKING (time_entries — one row per timer session)
+// A DB trigger (sync_task_actual_hours) mirrors the sum into
+// tasks.actual_hours, which is what the Analytics "Time Tracking Summary"
+// card and the task detail modal read — the entries table is the source.
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface DbTimeEntrySession {
+  id: string;
+  task_id: string;
+  started_at: string;
+}
+
+export const timeDb = {
+  /** The user's currently running timer, if any (partial unique index keeps it to one). */
+  async getActiveEntry(userId: string): Promise<DbTimeEntrySession | null> {
+    if (!isDbConnected()) return null;
+    const { data, error } = await supabase!
+      .from('time_entries')
+      .select('id, task_id, started_at')
+      .eq('user_id', userId)
+      .is('ended_at', null)
+      .order('started_at', { ascending: false })
+      .limit(1);
+    if (error) { console.error('[dataService] time_entries.getActiveEntry', error); return null; }
+    return (data?.[0] as DbTimeEntrySession | undefined) ?? null;
+  },
+
+  /**
+   * Start a timer for a task. One running timer per user: any previous
+   * session is stopped first (timestamps intact) before the new row is
+   * inserted, satisfying the partial unique index.
+   */
+  async startEntry(taskId: string, userId: string): Promise<DbTimeEntrySession | null> {
+    if (!isDbConnected()) return null;
+    const active = await timeDb.getActiveEntry(userId);
+    if (active) await timeDb.stopEntry(active.id, active.started_at, active.task_id);
+    const { data, error } = await supabase!
+      .from('time_entries')
+      .insert({ task_id: taskId, user_id: userId })
+      .select('id, task_id, started_at')
+      .single();
+    if (error) { console.error('[dataService] time_entries.insert', error); return null; }
+    return data as DbTimeEntrySession;
+  },
+
+  /**
+   * Stop a running timer. Returns the session length plus the task's exact
+   * new tracked total (re-summed from the entries table), so callers can
+   * refresh the in-memory task without racing other members' sessions.
+   */
+  async stopEntry(
+    entryId: string,
+    startedAt: string,
+    taskId: string,
+  ): Promise<{ duration_minutes: number; task_actual_hours: number } | null> {
+    if (!isDbConnected()) return null;
+    const minutes = Math.round(elapsedMinutesSince(startedAt) * 100) / 100;
+    const { data: stopped, error } = await supabase!
+      .from('time_entries')
+      .update({ ended_at: new Date().toISOString(), duration_minutes: minutes })
+      .eq('id', entryId)
+      .is('ended_at', null)
+      .select('id')
+      .maybeSingle();
+    if (error) { console.error('[dataService] time_entries.update', error); return null; }
+    if (!stopped) return null; // already stopped (e.g. in another tab)
+    const { data: rows, error: sumError } = await supabase!
+      .from('time_entries')
+      .select('duration_minutes')
+      .eq('task_id', taskId);
+    if (sumError) { console.error('[dataService] time_entries.sum', sumError); return null; }
+    const totalMinutes = (rows || []).reduce(
+      (sum, r) => sum + Number((r as { duration_minutes: number | string }).duration_minutes || 0),
+      0,
+    );
+    return { duration_minutes: minutes, task_actual_hours: Math.round((totalMinutes / 60) * 100) / 100 };
+  },
+};
 
 export const botTaskDb = {
   /** Fetch bot-created tasks for a user (merged into the main task list on hydrate) */
@@ -1232,11 +1314,24 @@ export const authDb = {
    */
   async uploadAvatar(userId: string, file: File): Promise<string | null> {
     if (!isDbConnected()) return null;
-    const ext = ((file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'png';
+    // Downscale to a 512px JPEG first: keeps uploads fast, accepts big phone
+    // photos (raw guard lives in callers at 15 MB), and guarantees a format
+    // every browser can render. Undecodable files (e.g. HEIC on Chrome)
+    // throw here → null, so we never store an avatar <img> can't display.
+    let blob: Blob = file;
+    let ext = ((file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '')) || 'png';
+    try {
+      const prepared = await prepareAvatarImage(file);
+      blob = prepared.blob;
+      ext = prepared.ext;
+    } catch (err) {
+      console.error('[dataService] avatars.prepare — image could not be decoded:', err);
+      return null;
+    }
     const path = `${userId}/avatar-${Date.now().toString(36)}.${ext}`;
     const { error } = await supabase!.storage
       .from('avatars')
-      .upload(path, file, { contentType: file.type || 'image/png', upsert: false });
+      .upload(path, blob, { contentType: blob.type || 'image/jpeg', upsert: false });
     if (error) { console.error('[dataService] avatars.upload', error); return null; }
     const { data } = supabase!.storage.from('avatars').getPublicUrl(path);
     return data?.publicUrl || null;

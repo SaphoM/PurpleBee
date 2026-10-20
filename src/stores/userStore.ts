@@ -588,6 +588,11 @@ export const useUserStore = create<UserStore>((set, get) => ({
     authDb.signOut().catch(() => {});
     // Clean up realtime subscription before clearing auth state
     useNotificationStore.getState().unsubscribeRealtime();
+    // Unsubscribe chat presence + stop the last-seen heartbeat — without
+    // this, the signed-out account still shows "Online" to every other
+    // member (the presence channel stays tracked and the 45s heartbeat
+    // keeps refreshing last_seen_at while the tab sits on the login page).
+    useChatStore.getState().clearMockData();
     set({
       user: null, isAuthenticated: false, viewingAsId: null, error: null,
       currentTeamId: null, currentTeamName: null,

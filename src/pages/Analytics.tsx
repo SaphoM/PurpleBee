@@ -25,6 +25,7 @@ import { useUserStore } from '@stores/userStore';
 import { useInactivityTracker, InactivityState, formatDuration } from '@/lib/inactivityTracker';
 import { activityLogDb, ActivityLogRow } from '@/lib/dataService';
 import { useSettingsStore } from '@stores/settingsStore';
+import { formatHours } from '@/utils/time';
 import { format, subDays, isPast, isToday, formatDistanceToNow } from 'date-fns';
 
 type TimeRange = '7d' | '14d' | '30d' | '90d';
@@ -409,7 +410,11 @@ export const Analytics: React.FC = () => {
     { status: 'To Do', count: metrics.todo, color: 'bg-gray-400 dark:bg-slate-500' },
   ];
 
-  const efficiencyRatio = metrics.totalEstimated > 0 ? Math.round((metrics.totalActual / metrics.totalEstimated) * 100) : 0;
+  // Efficiency needs an estimate baseline; with no estimates on any task,
+  // the summary card shows a neutral "no estimates" state instead of a
+  // misleading 0h "Under Budget" verdict.
+  const hasEstimates = metrics.totalEstimated > 0;
+  const efficiencyRatio = hasEstimates ? Math.round((metrics.totalActual / metrics.totalEstimated) * 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -774,55 +779,85 @@ export const Analytics: React.FC = () => {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Estimated Hours</span>
-                  <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{metrics.totalEstimated}h</span>
+                  <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{formatHours(metrics.totalEstimated)}h</span>
                 </div>
                 <div className="h-3 bg-gray-100 dark:bg-slate-700/50 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full" style={{ width: '100%' }} />
+                  <div className="h-full bg-blue-500 rounded-full" style={{ width: hasEstimates ? '100%' : '0%' }} />
                 </div>
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Actual Hours</span>
-                  <span className={clsx('text-sm font-bold', efficiencyRatio <= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
-                    {metrics.totalActual}h
+                  <span className={clsx(
+                    'text-sm font-bold',
+                    !hasEstimates
+                      ? 'text-gray-600 dark:text-slate-300'
+                      : efficiencyRatio <= 100
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-red-600 dark:text-red-400'
+                  )}>
+                    {formatHours(metrics.totalActual)}h
                   </span>
                 </div>
                 <div className="h-3 bg-gray-100 dark:bg-slate-700/50 rounded-full overflow-hidden">
                   <div
-                    className={clsx('h-full rounded-full', efficiencyRatio <= 100 ? 'bg-emerald-500' : 'bg-red-500')}
-                    style={{ width: `${Math.min(efficiencyRatio, 100)}%` }}
+                    className={clsx(
+                      'h-full rounded-full',
+                      !hasEstimates
+                        ? 'bg-gray-400 dark:bg-slate-500'
+                        : efficiencyRatio <= 100
+                          ? 'bg-emerald-500'
+                          : 'bg-red-500'
+                    )}
+                    style={{ width: hasEstimates ? `${Math.min(efficiencyRatio, 100)}%` : metrics.totalActual > 0 ? '100%' : '0%' }}
                   />
                 </div>
               </div>
 
-              {/* Efficiency verdict */}
-              <div className={clsx(
-                'flex items-center gap-3 p-3 rounded-xl border',
-                efficiencyRatio <= 100
-                  ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/10 dark:border-emerald-700/30'
-                  : 'bg-red-50 border-red-200 dark:bg-red-900/10 dark:border-red-700/30'
-              )}>
+              {/* Efficiency verdict — only meaningful against estimates */}
+              {hasEstimates ? (
                 <div className={clsx(
-                  'w-10 h-10 rounded-lg flex items-center justify-center',
-                  efficiencyRatio <= 100 ? 'bg-emerald-100 dark:bg-emerald-900/20' : 'bg-red-100 dark:bg-red-900/20'
+                  'flex items-center gap-3 p-3 rounded-xl border',
+                  efficiencyRatio <= 100
+                    ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/10 dark:border-emerald-700/30'
+                    : 'bg-red-50 border-red-200 dark:bg-red-900/10 dark:border-red-700/30'
                 )}>
-                  {efficiencyRatio <= 100
-                    ? <Award size={20} className="text-emerald-600 dark:text-emerald-400" />
-                    : <AlertTriangle size={20} className="text-red-600 dark:text-red-400" />
-                  }
-                </div>
-                <div>
-                  <p className={clsx('text-sm font-semibold', efficiencyRatio <= 100 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300')}>
-                    {efficiencyRatio <= 100 ? 'Under Budget' : 'Over Budget'}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-slate-400">
+                  <div className={clsx(
+                    'w-10 h-10 rounded-lg flex items-center justify-center',
+                    efficiencyRatio <= 100 ? 'bg-emerald-100 dark:bg-emerald-900/20' : 'bg-red-100 dark:bg-red-900/20'
+                  )}>
                     {efficiencyRatio <= 100
-                      ? `${metrics.totalEstimated - metrics.totalActual}h saved vs estimates`
-                      : `${metrics.totalActual - metrics.totalEstimated}h over estimates`
+                      ? <Award size={20} className="text-emerald-600 dark:text-emerald-400" />
+                      : <AlertTriangle size={20} className="text-red-600 dark:text-red-400" />
                     }
-                  </p>
+                  </div>
+                  <div>
+                    <p className={clsx('text-sm font-semibold', efficiencyRatio <= 100 ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300')}>
+                      {efficiencyRatio <= 100 ? 'Under Budget' : 'Over Budget'}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-slate-400">
+                      {efficiencyRatio <= 100
+                        ? `${formatHours(metrics.totalEstimated - metrics.totalActual)}h saved vs estimates`
+                        : `${formatHours(metrics.totalActual - metrics.totalEstimated)}h over estimates`
+                      }
+                    </p>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-center gap-3 p-3 rounded-xl border bg-gray-50 border-gray-200 dark:bg-slate-800/40 dark:border-slate-700">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-100 dark:bg-slate-700/50">
+                    <Timer size={20} className="text-gray-500 dark:text-slate-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700 dark:text-slate-300">No estimates yet</p>
+                    <p className="text-xs text-gray-500 dark:text-slate-400">
+                      {metrics.totalActual > 0
+                        ? `${formatHours(metrics.totalActual)}h tracked — set estimated hours on tasks to compare`
+                        : 'Set estimated hours on tasks to compare against tracked time'}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

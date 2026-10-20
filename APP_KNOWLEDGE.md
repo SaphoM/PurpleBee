@@ -84,6 +84,8 @@ Charts computed from real task data:
 - Task status distribution and priority mix.
 - Workload per team member.
 - Completion trends over time (velocity).
+- **Time Tracking Summary**: estimated hours vs actual tracked hours, with
+  an under/over-budget verdict (or a "no estimates yet" state).
 Useful in team meetings to see where work is piling up.
 
 ### Team (`#team`)
@@ -130,7 +132,9 @@ this guide; it is not a general chatbot.
 ### Settings (`#settings`)
 Four tabs:
 - **Account**: your name, email, role, and **profile picture** (click the
-  camera overlay on your avatar to upload a new picture), and **Change
+  camera overlay on your avatar — also available on your Chat "My status"
+  circle and your own Team profile card — to upload a new picture), and
+  **Change
   password** (current password + new password, applied immediately — no
   email needed).
 - **Notifications**: choose which in-app notification types you want (task
@@ -231,6 +235,12 @@ The same modal appears from the Purple Bee Bot if you prefer guided steps.
 **Move a task to the next stage** — on the Kanban view, drag the card to
 the next column, or open the task and change its status.
 
+**Track time on a task** — open the task → **Time Tracking** section →
+**Start timer**. The button becomes a live counter with **Stop**; pressing
+Stop logs the session on the task. One timer runs at a time (starting on
+another task stops the previous one). Tracked time rolls up into the
+task's **Actual** hours and the Analytics **Time Tracking Summary**.
+
 **Invite a teammate** — Team page (admin) → Invite → their email and role →
 Send. Share the invite link it produces; the person sets their own password.
 
@@ -252,8 +262,10 @@ message or add a photo → Post. It disappears after 24 hours.
 
 **View someone's status** — tap their circle in the statuses row.
 
-**Change your profile picture** — Settings → Account → click your avatar
-(the small camera badge on it) → choose an image (up to 5 MB).
+**Change your profile picture** — any of these: Settings → Account →
+click your avatar (camera badge); Chat → tap the small camera badge on
+**My status**; Team → open your own profile card → camera badge. Choose
+an image (up to 15 MB — it's resized automatically).
 
 **Change your password** — Settings → Account → Change password → current +
 new password. (If you've forgotten it, use "Forgot password?" on the login
@@ -309,7 +321,8 @@ question like "How do I create a task?" → send.
 - **Notifications** are in-app (and browser, if allowed). Email/Telegram
   delivery exists for announcements and is configured by admins; not
   every event emails you.
-- There is **no built-in video calls, time tracking, or payroll** —
-  PurpleBee is about planning, doing, chatting, and understanding work.
+- There is **no built-in video calls or payroll** — PurpleBee is about
+  planning, doing, chatting, and understanding work. (Task **time
+  tracking** is built in: see the timer in a task's Time Tracking section.)
 - Changing your name/email/role beyond self-service (e.g. renaming a
   user) is an admin task done with admin tools.

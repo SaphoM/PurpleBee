@@ -33,6 +33,8 @@ import {
   FolderKanban,
   Pencil,
   History,
+  Play,
+  Square,
 } from 'lucide-react';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
@@ -41,7 +43,9 @@ import { useUserStore } from '@stores/userStore';
 import { useToastStore } from '@components/Toast';
 import { useSettingsStore } from '@stores/settingsStore';
 import { linkifyText } from '@/utils/linkify';
-import { taskActivityDb } from '@/lib/dataService';
+import { taskActivityDb, timeDb } from '@/lib/dataService';
+import { isDbConnected } from '@/lib/supabase';
+import { formatDuration, formatHours, formatMinutes, elapsedMinutesSince } from '@/utils/time';
 import { v4 as uuidv4 } from 'uuid';
 import { ReferencesSection } from '@components/shared/ReferencesSection';
 import { LinkedProjectReferences } from '@components/shared/LinkedProjectReferences';
@@ -274,6 +278,35 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     setActivityHasMore(true);
   }, [task?.id]);
 
+  // ── Time tracking timer ─────────────────────────────────────────────
+  // One running session per user (time_entries partial unique index).
+  // activeTimer holds the user's running row whatever task it belongs to,
+  // so we can honestly say "a timer is running on another task".
+  const [activeTimer, setActiveTimer] = useState<{ id: string; task_id: string; started_at: string } | null>(null);
+  const timeEntry = activeTimer && task && activeTimer.task_id === task.id ? activeTimer : null;
+  const runningElsewhere = !!activeTimer && !!task && activeTimer.task_id !== task.id;
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Load the user's running session when the modal opens
+  useEffect(() => {
+    if (!isOpen || !task?.id || !user?.id) return;
+    let cancelled = false;
+    timeDb.getActiveEntry(user.id).then((entry) => {
+      if (!cancelled) setActiveTimer(entry);
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, task?.id, user?.id]);
+
+  // Live 1s tick while this task's session is running
+  useEffect(() => {
+    if (!timeEntry) return;
+    const tick = () =>
+      setElapsedSeconds(Math.floor((Date.now() - new Date(timeEntry.started_at).getTime()) / 1000));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [timeEntry]);
+
   if (!isOpen || !task) return null;
 
   const currentStatus = statusConfig.find((s) => s.value === task.status);
@@ -297,6 +330,46 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
       progress: clamped,
       status: getStatusFromProgress(clamped),
     });
+  };
+
+  // ── Timer start/stop ────────────────────────────────────────────────
+  // Demo mode runs the clock in-memory; live mode persists sessions to
+  // time_entries, whose DB trigger keeps tasks.actual_hours — and with it
+  // the Analytics "Time Tracking Summary" — in sync.
+  const handleStartTimer = async () => {
+    if (!user?.id) return;
+    if (!isDbConnected()) {
+      setActiveTimer({ id: `local-${Date.now()}`, task_id: task.id, started_at: new Date().toISOString() });
+      return;
+    }
+    const started = await timeDb.startEntry(task.id, user.id);
+    if (started) {
+      setActiveTimer(started);
+    } else {
+      addToast({ type: 'error', title: 'Timer not started', message: 'Could not reach time tracking — please try again', duration: 4000 });
+    }
+  };
+
+  const handleStopTimer = async () => {
+    if (!activeTimer || !task) return;
+    const session = activeTimer;
+    setActiveTimer(null);
+    if (!isDbConnected()) {
+      const minutes = Math.round(elapsedMinutesSince(session.started_at) * 100) / 100;
+      const newTotal = Math.round(((task.actualHours || 0) + minutes / 60) * 100) / 100;
+      updateTask(task.id, { actualHours: newTotal });
+      addToast({ type: 'success', title: 'Time tracked', message: `${formatMinutes(minutes)} logged on this task`, duration: 4000 });
+      return;
+    }
+    const stopped = await timeDb.stopEntry(session.id, session.started_at, session.task_id);
+    if (stopped) {
+      // Exact re-summed total straight from the entries table — no drift
+      // from other members' sessions.
+      updateTask(session.task_id, { actualHours: stopped.task_actual_hours });
+      addToast({ type: 'success', title: 'Time tracked', message: `${formatMinutes(stopped.duration_minutes)} logged on this task`, duration: 4000 });
+    } else {
+      addToast({ type: 'error', title: 'Could not stop timer', message: 'Please try again — the session may already be closed', duration: 4000 });
+    }
   };
 
   // Calculate progress from subtasks and sync
@@ -1300,9 +1373,9 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Time Tracking */}
-          {(task.estimatedHours || task.actualHours) && (
-            <div>
+          {/* Time Tracking — always shown; the timer writes sessions to the
+              time_entries table and tasks.actual_hours follows via trigger */}
+          <div>
               <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mb-3">
                 <Timer size={14} />
                 Time Tracking
@@ -1315,7 +1388,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   <div>
                     <p className="text-xs text-gray-400 dark:text-slate-500">Estimated</p>
                     <p className="text-lg font-bold text-gray-800 dark:text-slate-100">
-                      {task.estimatedHours ?? '-'}<span className="text-sm font-normal text-gray-400 dark:text-slate-500">h</span>
+                      {task.estimatedHours != null ? formatHours(task.estimatedHours) : '-'}<span className="text-sm font-normal text-gray-400 dark:text-slate-500">h</span>
                     </p>
                   </div>
                 </div>
@@ -1335,13 +1408,43 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   <div>
                     <p className="text-xs text-gray-400 dark:text-slate-500">Actual</p>
                     <p className="text-lg font-bold text-gray-800 dark:text-slate-100">
-                      {task.actualHours ?? '-'}<span className="text-sm font-normal text-gray-400 dark:text-slate-500">h</span>
+                      {task.actualHours != null ? formatHours(task.actualHours) : '-'}<span className="text-sm font-normal text-gray-400 dark:text-slate-500">h</span>
                     </p>
                   </div>
                 </div>
               </div>
+              {/* Live start/stop timer */}
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                {!timeEntry ? (
+                  <button
+                    onClick={handleStartTimer}
+                    className={clsx(
+                      'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                      'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    )}
+                  >
+                    <Play size={14} />
+                    {runningElsewhere ? 'Switch timer to this task' : 'Start timer'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStopTimer}
+                    className={clsx(
+                      'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                      'bg-red-600 hover:bg-red-700 text-white'
+                    )}
+                  >
+                    <Square size={12} />
+                    Stop · {formatDuration(elapsedSeconds)}
+                  </button>
+                )}
+                <p className="text-xs text-gray-400 dark:text-slate-500">
+                  {runningElsewhere
+                    ? 'A timer is running on another task — starting here stops that one first.'
+                    : 'Every start/stop session is logged and feeds the Analytics time summary.'}
+                </p>
+              </div>
             </div>
-          )}
 
           {/* Tags */}
           {task.tags.length > 0 && (

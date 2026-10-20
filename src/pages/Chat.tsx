@@ -40,6 +40,7 @@ import { ConversationType, Attachment, ReplyRef, ChatMessage } from '@/types/ind
 import TaskRefCard from '@components/TaskRefCard';
 import MessageContextMenu from '@components/MessageContextMenu';
 import { useToastStore } from '@components/Toast';
+import { ChangeOwnAvatarBadge } from '@components/shared/ChangeOwnAvatarBadge';
 import { linkifyText } from '@/utils/linkify';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
@@ -792,32 +793,37 @@ export const Chat: React.FC = () => {
               {(() => {
                 const myStatus = statuses.find((st) => st.userId === currentUserId);
                 return (
-                  <button
-                    onClick={() => (myStatus ? setStatusViewerId(myStatus.id) : setShowStatusComposer(true))}
-                    className="flex flex-col items-center gap-1 w-16 flex-shrink-0 group"
-                    title={myStatus ? 'View my status' : 'Add status'}
-                  >
-                    <div className="relative">
-                      <div className={clsx('w-14 h-14 rounded-full p-0.5', myStatus ? 'bg-gradient-to-tr from-purple-500 via-pink-500 to-amber-400' : 'bg-gray-200 dark:bg-slate-600')}>
-                        <img
-                          src={currentUserAvatar}
-                          alt="You"
-                          className="w-full h-full rounded-full object-cover border-2 border-white dark:border-slate-800 bg-gray-100 dark:bg-slate-700"
-                        />
+                  <div className="relative w-16 flex-shrink-0">
+                    <button
+                      onClick={() => (myStatus ? setStatusViewerId(myStatus.id) : setShowStatusComposer(true))}
+                      className="flex flex-col items-center gap-1 w-full group"
+                      title={myStatus ? 'View my status' : 'Add status'}
+                    >
+                      <div className="relative">
+                        <div className={clsx('w-14 h-14 rounded-full p-0.5', myStatus ? 'bg-gradient-to-tr from-purple-500 via-pink-500 to-amber-400' : 'bg-gray-200 dark:bg-slate-600')}>
+                          <img
+                            src={currentUserAvatar}
+                            alt="You"
+                            className="w-full h-full rounded-full object-cover border-2 border-white dark:border-slate-800 bg-gray-100 dark:bg-slate-700"
+                          />
+                        </div>
+                        {!myStatus && (
+                          <span className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center border-2 border-white dark:border-slate-800">
+                            <Plus size={11} />
+                          </span>
+                        )}
+                        {myStatus && (
+                          <span className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/25 transition-colors" />
+                        )}
                       </div>
-                      {!myStatus && (
-                        <span className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center border-2 border-white dark:border-slate-800">
-                          <Plus size={11} />
-                        </span>
-                      )}
-                      {myStatus && (
-                        <span className="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/25 transition-colors" />
-                      )}
-                    </div>
-                    <p className="text-[10px] text-gray-500 dark:text-slate-400 truncate w-full text-center">
-                      {myStatus ? 'My status' : 'Add status'}
-                    </p>
-                  </button>
+                      <p className="text-[10px] text-gray-500 dark:text-slate-400 truncate w-full text-center">
+                        {myStatus ? 'My status' : 'Add status'}
+                      </p>
+                    </button>
+                    {/* Change my picture from where my avatar is shown — must be
+                        a sibling of the button (inputs can't live in buttons) */}
+                    <ChangeOwnAvatarBadge className="left-1 top-[42px]" />
+                  </div>
                 );
               })()}
               {/* Team members with an active status */}

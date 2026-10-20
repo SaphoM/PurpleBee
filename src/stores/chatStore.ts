@@ -45,6 +45,8 @@ let _presenceChannel: RealtimeChannel | null = null;
 let _receiptChannel: RealtimeChannel | null = null;
 // ─── Heartbeat writing profiles.last_seen_at (WhatsApp-style last seen)
 let _lastSeenTimer: ReturnType<typeof setInterval> | null = null;
+// ─── visibilitychange listener tied to the presence subscription
+let _visibilityHandler: (() => void) | null = null;
 
 /** Aggregate DB reaction rows into the app's { emoji, users[] } shape */
 function aggregateReactions(rows: { emoji: string; user_id: string }[]): { emoji: string; users: string[] }[] {
@@ -1608,23 +1610,63 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           })),
         }));
       })
+      // Presence + last-seen only while the tab is VISIBLE: a backgrounded
+      // or forgotten tab must not keep the user "Online" forever (that is
+      // exactly what false online indicators come from). Hiding the tab
+      // untracks presence and freezes "last seen" at the moment they left.
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED' && _presenceChannel) {
-          await _presenceChannel.track({ userId: currentUserId, name: currentUserName });
-          // WhatsApp-style last seen: stamp now on connect and keep a light
-          // heartbeat while the app is open, so other members see an accurate
-          // "last seen" instead of an in-memory value lost on refresh.
-          chatDb.touchLastSeen(currentUserId, false);
-          if (_lastSeenTimer) clearInterval(_lastSeenTimer);
-          _lastSeenTimer = setInterval(() => {
-            const uid = get().currentUserId;
-            if (uid) chatDb.touchLastSeen(uid, false);
-          }, 45000);
+          if (document.visibilityState !== 'hidden') {
+            await _presenceChannel.track({ userId: currentUserId, name: currentUserName });
+            startHeartbeat();
+          }
         }
       });
+
+    const startHeartbeat = () => {
+      // WhatsApp-style last seen: stamp now and keep a light heartbeat while
+      // the app is visibly open, so other members see an accurate
+      // "last seen" instead of an in-memory value lost on refresh.
+      chatDb.touchLastSeen(currentUserId, false);
+      if (_lastSeenTimer) clearInterval(_lastSeenTimer);
+      _lastSeenTimer = setInterval(() => {
+        const uid = get().currentUserId;
+        if (uid) chatDb.touchLastSeen(uid, false);
+      }, 45000);
+    };
+    const stopHeartbeat = (stamp: boolean) => {
+      if (_lastSeenTimer) {
+        clearInterval(_lastSeenTimer);
+        _lastSeenTimer = null;
+      }
+      // Final stamp so "last seen" freezes at disconnect time
+      if (stamp) {
+        const uid = get().currentUserId;
+        if (uid) chatDb.touchLastSeen(uid, false);
+      }
+    };
+    const handleVisibility = () => {
+      if (!_presenceChannel) return;
+      if (document.visibilityState === 'hidden') {
+        _presenceChannel.untrack().catch(() => {});
+        stopHeartbeat(true);
+      } else {
+        const uid = get().currentUserId;
+        if (uid) {
+          _presenceChannel.track({ userId: uid, name: get().currentUserName }).catch(() => {});
+          startHeartbeat();
+        }
+      }
+    };
+    _visibilityHandler = handleVisibility;
+    document.addEventListener('visibilitychange', handleVisibility);
   },
 
   unsubscribePresence: () => {
+    if (_visibilityHandler) {
+      document.removeEventListener('visibilitychange', _visibilityHandler);
+      _visibilityHandler = null;
+    }
     if (_lastSeenTimer) {
       clearInterval(_lastSeenTimer);
       _lastSeenTimer = null;
@@ -1633,6 +1675,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (uid) chatDb.touchLastSeen(uid, false);
     }
     if (_presenceChannel && supabase) {
+      // Untrack before removing so teammates get an explicit "leave" event
+      // immediately instead of waiting for the realtime presence timeout.
+      _presenceChannel.untrack().catch(() => {});
       supabase.removeChannel(_presenceChannel);
       _presenceChannel = null;
     }
@@ -1654,6 +1699,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       dockedChatIds: [],
       teamMembers: [],
       typingUsers: {},
+      // Reset identity too — otherwise the signed-out user keeps being
+      // tracked as "Online" and the heartbeat keeps stamping their
+      // last_seen_at (false presence after logout).
+      currentUserId: '',
+      currentUserName: '',
+      currentUserAvatar: '',
     });
   },
 
