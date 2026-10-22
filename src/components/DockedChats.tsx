@@ -324,7 +324,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white flex-shrink-0">
             <div className="flex items-center gap-2 min-w-0">
-              <img src={avatar} alt={displayName} className="w-7 h-7 rounded-full flex-shrink-0" />
+              <img src={avatar} alt={displayName} className="w-7 h-7 rounded-full flex-shrink-0 object-cover" />
               <div className="min-w-0">
                 <h4 className="text-xs font-bold truncate">{displayName}</h4>
                 <div className="flex items-center gap-1">
@@ -371,7 +371,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                 const isEditing = editingMsgId === msg.id;
                 return (
                   <div key={msg.id} className={clsx('flex gap-1.5 group/msg', isMe && 'flex-row-reverse')}>
-                    <img src={msg.senderAvatar} alt="" className="w-5 h-5 rounded-full flex-shrink-0 mt-0.5" />
+                    <img src={msg.senderAvatar} alt="" className="w-5 h-5 rounded-full flex-shrink-0 mt-0.5 object-cover" />
                     <div className={clsx('max-w-[75%] relative')}>
                       <div
                         className={clsx(
@@ -486,7 +486,7 @@ const DockedChatWindow: React.FC<{ conversationId: string }> = ({ conversationId
                                     src={p!.avatar}
                                     alt={p!.name}
                                     title={`Read by ${p!.name}`}
-                                    className="w-3 h-3 rounded-full ring-1 ring-white dark:ring-slate-900"
+                                    className="w-3 h-3 rounded-full ring-1 ring-white dark:ring-slate-900 object-cover"
                                   />
                                 ))}
                                 {readerParticipants.length > 3 && (
@@ -960,7 +960,7 @@ const MobileWalletStack: React.FC<{
             >
               <div className="h-9 px-3 flex items-center gap-2 bg-gradient-to-r from-purple-600 to-blue-600 flex-shrink-0">
                 {avatar ? (
-                  <img src={avatar} alt={conv.name} className="w-5 h-5 rounded-full flex-shrink-0 ring-1 ring-white/50" />
+                  <img src={avatar} alt={conv.name} className="w-5 h-5 rounded-full flex-shrink-0 ring-1 ring-white/50 object-cover" />
                 ) : (
                   <span className="w-5 h-5 rounded-full flex-shrink-0 ring-1 ring-white/50 bg-white/20 flex items-center justify-center">
                     {getConvIcon(conv.type)}

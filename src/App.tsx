@@ -203,7 +203,7 @@ const App: React.FC = () => {
             const vp = getViewingProfile();
             return vp ? (
               <div className="mb-6 flex items-center gap-3 px-4 py-3 rounded-xl bg-purple-50 border border-purple-200 dark:bg-purple-900/20 dark:border-purple-700/40">
-                <img src={vp.avatar} alt={vp.name} className="w-8 h-8 rounded-full ring-2 ring-purple-300 dark:ring-purple-600" />
+                <img src={vp.avatar} alt={vp.name} className="w-8 h-8 rounded-full ring-2 ring-purple-300 dark:ring-purple-600 object-cover" />
                 <div className="flex-1">
                   <p className="text-sm font-semibold text-purple-700 dark:text-purple-300">
                     Viewing as {vp.name}

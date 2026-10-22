@@ -878,7 +878,7 @@ const ProfileCard: React.FC<{
         'disabled:opacity-60 disabled:cursor-wait'
       )}
     >
-      <img src={profile.avatar} alt={profile.name} className="w-10 h-10 rounded-full flex-shrink-0 ring-2 ring-gray-100 dark:ring-slate-700" />
+      <img src={profile.avatar} alt={profile.name} className="w-10 h-10 rounded-full flex-shrink-0 ring-2 ring-gray-100 dark:ring-slate-700 object-cover" />
       <div className="flex-1 min-w-0 text-left">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-gray-900 dark:text-slate-100 truncate">{profile.name}</span>

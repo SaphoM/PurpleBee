@@ -37,8 +37,9 @@ import {
   Building2,
   Wallet,
   Lock,
+  Crown,
 } from 'lucide-react';
-import { useProjectStore, projectTemplates, ProjectTask, Project, getProjectTaskStats, getProjectTimeProgress, getProjectPace } from '@stores/projectStore';
+import { useProjectStore, projectTemplates, ProjectTask, ProjectTemplate, Project, getProjectTaskStats, getProjectTimeProgress, getProjectPace } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useNotificationStore } from '@stores/notificationStore';
@@ -148,6 +149,9 @@ interface ProjectValueSectionProps {
   onPlannedStartChange: (v: string) => void;
   plannedCompletion: string;
   onPlannedCompletionChange: (v: string) => void;
+  /** Project Lead — '' means "not assigned" (card falls back to the creator). */
+  projectLeadId: string;
+  onProjectLeadChange: (id: string) => void;
 }
 
 /** Optional per-project financial value, planned timeline + who can see the
@@ -158,6 +162,7 @@ const ProjectValueSection: React.FC<ProjectValueSectionProps> = ({
   visibility, onVisibilityChange, visibleUserIds, onVisibleUserIdsChange,
   cardDisplay, onCardDisplayChange, assignableMembers, expanded, onToggleExpanded,
   plannedStart, onPlannedStartChange, plannedCompletion, onPlannedCompletionChange,
+  projectLeadId, onProjectLeadChange,
 }) => {
   const toggleMember = (id: string) => {
     onVisibleUserIdsChange(
@@ -192,6 +197,33 @@ const ProjectValueSection: React.FC<ProjectValueSectionProps> = ({
       </button>
       {expanded && (
         <div className="mt-2 p-3 rounded-xl bg-gray-50/50 dark:bg-slate-800/20 border border-gray-200 dark:border-slate-700/50 space-y-4">
+          {/* Project Lead — the single member accountable for this project.
+              Shown on the project card / detail header; '' = not assigned
+              (the card then falls back to showing the creator). */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-slate-400 mb-1 inline-flex items-center gap-1.5">
+              <Crown size={11} className="text-amber-500" /> Project Lead
+            </label>
+            <select
+              value={projectLeadId}
+              onChange={(e) => onProjectLeadChange(e.target.value)}
+              className={clsx(
+                'w-full rounded-lg px-3 py-2 text-sm',
+                'bg-white border border-gray-300 text-gray-800',
+                'dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-100',
+                'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 cursor-pointer'
+              )}
+            >
+              <option value="">No lead assigned yet</option>
+              {assignableMembers.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+              The one person who owns this project end-to-end — everyone else can still be assigned tasks.
+            </p>
+          </div>
+
           {/* Amount + currency */}
           <div className="flex gap-2">
             <div className="flex-1">
@@ -337,12 +369,17 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [selectedTasks, setSelectedTasks] = useState<Set<number>>(new Set());
+  // Multi-select: users can pick several templates; each selected template's
+  // suggested tasks are then reviewed under its own tab in step 2.
+  const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
+  // Keys are `${templateId}:${taskIndex}` so tasks from different templates
+  // never collide; custom tasks use `custom:${index}` in `assignments`.
+  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
+  const [activeTemplateTab, setActiveTemplateTab] = useState<string | null>(null);
   const [customTaskInput, setCustomTaskInput] = useState('');
   const [customTaskDescription, setCustomTaskDescription] = useState('');
   const [customTasks, setCustomTasks] = useState<{ title: string; description: string; priority: 'low' | 'medium' | 'high' | 'urgent'; estimatedHours: number; tags: string[] }[]>([]);
-  const [assignments, setAssignments] = useState<Record<number, string>>({});
+  const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [productName, setProductName] = useState('');
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [logoError, setLogoError] = useState('');
@@ -356,20 +393,34 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const [valueVisibleUserIds, setValueVisibleUserIds] = useState<string[]>([]);
   const [cardDisplay, setCardDisplay] = useState<NonNullable<Project['cardDisplay']>>(DEFAULT_CARD_DISPLAY);
   const [showValueSection, setShowValueSection] = useState(false);
-  const [projectType, setProjectType] = useState<NonNullable<Project['projectType']>>('internal');
+  const [projectType, setProjectType] = useState<NonNullable<Project['projectType']>>('external');
+  const [projectLeadId, setProjectLeadId] = useState('');
   const [plannedStart, setPlannedStart] = useState('');
   const [plannedCompletion, setPlannedCompletion] = useState('');
 
-  const template = projectTemplates.find((t) => t.id === selectedTemplate);
-  const isCustom = selectedTemplate === 'custom';
-  const isProductSales = selectedTemplate === 'product-sales';
+  const selectedTemplateObjects = selectedTemplates
+    .map((id) => projectTemplates.find((t) => t.id === id))
+    .filter((t): t is ProjectTemplate => t !== undefined);
+  // Primary template — drives the created project's icon/colour/templateId.
+  // 'custom' only wins when it's the ONLY selection.
+  const template =
+    selectedTemplateObjects.find((t) => t.id !== 'custom') ?? selectedTemplateObjects[0];
+  const isProductSales = selectedTemplates.includes('product-sales');
+  // Templates whose suggested-tasks list gets its own tab in step 2
+  // ('custom' contributes none — it has no suggested tasks by design).
+  const templatesWithTasks = selectedTemplateObjects.filter((t) => t.id !== 'custom' && t.tasks.length > 0);
+  // Derived, never stored: if the clicked tab's template gets deselected we
+  // silently fall back to the first still-selected one.
+  const tabTemplate =
+    templatesWithTasks.find((t) => t.id === activeTemplateTab) ?? templatesWithTasks[0] ?? null;
 
   const reset = () => {
     setStep(1);
     setName('');
     setDescription('');
-    setSelectedTemplate(null);
+    setSelectedTemplates([]);
     setSelectedTasks(new Set());
+    setActiveTemplateTab(null);
     setCustomTaskInput('');
     setCustomTaskDescription('');
     setCustomTasks([]);
@@ -386,7 +437,8 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     setValueVisibleUserIds([]);
     setCardDisplay(DEFAULT_CARD_DISPLAY);
     setShowValueSection(false);
-    setProjectType('internal');
+    setProjectType('external');
+    setProjectLeadId('');
     setPlannedStart('');
     setPlannedCompletion('');
   };
@@ -410,20 +462,42 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     if (logoInputRef.current) logoInputRef.current.value = '';
   };
 
+  /** Toggle a template in/out of the selection — several can be active at once. */
   const handleSelectTemplate = (templateId: string) => {
-    setSelectedTemplate(templateId);
-    const tmpl = projectTemplates.find((t) => t.id === templateId);
-    if (tmpl && tmpl.tasks.length > 0) {
-      // Pre-select all suggested tasks
-      setSelectedTasks(new Set(tmpl.tasks.map((_, i) => i)));
+    const removing = selectedTemplates.includes(templateId);
+    const next = removing
+      ? selectedTemplates.filter((id) => id !== templateId)
+      : [...selectedTemplates, templateId];
+    setSelectedTemplates(next);
+
+    const prefix = `${templateId}:`;
+    if (removing) {
+      // Drop everything that belonged to the deselected template.
+      setSelectedTasks((prev) => new Set([...prev].filter((k) => !k.startsWith(prefix))));
+      setAssignments((prev) => {
+        const kept: Record<string, string> = {};
+        for (const [k, v] of Object.entries(prev)) if (!k.startsWith(prefix)) kept[k] = v;
+        return kept;
+      });
+    } else {
+      const tmpl = projectTemplates.find((t) => t.id === templateId);
+      if (tmpl && tmpl.tasks.length > 0) {
+        // Pre-select all of the newly added template's suggested tasks
+        setSelectedTasks((prev) => {
+          const s = new Set(prev);
+          tmpl.tasks.forEach((_, i) => s.add(`${tmpl.id}:${i}`));
+          return s;
+        });
+      }
     }
   };
 
-  const toggleTask = (index: number) => {
+  const toggleTask = (templateId: string, index: number) => {
+    const key = `${templateId}:${index}`;
     setSelectedTasks((prev) => {
       const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
@@ -452,22 +526,25 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
     try {
       const taskList: Omit<ProjectTask, 'id'>[] = [];
 
-      // Add selected template tasks
-      if (template && !isCustom) {
-        template.tasks.forEach((t, i) => {
-          if (selectedTasks.has(i)) {
+      // Add selected template tasks — every selected template contributes its
+      // own ticked tasks (keys are `${templateId}:${index}`).
+      selectedTemplateObjects.forEach((tmpl) => {
+        if (tmpl.id === 'custom') return;
+        tmpl.tasks.forEach((t, i) => {
+          const key = `${tmpl.id}:${i}`;
+          if (selectedTasks.has(key)) {
             taskList.push({
               title: t.title,
               description: t.description,
               priority: t.priority,
               estimatedHours: t.estimatedHours,
               tags: t.tags,
-              assignedTo: assignments[i] || undefined,
+              assignedTo: assignments[key] || undefined,
               order: taskList.length + 1,
             });
           }
         });
-      }
+      });
 
       // Add custom tasks
       customTasks.forEach((t, i) => {
@@ -477,7 +554,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
           priority: t.priority,
           estimatedHours: t.estimatedHours,
           tags: t.tags,
-          assignedTo: assignments[1000 + i] || undefined,
+          assignedTo: assignments[`custom:${i}`] || undefined,
           order: taskList.length + 1,
         });
       });
@@ -487,7 +564,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
       const projectId = createProject({
         name: projectName,
         description: description.trim(),
-        templateId: selectedTemplate || 'custom',
+        templateId: template?.id || 'custom',
         icon: logoDataUrl || template?.icon || '🔧',
         color: template?.color || '#6b7280',
         tasks: taskList,
@@ -501,6 +578,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
         valueVisibleUserIds: valueVisibility === 'selected' && valueVisibleUserIds.length > 0 ? valueVisibleUserIds : undefined,
         cardDisplay,
         projectType,
+        projectLeadId: projectLeadId || undefined,
         plannedStartDate: plannedStart ? new Date(plannedStart) : undefined,
         plannedCompletionDate: plannedCompletion ? new Date(plannedCompletion) : undefined,
       });
@@ -766,29 +844,38 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                 onPlannedStartChange={setPlannedStart}
                 plannedCompletion={plannedCompletion}
                 onPlannedCompletionChange={setPlannedCompletion}
+                projectLeadId={projectLeadId}
+                onProjectLeadChange={setProjectLeadId}
               />
 
               {/* Template cards */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-3">
                   <Sparkles size={14} className="inline mr-1 text-purple-500" />
-                  Choose a template — we'll suggest the most practical tasks
+                  Choose a template (pick as many as you like) — we'll suggest the most practical tasks
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {projectTemplates.map((tmpl) => (
+                  {projectTemplates.map((tmpl) => {
+                    const isSelected = selectedTemplates.includes(tmpl.id);
+                    return (
                     <button
                       key={tmpl.id}
                       onClick={() => handleSelectTemplate(tmpl.id)}
                       className={clsx(
-                        'p-4 rounded-xl border-2 text-left transition-all',
-                        selectedTemplate === tmpl.id
+                        'relative p-4 rounded-xl border-2 text-left transition-all',
+                        isSelected
                           ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 dark:border-purple-400 shadow-md shadow-purple-500/10'
                           : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 hover:shadow-sm'
                       )}
                     >
+                      {isSelected && (
+                        <span className="absolute top-2 right-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-purple-600 text-white shadow dark:bg-purple-400 dark:text-slate-900">
+                          <Check size={12} />
+                        </span>
+                      )}
                       <span className={clsx(
                         'inline-flex items-center justify-center w-10 h-10 rounded-lg',
-                        selectedTemplate === tmpl.id
+                        isSelected
                           ? 'text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30'
                           : 'text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-700/50'
                       )}>
@@ -802,7 +889,8 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                         </span>
                       )}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -832,7 +920,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
               <div className="flex justify-end pt-2">
                 <button
                   onClick={() => setStep(2)}
-                  disabled={!name.trim() || !selectedTemplate}
+                  disabled={!name.trim() || selectedTemplates.length === 0}
                   className={clsx(
                     'px-5 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2',
                     'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-500/30',
@@ -849,43 +937,81 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
           {/* Step 2: Task selection */}
           {step === 2 && (
             <div className="space-y-5">
-              {/* Suggested tasks */}
-              {template && !isCustom && template.tasks.length > 0 && (
+              {/* One tab per selected template that suggests tasks — every
+                  selected template's list is reachable without leaving the
+                  step, so you can see both (and all) at once. */}
+              {templatesWithTasks.length > 0 && (
+                <div className="flex flex-wrap gap-2 pb-1">
+                  {templatesWithTasks.map((t) => {
+                    const isActive = tabTemplate?.id === t.id;
+                    const ticked = t.tasks.filter((_, i) => selectedTasks.has(`${t.id}:${i}`)).length;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => setActiveTemplateTab(t.id)}
+                        className={clsx(
+                          'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
+                          isActive
+                            ? 'bg-purple-600 border-purple-600 text-white shadow-sm dark:bg-purple-500 dark:border-purple-500'
+                            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-600'
+                        )}
+                      >
+                        <span>{getTemplateIcon(t.id, 12)}</span>
+                        {t.name}
+                        <span className={clsx('text-[10px] font-semibold', isActive ? 'text-purple-100' : 'text-purple-600 dark:text-purple-400')}>
+                          {ticked}/{t.tasks.length}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Suggested tasks — scoped to the active tab's template */}
+              {tabTemplate && tabTemplate.tasks.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-300 flex items-center gap-2">
                       <Sparkles size={14} className="text-purple-500" />
-                      Suggested Tasks for {template.name}
+                      Suggested Tasks for {tabTemplate.name}
                     </h3>
                     <button
                       onClick={() => {
-                        if (selectedTasks.size === template.tasks.length) setSelectedTasks(new Set());
-                        else setSelectedTasks(new Set(template.tasks.map((_, i) => i)));
+                        const prefix = `${tabTemplate.id}:`;
+                        const keys = tabTemplate.tasks.map((_, i) => `${prefix}${i}`);
+                        setSelectedTasks((prev) => {
+                          const next = new Set(prev);
+                          const allTicked = keys.every((k) => next.has(k));
+                          keys.forEach((k) => (allTicked ? next.delete(k) : next.add(k)));
+                          return next;
+                        });
                       }}
                       className="text-xs text-purple-600 dark:text-purple-400 hover:underline"
                     >
-                      {selectedTasks.size === template.tasks.length ? 'Deselect All' : 'Select All'}
+                      {tabTemplate.tasks.every((_, i) => selectedTasks.has(`${tabTemplate.id}:${i}`)) ? 'Deselect All' : 'Select All'}
                     </button>
                   </div>
                   <div className="space-y-2">
-                    {template.tasks.map((task, i) => (
+                    {tabTemplate.tasks.map((task, i) => {
+                      const ticked = selectedTasks.has(`${tabTemplate.id}:${i}`);
+                      return (
                       <button
                         key={i}
-                        onClick={() => toggleTask(i)}
+                        onClick={() => toggleTask(tabTemplate.id, i)}
                         className={clsx(
                           'w-full flex items-start gap-3 p-3 rounded-xl border text-left transition-all',
-                          selectedTasks.has(i)
+                          ticked
                             ? 'border-purple-300 bg-purple-50/50 dark:border-purple-600/50 dark:bg-purple-900/10'
                             : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 opacity-60'
                         )}
                       >
                         <div className={clsx(
                           'w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-all',
-                          selectedTasks.has(i)
+                          ticked
                             ? 'bg-purple-600 border-purple-600 text-white'
                             : 'border-gray-300 dark:border-slate-600'
                         )}>
-                          {selectedTasks.has(i) && <Check size={12} />}
+                          {ticked && <Check size={12} />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
@@ -910,7 +1036,8 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                           </div>
                         </div>
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1011,6 +1138,30 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                 Assign tasks to team members. You can also leave them unassigned and assign later.
               </p>
 
+              {/* Project Lead — same value as the "Project Planning" section,
+                  surfaced here so it can be picked at the moment tasks are
+                  being handed out ("assigning things to everyone"). */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                <span className="text-sm font-medium text-amber-800 dark:text-amber-300 whitespace-nowrap inline-flex items-center gap-1.5">
+                  <Crown size={14} className="text-amber-500" /> Project Lead
+                </span>
+                <select
+                  value={projectLeadId}
+                  onChange={(e) => setProjectLeadId(e.target.value)}
+                  className={clsx(
+                    'flex-1 rounded-lg px-3 py-1.5 text-sm',
+                    'bg-white border border-amber-300 text-gray-800',
+                    'dark:bg-slate-900/40 dark:border-amber-700 dark:text-slate-100',
+                    'focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20'
+                  )}
+                >
+                  <option value="">No lead assigned</option>
+                  {assignableMembers.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
               {/* Bulk-assign all tasks to one person */}
               <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
                 <span className="text-sm font-medium text-purple-700 dark:text-purple-300 whitespace-nowrap">Assign all to</span>
@@ -1018,11 +1169,16 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                   defaultValue=""
                   onChange={(e) => {
                     const val = e.target.value;
-                    const bulk: Record<number, string> = {};
-                    if (template && !isCustom) {
-                      template.tasks.forEach((_, i) => { if (selectedTasks.has(i)) bulk[i] = val; });
-                    }
-                    customTasks.forEach((_, i) => { bulk[1000 + i] = val; });
+                    const bulk: Record<string, string> = {};
+                    // Every selected template's ticked tasks, keyed `${templateId}:${index}`
+                    selectedTemplateObjects.forEach((tmpl) => {
+                      if (tmpl.id === 'custom') return;
+                      tmpl.tasks.forEach((_, i) => {
+                        const k = `${tmpl.id}:${i}`;
+                        if (selectedTasks.has(k)) bulk[k] = val;
+                      });
+                    });
+                    customTasks.forEach((_, i) => { bulk[`custom:${i}`] = val; });
                     setAssignments(val ? bulk : {});
                   }}
                   className={clsx(
@@ -1040,20 +1196,25 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
               </div>
 
               <div className="space-y-2">
-                {/* Template tasks */}
-                {template && !isCustom && template.tasks.map((task, i) => {
-                  if (!selectedTasks.has(i)) return null;
-                  return (
-                    <div key={`t-${i}`} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-xl bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
+                {/* Template tasks — one group per selected template */}
+                {selectedTemplateObjects.filter((tmpl) => tmpl.id !== 'custom').map((tmpl) =>
+                  tmpl.tasks.map((task, i) => {
+                    const key = `${tmpl.id}:${i}`;
+                    if (!selectedTasks.has(key)) return null;
+                    return (
+                    <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-xl bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{task.title}</p>
-                        <span className={clsx('text-[10px] font-medium', priorityConfig[task.priority].color)}>
-                          {priorityConfig[task.priority].label}
+                        <span className="flex items-center gap-2">
+                          <span className={clsx('text-[10px] font-medium', priorityConfig[task.priority].color)}>
+                            {priorityConfig[task.priority].label}
+                          </span>
+                          <span className="text-[10px] text-gray-400 dark:text-slate-500">{tmpl.name}</span>
                         </span>
                       </div>
                       <select
-                        value={assignments[i] || ''}
-                        onChange={(e) => setAssignments({ ...assignments, [i]: e.target.value })}
+                        value={assignments[key] || ''}
+                        onChange={(e) => setAssignments({ ...assignments, [key]: e.target.value })}
                         className={clsx(
                           'rounded-lg px-3 py-2 sm:py-1.5 text-sm sm:text-xs w-full sm:w-44',
                           'bg-white border border-gray-300 text-gray-800',
@@ -1067,8 +1228,9 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                         ))}
                       </select>
                     </div>
-                  );
-                })}
+                    );
+                  })
+                )}
 
                 {/* Custom tasks */}
                 {customTasks.map((ct, i) => (
@@ -1078,8 +1240,8 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                       <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">Medium</span>
                     </div>
                     <select
-                      value={assignments[1000 + i] || ''}
-                      onChange={(e) => setAssignments({ ...assignments, [1000 + i]: e.target.value })}
+                      value={assignments[`custom:${i}`] || ''}
+                      onChange={(e) => setAssignments({ ...assignments, [`custom:${i}`]: e.target.value })}
                       className={clsx(
                         'rounded-lg px-3 py-2 sm:py-1.5 text-sm sm:text-xs w-full sm:w-44',
                         'bg-white border border-gray-300 text-gray-800',
@@ -1376,6 +1538,21 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                     <span className="capitalize">{project.projectType}</span>
                   </>
                 )}
+                {(() => {
+                  const lead = project.projectLeadId
+                    ? assignableMembers.find((m) => m.id === project.projectLeadId)
+                    : undefined;
+                  if (!lead) return null;
+                  return (
+                    <>
+                      <span>&middot;</span>
+                      <span className="inline-flex items-center gap-1">
+                        <Crown size={11} className="text-amber-500" />
+                        Project Lead: <span className="font-medium text-gray-700 dark:text-slate-300">{lead.name}</span>
+                      </span>
+                    </>
+                  );
+                })()}
                 {project.plannedStartDate && project.plannedCompletionDate && (
                   <>
                     <span>&middot;</span>
@@ -1856,7 +2033,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                           className="flex items-center gap-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg px-2 py-1 transition-colors cursor-pointer"
                           title={`Chat with ${assignee.name}`}
                         >
-                          <img src={assignee.avatar} alt={assignee.name} className="w-7 h-7 rounded-full ring-2 ring-transparent hover:ring-purple-400 transition-all" />
+                          <img src={assignee.avatar} alt={assignee.name} className="w-7 h-7 rounded-full ring-2 ring-transparent hover:ring-purple-400 transition-all object-cover" />
                           <span className="text-xs text-gray-600 dark:text-slate-300">{assignee.name.split(' ')[0]}</span>
                         </button>
                         {canManage && (
@@ -2034,13 +2211,13 @@ interface EditProjectModalProps {
     id: string; name: string; description?: string; status: string; icon: string; templateId: string;
     attachments?: Attachment[]; links?: TaskLink[];
     valueVisibility?: Project['valueVisibility']; valueVisibleUserIds?: string[]; cardDisplay?: Project['cardDisplay'];
-    projectType?: Project['projectType']; plannedStartDate?: Date; plannedCompletionDate?: Date;
+    projectType?: Project['projectType']; projectLeadId?: string; plannedStartDate?: Date; plannedCompletionDate?: Date;
   };
   onClose: () => void;
   onSave: (id: string, updates: {
     name: string; description: string; status: string; icon: string; attachments?: Attachment[]; links?: TaskLink[];
     value?: number; currency?: string; valueVisibility?: Project['valueVisibility']; valueVisibleUserIds?: string[]; cardDisplay?: Project['cardDisplay'];
-    projectType?: Project['projectType']; plannedStartDate?: Date; plannedCompletionDate?: Date;
+    projectType?: Project['projectType']; projectLeadId?: string; plannedStartDate?: Date; plannedCompletionDate?: Date;
   }) => void;
 }
 const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, onSave }) => {
@@ -2063,7 +2240,8 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
   const [valueVisibleUserIds, setValueVisibleUserIds] = useState<string[]>(project.valueVisibleUserIds || []);
   const [cardDisplay, setCardDisplay] = useState<NonNullable<Project['cardDisplay']>>({ ...DEFAULT_CARD_DISPLAY, ...(project.cardDisplay || {}) });
   const [showValueSection, setShowValueSection] = useState(false);
-  const [projectType, setProjectType] = useState<NonNullable<Project['projectType']>>(project.projectType || 'internal');
+  const [projectType, setProjectType] = useState<NonNullable<Project['projectType']>>(project.projectType || 'external');
+  const [projectLeadId, setProjectLeadId] = useState(project.projectLeadId || '');
   const [plannedStart, setPlannedStart] = useState(toDateInputValue(project.plannedStartDate));
   const [plannedCompletion, setPlannedCompletion] = useState(toDateInputValue(project.plannedCompletionDate));
 
@@ -2119,6 +2297,9 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
       valueVisibleUserIds: valueVisibility === 'selected' && valueVisibleUserIds.length > 0 ? valueVisibleUserIds : undefined,
       cardDisplay,
       projectType,
+      // '' means "no lead" — keep it as '' so clearing the lead actually
+      // reaches the DB (undefined would be dropped by the update whitelist).
+      projectLeadId,
       plannedStartDate: plannedStart ? new Date(plannedStart) : undefined,
       plannedCompletionDate: plannedCompletion ? new Date(plannedCompletion) : undefined,
     });
@@ -2129,7 +2310,10 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
       <div className={clsx(
-        'relative w-full max-w-md rounded-2xl shadow-2xl p-6 z-10',
+        // Scroll when the expanded Planning section makes the form taller
+        // than the viewport (same pattern as the Create wizard panel) —
+        // otherwise Save/lead select are unreachable on short screens.
+        'relative w-full max-w-md rounded-2xl shadow-2xl p-6 z-10 max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto',
         'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700'
       )}>
         <div className="flex items-center justify-between mb-5">
@@ -2274,6 +2458,8 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
             onPlannedStartChange={setPlannedStart}
             plannedCompletion={plannedCompletion}
             onPlannedCompletionChange={setPlannedCompletion}
+            projectLeadId={projectLeadId}
+            onProjectLeadChange={setProjectLeadId}
           />
           <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Status</label>
@@ -2767,7 +2953,12 @@ export const Projects: React.FC = () => {
                   if (!showValue && !showProgress && !showPM && !showType && !showDue) return null;
                   const pv = projectValues[project.id];
                   const stats = showProgress ? getProjectTaskStats(project, boardTasks) : null;
-                  const pm = showPM ? assignableMembers.find((m) => m.id === project.createdBy) : null;
+                  // Prefer the explicitly assigned Project Lead; projects
+                  // without one keep showing the creator (legacy behaviour).
+                  const lead = project.projectLeadId
+                    ? assignableMembers.find((m) => m.id === project.projectLeadId)
+                    : undefined;
+                  const pm = showPM ? (lead || assignableMembers.find((m) => m.id === project.createdBy)) : null;
                   return (
                     <div className="mb-3 space-y-1.5">
                       {(showType || showDue) && (
@@ -2806,7 +2997,7 @@ export const Projects: React.FC = () => {
                       )}
                       {showPM && pm && (
                         <div className="text-[11px] text-gray-400 dark:text-slate-500">
-                          Project Manager: <span className="text-gray-600 dark:text-slate-300 font-medium">{pm.name}</span>
+                          {lead ? 'Project Lead' : 'Project Manager'}: <span className="text-gray-600 dark:text-slate-300 font-medium">{pm.name}</span>
                         </div>
                       )}
                     </div>
@@ -2968,7 +3159,7 @@ export const Projects: React.FC = () => {
               id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active', icon: proj.icon, templateId: proj.templateId,
               attachments: proj.attachments, links: proj.links,
               valueVisibility: proj.valueVisibility, valueVisibleUserIds: proj.valueVisibleUserIds, cardDisplay: proj.cardDisplay,
-              projectType: proj.projectType, plannedStartDate: proj.plannedStartDate, plannedCompletionDate: proj.plannedCompletionDate,
+              projectType: proj.projectType, projectLeadId: proj.projectLeadId, plannedStartDate: proj.plannedStartDate, plannedCompletionDate: proj.plannedCompletionDate,
             }}
             onClose={() => setEditProjectId(null)}
             onSave={(id, updates) => updateProject(id, updates as any)}

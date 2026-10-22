@@ -346,8 +346,10 @@ export interface Project {
     projectType?: boolean;
     plannedCompletion?: boolean;
   };
-  /** Internal (in-house) vs External (client/customer) project. Defaults to 'internal' at the DB level. */
+  /** Internal (in-house) vs External (client/customer) project. Defaults to 'external' for new projects. */
   projectType?: 'internal' | 'external';
+  /** Optional Project Lead — the single member accountable for the project, assigned under the "Project Planning" section (create wizard + edit modal). Falls back to the creator when unset. */
+  projectLeadId?: string;
   /** Optional planned timeline — used only to compute time-progress (see getProjectTimeProgress). Never persisted as a percentage. */
   plannedStartDate?: Date;
   plannedCompletionDate?: Date;
@@ -469,6 +471,7 @@ interface ProjectStore {
     valueVisibleUserIds?: string[];
     cardDisplay?: Project['cardDisplay'];
     projectType?: Project['projectType'];
+    projectLeadId?: string;
     plannedStartDate?: Date;
     plannedCompletionDate?: Date;
   }) => string; // returns project id
@@ -637,7 +640,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       valueVisibility: data.valueVisibility || 'admins',
       valueVisibleUserIds: data.valueVisibleUserIds || undefined,
       cardDisplay: data.cardDisplay || undefined,
-      projectType: data.projectType || 'internal',
+      projectType: data.projectType || 'external',
+      projectLeadId: data.projectLeadId || undefined,
       plannedStartDate: data.plannedStartDate || undefined,
       plannedCompletionDate: data.plannedCompletionDate || undefined,
     };
@@ -669,7 +673,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         value_visibility: project.valueVisibility || 'admins',
         value_visible_user_ids: project.valueVisibleUserIds && project.valueVisibleUserIds.length > 0 ? project.valueVisibleUserIds : null,
         card_display: project.cardDisplay || null,
-        project_type: project.projectType || 'internal',
+        project_type: project.projectType || 'external',
+        project_lead_id: project.projectLeadId || null,
         planned_start_date: project.plannedStartDate ? project.plannedStartDate.toISOString().slice(0, 10) : null,
         planned_completion_date: project.plannedCompletionDate ? project.plannedCompletionDate.toISOString().slice(0, 10) : null,
       },
@@ -704,7 +709,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.valueVisibility !== undefined) payload.value_visibility = updates.valueVisibility || 'admins';
     if (updates.valueVisibleUserIds !== undefined) payload.value_visible_user_ids = updates.valueVisibleUserIds && updates.valueVisibleUserIds.length > 0 ? updates.valueVisibleUserIds : null;
     if (updates.cardDisplay !== undefined) payload.card_display = updates.cardDisplay || null;
-    if (updates.projectType !== undefined) payload.project_type = updates.projectType || 'internal';
+    if (updates.projectType !== undefined) payload.project_type = updates.projectType || 'external';
+    if (updates.projectLeadId !== undefined) payload.project_lead_id = updates.projectLeadId || null;
     if (updates.plannedStartDate !== undefined) payload.planned_start_date = updates.plannedStartDate ? new Date(updates.plannedStartDate).toISOString().slice(0, 10) : null;
     if (updates.plannedCompletionDate !== undefined) payload.planned_completion_date = updates.plannedCompletionDate ? new Date(updates.plannedCompletionDate).toISOString().slice(0, 10) : null;
     if (Object.keys(payload).length > 0) {
@@ -985,7 +991,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       // projectDb.fetchAll) — never hydrated here; fetched on demand via
       // projectDb.getValue() by whichever component needs to show it.
       cardDisplay: r.card_display || undefined,
-      projectType: r.project_type || 'internal',
+      projectType: r.project_type || 'external',
+      projectLeadId: r.project_lead_id || undefined,
       plannedStartDate: r.planned_start_date ? new Date(r.planned_start_date) : undefined,
       plannedCompletionDate: r.planned_completion_date ? new Date(r.planned_completion_date) : undefined,
       tasks: ((r.project_tasks as Array<Record<string, any>>) || [])

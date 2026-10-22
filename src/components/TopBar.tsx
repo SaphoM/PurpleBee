@@ -809,7 +809,7 @@ export const TopBar: React.FC = () => {
                             : 'hover:bg-gray-50 dark:hover:bg-slate-700/50'
                         )}
                       >
-                        <img src={profile.avatar} alt={profile.name} className="w-8 h-8 rounded-full flex-shrink-0" />
+                        <img src={profile.avatar} alt={profile.name} className="w-8 h-8 rounded-full flex-shrink-0 object-cover" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-semibold text-gray-800 dark:text-slate-200 truncate">{profile.name}</span>

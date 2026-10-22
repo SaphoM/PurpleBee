@@ -50,7 +50,7 @@ import { useChatStore } from '@stores/chatStore';
 import { NotificationType } from '@/types/index';
 import { isDbConnected, supabase } from '@/lib/supabase';
 import { authDb } from '@/lib/dataService';
-import { useToastStore } from '@components/Toast';
+import { AvatarPickerModal } from '@components/shared/AvatarPickerModal';
 
 // ─── Demo-to-Real Auth Modal ──────────────────────────────────────────────────
 // Shown when a Quick Login (demo) user tries to turn off mock data.
@@ -624,31 +624,10 @@ export const SettingsPage: React.FC = () => {
   // Detect recovery mode — user arrived via password reset email link
   const isRecoveryMode = window.location.hash.includes('recovery=true');
 
-  // ── Profile picture upload → public avatars bucket → profiles.avatar ──
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const { addToast } = useToastStore();
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file || !user) return;
-    if (!file.type.startsWith('image/')) {
-      addToast({ type: 'error', title: 'Not an image', message: 'Please choose an image file', duration: 4000 });
-      return;
-    }
-    if (file.size > 15 * 1024 * 1024) {
-      addToast({ type: 'error', title: 'File too large', message: 'Photos must be under 15 MB — big camera photos are resized automatically', duration: 4000 });
-      return;
-    }
-    setUploadingAvatar(true);
-    const url = await authDb.uploadAvatar(user.id, file);
-    if (url) {
-      await useUserStore.getState().updateMyAvatar(url);
-      addToast({ type: 'success', title: 'Profile picture updated', message: 'Your new photo now shows everywhere in PurpleBee', duration: 4000 });
-    } else {
-      addToast({ type: 'error', title: 'Upload failed', message: 'Could not read that photo — please try a JPG or PNG under 15 MB', duration: 5000 });
-    }
-    setUploadingAvatar(false);
-  };
+  // ── Profile picture → shared avatar picker (preset grid + "Choose image"
+  // upload through authDb.uploadAvatar) — same modal as the Chat/Team
+  // camera badges, so every entry point behaves identically ──
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const { preferences, updatePreferences, resetPreferences } = useNotificationStore();
   const { user, isQuickLoginUser } = useUserStore();
   const { darkMode, toggleDarkMode } = useUIStore();
@@ -866,6 +845,8 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Avatar picker — opened from the profile picture in the Account tab */}
+      <AvatarPickerModal isOpen={avatarPickerOpen} onClose={() => setAvatarPickerOpen(false)} />
       {/* Demo-to-real auth modal */}
       {showDemoModal && (
         <DemoToRealModal
@@ -1192,22 +1173,19 @@ export const SettingsPage: React.FC = () => {
                             alt={user.name}
                             className="w-16 h-16 rounded-2xl ring-2 ring-gray-200 dark:ring-slate-700 object-cover bg-gray-100 dark:bg-slate-700/50"
                           />
-                          {/* The file input itself sits over the photo, so clicking or
-                              tapping the avatar opens the native picker in every
-                              browser — no hover, no JS .click() on a hidden input. */}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            disabled={uploadingAvatar}
-                            onChange={handleAvatarUpload}
+                          {/* The button covers the photo, so clicking or tapping
+                              the avatar opens the avatar picker (preset grid +
+                              "Choose image") in every browser — no hover, no JS
+                              .click() on a hidden input. */}
+                          <button
+                            type="button"
+                            onClick={() => setAvatarPickerOpen(true)}
                             aria-label="Change profile picture"
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-wait"
+                            className="absolute inset-0 h-full w-full cursor-pointer rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500"
                           />
                           {/* Decorative badge — never blocks clicks (pointer-events-none) */}
                           <span className="pointer-events-none absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-purple-600 shadow dark:border-slate-800">
-                            {uploadingAvatar
-                              ? <Loader2 size={11} className="text-white animate-spin" />
-                              : <Camera size={11} className="text-white" />}
+                            <Camera size={11} className="text-white" />
                           </span>
                         </div>
                         <div>

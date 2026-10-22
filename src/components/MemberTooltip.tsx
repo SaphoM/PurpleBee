@@ -181,7 +181,7 @@ export const MemberTooltip: React.FC<MemberTooltipProps> = ({
           </p>
           {members.map((member) => (
             <div key={member.id} className="flex items-center gap-2 py-1">
-              <img src={member.avatar} alt="" className="w-5 h-5 rounded-full" />
+              <img src={member.avatar} alt="" className="w-5 h-5 rounded-full object-cover" />
               <span className="text-xs font-medium truncate">{member.name}</span>
               <span className={clsx(
                 'ml-auto text-[9px] px-1.5 py-0.5 rounded-full font-medium',
@@ -250,7 +250,7 @@ export const MemberTooltip: React.FC<MemberTooltipProps> = ({
                     key={member.id}
                     className="flex items-center gap-2 py-1.5 group/member"
                   >
-                    <img src={member.avatar} alt="" className="w-6 h-6 rounded-full" />
+                    <img src={member.avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-gray-800 dark:text-slate-200 truncate">
                         {member.name}
@@ -327,7 +327,7 @@ export const MemberTooltip: React.FC<MemberTooltipProps> = ({
                     <img
                       src={profile.avatar}
                       alt=""
-                      className="w-6 h-6 rounded-full"
+                      className="w-6 h-6 rounded-full object-cover"
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium text-gray-700 dark:text-slate-300 truncate">

@@ -405,7 +405,7 @@ const MemberDetailModal: React.FC<{
         {/* Avatar */}
         <div className="px-6 -mt-12">
           <div className="relative inline-block">
-            <img src={member.member.avatar} alt={member.member.name} title={member.member.name} className="w-24 h-24 rounded-2xl border-4 border-white dark:border-slate-800 shadow-lg" />
+            <img src={member.member.avatar} alt={member.member.name} title={member.member.name} className="w-24 h-24 rounded-2xl border-4 border-white dark:border-slate-800 shadow-lg object-cover" />
             <span className={clsx(
               'absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-3 border-white dark:border-slate-800',
               member.member.online ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-slate-600'
@@ -1043,7 +1043,7 @@ export const Team: React.FC = () => {
                 {/* Top */}
                 <div className="flex items-start gap-4 mb-4">
                   <div className="relative flex-shrink-0">
-                    <img src={m.member.avatar} alt={m.member.name} title={m.member.name} className="w-14 h-14 rounded-xl shadow-sm" />
+                    <img src={m.member.avatar} alt={m.member.name} title={m.member.name} className="w-14 h-14 rounded-xl shadow-sm object-cover" />
                     <span className={clsx(
                       'absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white dark:border-slate-800',
                       m.member.online ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-slate-600'
@@ -1171,7 +1171,7 @@ export const Team: React.FC = () => {
                   <div className="flex items-center gap-2 mb-2">
                     <div className="flex -space-x-2">
                       {members.slice(0, 3).map((m) => (
-                        <img key={m.member.userId} src={m.member.avatar} alt={m.member.name} title={m.member.name} className="w-6 h-6 rounded-full border-2 border-gray-50 dark:border-slate-800 cursor-pointer" />
+                        <img key={m.member.userId} src={m.member.avatar} alt={m.member.name} title={m.member.name} className="w-6 h-6 rounded-full border-2 border-gray-50 dark:border-slate-800 cursor-pointer object-cover" />
                       ))}
                       {members.length > 3 && (
                         <span className="w-6 h-6 rounded-full bg-gray-200 dark:bg-slate-700 border-2 border-gray-50 dark:border-slate-800 flex items-center justify-center text-[9px] font-bold text-gray-500 dark:text-slate-400">

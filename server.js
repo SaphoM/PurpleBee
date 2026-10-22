@@ -56,6 +56,81 @@ app.use((req, res, next) => {
 // of the chat handler here would just drift. The LLM key lives in
 // Supabase secrets, never in this repo, process.env, or the bundle.
 
+// ─── REST API ────────────────────────────────────────────────────────────
+// Render serves the static build only and never runs this file; these
+// routes matter when server.js runs locally (VITE_API_URL points here).
+
+// JSON body parsing for API routes only (skips static/SPA requests).
+app.use('/api', express.json());
+
+// CORS for API routes only: the Vite dev server calls these cross-origin
+// in local development; the deployed site is same-origin.
+app.use('/api', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+// GET /api/health — uptime probe (no secrets, safe to expose).
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'purplebee',
+    uptime: Math.round(process.uptime()),
+    ts: new Date().toISOString(),
+  });
+});
+
+// POST /api/integrations/telegram/verify — the exact contract SettingsPage's
+// legacy handleConnectTelegram calls: body { botToken } → { success, error }.
+// Validates the token against https://api.telegram.org/bot<TOKEN>/getMe.
+app.post('/api/integrations/telegram/verify', async (req, res) => {
+  const botToken = String(req.body?.botToken || process.env.VITE_TELEGRAM_BOT_TOKEN || '').trim();
+  if (!botToken) {
+    return res.status(400).json({
+      success: false,
+      error: 'No bot token provided (pass botToken in the body or set VITE_TELEGRAM_BOT_TOKEN in .env)',
+    });
+  }
+  if (!/^\d+:[A-Za-z0-9_-]{10,}$/.test(botToken)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Bot token has an invalid format (expected "<digits>:<secret>")',
+    });
+  }
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    let tg;
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${botToken}/getMe`, { signal: ctrl.signal });
+      tg = await r.json();
+    } finally {
+      clearTimeout(timer);
+    }
+    if (tg?.ok) {
+      return res.json({
+        success: true,
+        username: tg.result?.username,
+        firstName: tg.result?.first_name,
+      });
+    }
+    return res.json({ success: false, error: tg?.description || 'Telegram rejected this token' });
+  } catch (err) {
+    return res.status(502).json({
+      success: false,
+      error: err?.name === 'AbortError' ? 'Telegram did not respond in time' : 'Could not reach api.telegram.org',
+    });
+  }
+});
+
+// Unknown API paths return JSON 404 instead of falling into the SPA shell.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
 // Serve Vite build output
 app.use(express.static(DIST));
 

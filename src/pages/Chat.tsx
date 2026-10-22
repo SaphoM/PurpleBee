@@ -356,7 +356,7 @@ const NewDMModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen
                 className="w-full flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors"
               >
                 <div className="relative">
-                  <img src={member.avatar} alt={member.name} className="w-10 h-10 rounded-full" />
+                  <img src={member.avatar} alt={member.name} className="w-10 h-10 rounded-full object-cover" />
                   <span className={clsx(
                     'absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-800',
                     member.online ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-slate-600'
@@ -949,7 +949,7 @@ export const Chat: React.FC = () => {
                           <img
                             src={conv.participants.find((p) => p.userId !== currentUserId)?.avatar}
                             alt={conv.name}
-                            className="w-10 h-10 rounded-full"
+                            className="w-10 h-10 rounded-full object-cover"
                           />
                           <span className={clsx(
                             'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2',
@@ -1075,7 +1075,7 @@ export const Chat: React.FC = () => {
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all hover:bg-gray-50 dark:hover:bg-slate-700/30"
                       >
                         <div className="relative flex-shrink-0">
-                          <img src={m.avatar} alt={m.name} className="w-10 h-10 rounded-full" />
+                          <img src={m.avatar} alt={m.name} className="w-10 h-10 rounded-full object-cover" />
                           <span className={clsx(
                             'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-slate-800',
                             m.online ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-slate-600'
@@ -1118,7 +1118,7 @@ export const Chat: React.FC = () => {
                       <img
                         src={activeConversation.participants.find((p) => p.userId !== currentUserId)?.avatar}
                         alt={activeConversation.name}
-                        className="w-9 h-9 rounded-full"
+                        className="w-9 h-9 rounded-full object-cover"
                       />
                       <span className={clsx(
                         'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-gray-50 dark:border-slate-800',
@@ -1170,7 +1170,7 @@ export const Chat: React.FC = () => {
                   </button>
                   <div className="flex -space-x-2">
                     {activeConversation.participants.slice(0, 4).map((p) => (
-                      <img key={p.userId} src={p.avatar} alt={p.name} className="w-7 h-7 rounded-full border-2 border-white dark:border-slate-800" title={p.name} />
+                      <img key={p.userId} src={p.avatar} alt={p.name} className="w-7 h-7 rounded-full border-2 border-white dark:border-slate-800 object-cover" title={p.name} />
                     ))}
                     {activeConversation.participants.length > 4 && (
                       <div className="w-7 h-7 rounded-full bg-gray-200 dark:bg-slate-700 border-2 border-white dark:border-slate-800 flex items-center justify-center text-[10px] font-bold text-gray-500 dark:text-slate-400">
@@ -1368,7 +1368,7 @@ export const Chat: React.FC = () => {
                                               src={p!.avatar}
                                               alt={p!.name}
                                               title={`Seen by ${p!.name}`}
-                                              className="w-3.5 h-3.5 rounded-full ring-1 ring-white dark:ring-slate-800"
+                                              className="w-3.5 h-3.5 rounded-full ring-1 ring-white dark:ring-slate-800 object-cover"
                                             />
                                           ))}
                                           {readerParticipants.length > 3 && (
@@ -1704,7 +1704,7 @@ export const Chat: React.FC = () => {
                     <img
                       src={activeConversation.participants.find((p) => p.userId !== currentUserId)?.avatar}
                       alt={activeConversation.name}
-                      className="w-9 h-9 rounded-full"
+                      className="w-9 h-9 rounded-full object-cover"
                     />
                     <span className={clsx(
                       'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-gray-50 dark:border-slate-800',
@@ -1782,7 +1782,7 @@ export const Chat: React.FC = () => {
                       )}
                       <div className={clsx('flex gap-2.5', isMe && 'flex-row-reverse')}>
                         {showAvatar ? (
-                          <img src={msg.senderAvatar} alt={msg.senderName} className="w-7 h-7 rounded-full flex-shrink-0 mt-0.5" />
+                          <img src={msg.senderAvatar} alt={msg.senderName} className="w-7 h-7 rounded-full flex-shrink-0 mt-0.5 object-cover" />
                         ) : (
                           <div className="w-7 flex-shrink-0" />
                         )}

@@ -197,7 +197,7 @@ export const Tasks: React.FC = () => {
                   src={member.avatar}
                   alt={member.name}
                   title={member.name}
-                  className="w-4 h-4 rounded-full flex-shrink-0"
+                  className="w-4 h-4 rounded-full flex-shrink-0 object-cover"
                 />
                 {member.name.split(' ')[0]}
               </button>

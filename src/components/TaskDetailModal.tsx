@@ -1209,7 +1209,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   {activityEntries.map((entry) => (
                     <div key={entry.id} className="flex items-start gap-2.5">
                       {getActivityAvatar(entry) ? (
-                        <img src={getActivityAvatar(entry)} alt={entry.actorName} className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5" />
+                        <img src={getActivityAvatar(entry)} alt={entry.actorName} className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5 object-cover" />
                       ) : (
                         <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
                           <span className="text-[9px] font-bold text-gray-500 dark:text-slate-400">{entry.actorName.charAt(0).toUpperCase()}</span>
