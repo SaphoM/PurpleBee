@@ -113,6 +113,12 @@ interface TaskStore {
   /** Tasks where the user is an ACCEPTED collaborator (they see the task, tagged Owner: …). */
   getCollaboratedTasks: (userId: string) => Task[];
   /**
+   * Lazy-load a single task into the store if it's missing (e.g. an
+   * invited task reached via a notification deep-link). Resolves true when
+   * the task is in the store afterwards.
+   */
+  ensureTaskInStore: (taskId: string) => Promise<boolean>;
+  /**
    * THE invite flow: the owner (or admin/manager) invites another person.
    * Creates a PENDING collaborator row + notifies the invitee. Replaces any
    * old addCollaborator usage — direct adds no longer bypass acceptance.
@@ -697,6 +703,23 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     );
   },
 
+  ensureTaskInStore: async (taskId) => {
+    if (!taskId) return false;
+    if (get().tasks.some((t) => t.id === taskId)) return true;
+    if (isMockMode()) return false; // never in mock mode
+    try {
+      const fetched = await taskDb.fetchOne(taskId, isMockMode());
+      if (!fetched) return false;
+      set((state) => {
+        if (state.tasks.some((t) => t.id === fetched.id)) return state;
+        return { tasks: [fetched, ...state.tasks] };
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
   completeTask: (id) => {
     get().updateTask(id, { status: 'completed', progress: 100 });
   },
@@ -751,9 +774,16 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     });
   },
 
-  respondToInvite: (taskId, userId, accepted) => {
-    const task = get().tasks.find((t) => t.id === taskId);
-    if (!task) return;
+  respondToInvite: async (taskId, userId, accepted) => {
+    let task = get().tasks.find((t) => t.id === taskId);
+    if (!task) {
+      // Task isn't in this browser's store yet (e.g. accepted from a
+      // notification deep-link) — load it first, then flip the status so
+      // the task appears in the invitee's To Do immediately after accept.
+      await get().ensureTaskInStore(taskId);
+      task = get().tasks.find((t) => t.id === taskId);
+      if (!task) return;
+    }
     const collab = (task.collaborators || []).find((c) => c.userId === userId);
     if (!collab || collab.status !== 'pending') return;
     const ownerId = task.assignedTo;

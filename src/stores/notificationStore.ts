@@ -575,6 +575,15 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
               unreadCount: notifications.filter((n) => !n.read).length,
             };
           });
+          // Spec §3: if the notification is about a task (invite/assign),
+          // make sure the task is in the invitee's store immediately so
+          // clicking it / the toast action opens the task instead of
+          // silently doing nothing (dynamic import avoids a store cycle).
+          if (incoming.taskId) {
+            void import('@stores/taskStore').then(({ useTaskStore }) => {
+              void useTaskStore.getState().ensureTaskInStore(incoming.taskId!);
+            }).catch(() => {});
+          }
         }
       )
       // UPDATE — keeps read/unread state in sync across browser tabs and devices.

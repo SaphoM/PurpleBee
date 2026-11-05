@@ -57,6 +57,15 @@ export const Tasks: React.FC = () => {
   }, []);
 
   const selectedTask = selectedTaskId ? allTasks.find((t) => t.id === selectedTaskId) ?? null : null;
+
+  // Deep-link a task via URL (#tasks?taskId=…). If the task isn't in the
+  // store yet (an invited task opened from a notification), fetch it first
+  // so the modal opens instead of silently doing nothing (spec §2/§3).
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    if (selectedTask) return;
+    void useTaskStore.getState().ensureTaskInStore(selectedTaskId);
+  }, [selectedTaskId, selectedTask]);
   const effectiveId = getEffectiveUserId();
 
   // Accepted-collaboration tasks belong in the member's list (spec §3).

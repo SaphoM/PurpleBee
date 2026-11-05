@@ -1251,7 +1251,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           </div>
 
           {/* Info Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-start">
             {/* Status */}
             <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4">
               <label className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider block mb-2">
@@ -1331,7 +1331,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 Owner
               </label>
               {assignee ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
                   {assignee.avatar ? (
                     <img src={assignee.avatar} alt={assignee.name} title={assignee.name} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
                   ) : (
@@ -1341,10 +1341,10 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                       </span>
                     </div>
                   )}
-                  <span className="text-sm font-medium text-gray-700 dark:text-slate-200 truncate">
+                  <span className="text-sm font-medium text-gray-700 dark:text-slate-200 truncate min-w-0">
                     {assignee.name}
                   </span>
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 flex-shrink-0">
                     Owner: {task.progress}%
                   </span>
                 </div>
@@ -1373,21 +1373,21 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
                 <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
-                  One owner only — assigning replaces the current owner. To work together, invite collaborators below.
+                  One owner only. Assigning replaces the owner — collaboration happens via invites below.
                 </p>
               </div>
 
               {/* ── Invites & collaborators (spec §2/§3) ── */}
               <div className="mt-3 pt-3 border-t border-gray-100 dark:border-slate-700/60 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Collaborators</span>
                   {(isOwner || (user?.role === 'admin' || user?.role === 'manager')) && (
                     <button
                       type="button"
                       onClick={() => setInvitePickerOpen((v) => !v)}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+                      className="inline-flex items-center gap-1 flex-none text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
                     >
-                      <UserPlus size={12} /> Invite
+                      <UserPlus size={12} className="flex-shrink-0" /> Invite
                     </button>
                   )}
                 </div>

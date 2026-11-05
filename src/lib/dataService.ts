@@ -342,6 +342,47 @@ export const taskDb = {
     return tasks;
   },
 
+  /**
+   * Fetch ONE task by id (with subtasks + collaborator rows) for the current
+   * user — used to lazy-load a task they don't have yet (e.g. a task they
+   * were just invited to, via the notification deep-link). Returns null when
+   * the row is missing or unreadable (RLS) — callers must fail soft.
+   */
+  async fetchOne(taskId: string, mockMode?: boolean): Promise<Task | null> {
+    if (!shouldPersist(mockMode)) return null;
+    const { data, error } = await supabase!
+      .from('tasks')
+      .select('*, subtasks(*)')
+      .eq('id', taskId)
+      .order('order', { referencedTable: 'subtasks', ascending: true })
+      .maybeSingle();
+    if (error || !data) {
+      if (error) console.error('[dataService] tasks.fetchOne', error);
+      return null;
+    }
+    const row = data as DbTask & { subtasks: { id: string; title: string; description: string | null; completed: boolean; created_at: string }[] };
+    const task: Task = {
+      ...toTask(row),
+      subtasks: (row.subtasks ?? []).map((s) => ({
+        id: s.id,
+        title: s.title,
+        description: s.description ?? undefined,
+        completed: s.completed,
+        createdAt: new Date(s.created_at),
+      })),
+    };
+    // Single-owner tolerance (same as fetchAll).
+    if (task.assignedToIds && task.assignedToIds.length > 1) {
+      const keep = task.assignedTo || task.assignedToIds[0];
+      task.assignedTo = keep;
+      task.assignedToIds = keep ? [keep] : [];
+    }
+    const collabMap = await taskCollaboratorDb.fetchForTasks([task.id], mockMode);
+    const cols = collabMap.get(task.id);
+    if (cols && cols.length > 0) task.collaborators = cols;
+    return task;
+  },
+
   /** Insert a task — skipped when mock mode is ON */
   async insert(task: Task, createdBy?: string, mockMode?: boolean): Promise<boolean> {
     if (!shouldPersist(mockMode)) return true;
