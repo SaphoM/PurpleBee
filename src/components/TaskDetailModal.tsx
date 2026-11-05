@@ -1379,13 +1379,13 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
               {/* ── Invites & collaborators (spec §2/§3) ── */}
               <div className="mt-3 pt-3 border-t border-gray-100 dark:border-slate-700/60 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Collaborators</span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Collaborators</span>
                   {(isOwner || (user?.role === 'admin' || user?.role === 'manager')) && (
                     <button
                       type="button"
                       onClick={() => setInvitePickerOpen((v) => !v)}
-                      className="inline-flex items-center gap-1 flex-none text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+                      className="inline-flex items-center gap-1.5 flex-none px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 dark:text-purple-300 dark:border-purple-800 transition-colors"
                     >
                       <UserPlus size={12} className="flex-shrink-0" /> Invite
                     </button>
