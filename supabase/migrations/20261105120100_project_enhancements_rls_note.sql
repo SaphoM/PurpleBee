@@ -1,0 +1,13 @@
+-- Project Management Enhancements
+-- 1. Editable project name/description → existing update policies
+--    ("Project owners and admins can update" already enforces
+--     is_admin_or_manager() server-side).
+-- 2. Task progress → tasks.progress already exists.
+-- 3. Media Library → media_library table with RLS (see 20261105120000).
+-- 4. Change project lead → project_lead_id already exists.
+-- 5. Template tabs → project_tasks.template_id + projects.template_ids
+--    (see 20261105120000).
+-- 6. Completion + support handover → projects.support_owner_id +
+--    'support' enum value (see 20261105120000).
+-- No additional SQL required beyond 20261105120000 — RLS for projects
+-- already restricts UPDATE/DELETE to creator or admin/manager.

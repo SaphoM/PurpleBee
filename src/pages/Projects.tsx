@@ -38,6 +38,7 @@ import {
   Wallet,
   Lock,
   Crown,
+  HeartHandshake,
 } from 'lucide-react';
 import { useProjectStore, projectTemplates, ProjectTask, ProjectTemplate, Project, getProjectTaskStats, getProjectTimeProgress, getProjectPace } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
@@ -49,7 +50,7 @@ import { useUIStore } from '@stores/uiStore';
 import { MemberTooltip, MemberInfo } from '@components/MemberTooltip';
 import { ReferencesSection } from '@components/shared/ReferencesSection';
 import type { Attachment, TaskLink } from '@/types/index';
-import { projectDb, projectValueHistoryDb } from '@/lib/dataService';
+import { projectDb, projectValueHistoryDb, mediaLibraryDb, type MediaLibraryItem } from '@/lib/dataService';
 import { useSettingsStore } from '@stores/settingsStore';
 
 const getTemplateIcon = (templateId: string, size: number = 24) => {
@@ -84,12 +85,137 @@ const renderProjectLogo = (project: { icon: string }, sizeClass: string = 'w-10 
   );
 };
 
+// ── Central Media Library ─────────────────────────────────────────────
+// Everything ever uploaded (project logos, company logos) lands here so
+// it can be re-picked instead of re-uploaded. Stored in:
+/// - mock mode: localStorage 'purplebee-media-library' (no DB)
+//  - live mode: Supabase media_library table (RLS team-scoped)
+const MEDIA_LIBRARY_KEY = 'purplebee-media-library';
+
+function loadMockMedia(): MediaLibraryItem[] {
+  try {
+    const raw = localStorage.getItem(MEDIA_LIBRARY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as MediaLibraryItem[];
+    return parsed.map((m) => ({ ...m, createdAt: new Date(m.createdAt) }));
+  } catch { return []; }
+}
+
+function saveMockMedia(items: MediaLibraryItem[]) {
+  try { localStorage.setItem(MEDIA_LIBRARY_KEY, JSON.stringify(items.slice(0, 200))); } catch { /* quota */}
+}
+
+const useMediaLibrary = () => {
+  const [items, setItems] = useState<MediaLibraryItem[]>(() => loadMockMedia());
+  const keepMockData = useSettingsStore((s) => s.keepMockData);
+  const teamId = useUserStore((s) => s.currentTeamId);
+  const userId = useUserStore((s) => s.user?.id);
+  const userName = useUserStore((s) => s.user?.name || '');
+  const refresh = React.useCallback(async () => {
+    if (keepMockData) { setItems(loadMockMedia()); return; }
+    const rows = await mediaLibraryDb.fetchAll(teamId, keepMockData);
+    if (rows) setItems(rows);
+    else setItems(loadMockMedia());
+  }, [keepMockData, teamId]);
+
+  React.useEffect(() => { refresh(); }, [refresh]);
+
+  const add = React.useCallback(async (dataUrl: string, meta: { name?: string; size?: number | null; type?: string | null }) => {
+    const item: MediaLibraryItem = {
+      id: uuidv4(),
+      url: dataUrl,
+      name: meta.name || 'Image',
+      size: meta.size ?? null,
+      type: meta.type ?? null,
+      teamId: teamId ?? null,
+      uploadedBy: userId || '',
+      createdAt: new Date(),
+    };
+    if (keepMockData || !userId) {
+      const next = [item, ...loadMockMedia()];
+      saveMockMedia(next);
+      setItems(next);
+      return item.url;
+    }
+    const dbId = await mediaLibraryDb.insert(
+      { url: item.url, name: item.name, size: item.size, type: item.type, teamId: item.teamId, uploadedBy: userId },
+      keepMockData,
+    );
+    if (dbId) {
+      const saved = { ...item, id: dbId };
+      setItems((prev) => [saved, ...prev]);
+      return item.url;
+    }
+    // Fallback: keep locally so a failed DB insert doesn't "lose" the image
+    const next = [item, ...loadMockMedia()];
+    saveMockMedia(next);
+    setItems(next);
+    return item.url;
+  }, [keepMockData, teamId, userId, userName]);
+
+  return { items, add, refresh };
+};
+
+// ── Image Picker Modal (pick a previously uploaded image) ─────────────
+const ImagePickerModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onPick: (dataUrl: string) => void;
+}> = ({ isOpen, onClose, onPick }) => {
+  const { items } = useMediaLibrary();
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className={clsx(
+          'relative w-full max-w-lg rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto',
+          'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700'
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-slate-700">
+          <h3 className="text-base font-bold text-gray-900 dark:text-slate-100">Choose an image</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-5">
+          {items.length === 0 ? (
+            <p className="text-sm text-gray-400 dark:text-slate-500 text-center py-8">
+              No images in the library yet. Upload one and it'll be saved here for next time.
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+              {items.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => { onPick(m.url); onClose(); }}
+                  className="group relative rounded-xl overflow-hidden border-2 border-transparent hover:border-purple-500 transition-all aspect-square bg-gray-50 dark:bg-slate-700/30"
+                  title={`${m.name}${m.size ? ` (${Math.round(m.size / 1024)}KB)` : ''}`}
+                >
+                  <img src={m.url} alt={m.name} className="w-full h-full object-cover" />
+                  <span className="absolute inset-0 bg-purple-600/0 group-hover:bg-purple-600/20 transition-colors" />
+                  <span className="absolute bottom-1 left-1 right-1 text-[10px] text-white bg-black/50 rounded px-1 py-0.5 truncate text-center">
+                    {m.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Status config ──────────────────────────────────────────────────────
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   planning: { label: 'Planning', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-900/30' },
   active: { label: 'Active', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
   'on-hold': { label: 'On Hold', color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-100 dark:bg-amber-900/30' },
   completed: { label: 'Completed', color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-700/30' },
+  support: { label: 'Support / Maintenance', color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-100 dark:bg-teal-900/30' },
 };
 
 const priorityConfig: Record<string, { label: string; color: string; dot: string }> = {
@@ -366,6 +492,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const { addNotification } = useNotificationStore();
   const user = useUserStore((s) => s.user);
   const assignableMembers = useUserStore((s) => s.assignableMembers);
+  const { items: mediaItems, add: addToMediaLibrary } = useMediaLibrary();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -384,6 +511,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [logoError, setLogoError] = useState('');
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [showImagePicker, setShowImagePicker] = useState(false);
   const [refAttachments, setRefAttachments] = useState<Attachment[]>([]);
   const [refLinks, setRefLinks] = useState<TaskLink[]>([]);
   const [showReferences, setShowReferences] = useState(false);
@@ -457,7 +585,12 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setLogoDataUrl(reader.result as string);
+    reader.onload = () => {
+      const result = reader.result as string;
+      setLogoDataUrl(result);
+      // Save to the central media library so it can be re-picked later
+      addToMediaLibrary(result, { name: file.name, size: file.size, type: file.type });
+    };
     reader.readAsDataURL(file);
     if (logoInputRef.current) logoInputRef.current.value = '';
   };
@@ -541,12 +674,13 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
               tags: t.tags,
               assignedTo: assignments[key] || undefined,
               order: taskList.length + 1,
+              templateId: tmpl.id,
             });
           }
         });
       });
 
-      // Add custom tasks
+      // Add custom tasks — no templateId (they fall into the "All"/un-grouped view)
       customTasks.forEach((t, i) => {
         taskList.push({
           title: t.title,
@@ -556,15 +690,18 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
           tags: t.tags,
           assignedTo: assignments[`custom:${i}`] || undefined,
           order: taskList.length + 1,
+          templateId: null,
         });
       });
 
       const projectName = name.trim();
 
+      const allTemplateIds = [...new Set(selectedTemplates)];
       const projectId = createProject({
         name: projectName,
         description: description.trim(),
         templateId: template?.id || 'custom',
+        templateIds: allTemplateIds.length > 0 ? allTemplateIds : undefined,
         icon: logoDataUrl || template?.icon || '🔧',
         color: template?.color || '#6b7280',
         tasks: taskList,
@@ -752,7 +889,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                     )}
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <button
                         type="button"
                         onClick={() => logoInputRef.current?.click()}
@@ -760,6 +897,14 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                       >
                         <ImageIcon size={12} />
                         {logoDataUrl ? 'Change logo' : 'Upload logo'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowImagePicker(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/20 dark:text-purple-300 dark:hover:bg-purple-900/40 transition-colors"
+                      >
+                        <ImageIcon size={12} />
+                        Choose from library ({mediaItems.length})
                       </button>
                       {logoDataUrl && (
                         <button
@@ -772,7 +917,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                       )}
                     </div>
                     <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
-                      Shown instead of the template icon on this project's cards. PNG/JPG, up to 1MB.
+                      Shown instead of the template icon on this project's cards. Uploaded images are saved to the media library automatically. PNG/JPG, up to 1MB.
                     </p>
                     {logoError && <p className="text-[11px] text-red-500 mt-1">{logoError}</p>}
                   </div>
@@ -785,6 +930,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                   />
                 </div>
               </div>
+              <ImagePickerModal isOpen={showImagePicker} onClose={() => setShowImagePicker(false)} onPick={setLogoDataUrl} />
 
               {/* Project References — optional, collapsed by default so it doesn't clutter the wizard */}
               <div>
@@ -1341,7 +1487,7 @@ const industrySuggestions: Record<string, { title: string; description: string; 
 
 // ── Project Detail View ────────────────────────────────────────────────
 const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ projectId, onBack }) => {
-  const { getProjectById, updateProject, assignProjectTask, assignAllProjectTasks, removeProjectTask, addProjectTask, updateProjectTask } = useProjectStore();
+  const { getProjectById, updateProject, assignProjectTask, assignAllProjectTasks, removeProjectTask, addProjectTask, updateProjectTask, linkProjectTask } = useProjectStore();
   const { addTask, tasks: boardTasks } = useTaskStore();
   const { isAdmin, isManager } = useUserStore();
   const currentUserId = useUserStore((s) => s.user?.id);
@@ -1370,6 +1516,23 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   const [valueInfo, setValueInfo] = useState<{ value: number | null; currency: string | null } | null>(null);
   const [valueHistory, setValueHistory] = useState<Array<Record<string, any>> | null>(null);
   const [showValueHistory, setShowValueHistory] = useState(false);
+  // 1) Inline edit — project name + description (admin/manager only)
+  const [isEditingProject, setIsEditingProject] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  // 4) Change project lead — dropdown picks from team members
+  const [showLeadPicker, setShowLeadPicker] = useState(false);
+  // 6) Support & Maintenance — handover modal (mark-complete prompt + change later)
+  const [showSupportModal, setShowSupportModal] = useState(false);
+  const [supportOwnerId, setSupportOwnerId] = useState('');
+  const [supportSkip, setSupportSkip] = useState(false);
+  // 5) Template tabs — 'all' or a specific templateId
+  const [activeTemplateTab, setActiveTemplateTab] = useState<string>('all');
+
+  // Hooks must run unconditionally — the original `if (!project) return null`
+  // below used to sit above these effects. `project` is captured from the
+  // store on every render, so guarding the bodies with `if (!project) return`
+  // is equivalent and keeps the hook order stable.
 
   if (!project) return null;
 
@@ -1382,7 +1545,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
 
   // Auto-update project status based on linked board task progress
   useEffect(() => {
-    if (project.tasks.length === 0) return;
+    if (!project || project.tasks.length === 0) return;
     const linked = project.tasks
       .filter((t) => t.linkedTaskId)
       .map((t) => boardTasks.find((bt) => bt.id === t.linkedTaskId))
@@ -1392,20 +1555,92 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
     const anyActive = linked.some((t) => t.status === 'in-progress' || t.status === 'review');
     const derived = allCompleted ? 'completed' : anyActive ? 'active' : project.status === 'on-hold' ? 'on-hold' : linked.length > 0 ? 'planning' : project.status;
     if (derived !== project.status) updateProject(project.id, { status: derived as any }, false);
-  }, [boardTasks, project.tasks, project.id]);
+  }, [boardTasks, project?.tasks, project?.id]);
+
+  // ── Backfill task.templateId for legacy rows ──
+  // Tasks created before task-level templateId existed have it NULL, so
+  // template tabs can't group them. Infer the template by title from the
+  // template/industry task lists and persist it via updateProjectTask.
+  const templateBackfillRef = React.useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!project) return;
+    for (const pt of project.tasks) {
+      if (pt.templateId) continue;
+      if (templateBackfillRef.current.has(pt.id)) continue;
+      const titleKey = pt.title.trim().toLowerCase();
+      let found: string | null = null;
+      for (const tmpl of projectTemplates) {
+        if (tmpl.tasks.some((t) => t.title.trim().toLowerCase() === titleKey)) { found = tmpl.id; break; }
+      }
+      if (!found) {
+        for (const [tid, suggestions] of Object.entries(industrySuggestions)) {
+          if (suggestions.some((t) => t.title.trim().toLowerCase() === titleKey)) { found = tid; break; }
+        }
+      }
+      if (found) {
+        templateBackfillRef.current.add(pt.id);
+        updateProjectTask(project.id, pt.id, { templateId: found } as any);
+      }
+    }
+    // Promote discovered task-level templates into the project-level list
+    // so the next load shows tabs immediately without waiting for backfill.
+    const discoveredIds = [
+      ...new Set(
+        project.tasks
+          .map((t) => t.templateId)
+          .filter((id): id is string => !!id && id !== 'custom'),
+      ),
+    ];
+    const currentDeclared = project.templateIds && project.templateIds.length > 0 ? project.templateIds : [project.templateId];
+    const mergedIds = [...new Set([...currentDeclared.filter((id) => id && id !== 'custom'), ...discoveredIds])];
+    if (mergedIds.length > currentDeclared.length) {
+      updateProject(project.id, { templateIds: mergedIds } as any, false);
+    }
+  }, [project?.tasks, project?.id]);
+
+  // ── Backfill linked_task_id for legacy rows ──
+  // linkProjectTask was never called when a task was added to the board, so
+  // existing rows in the DB have linked_task_id NULL and progress read 0%.
+  // Once per render, link any unlinked project task to the board task with
+  // the same projectId + title (case-insensitive) — afterwards the live
+  // progress widget reads it directly. Persisted via updateProjectTask.
+  const backfillRef = React.useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!project) return;
+    for (const pt of project.tasks) {
+      if (pt.linkedTaskId) continue;
+      if (backfillRef.current.has(pt.id)) continue;
+      const match = boardTasks.find(
+        (bt) => bt.projectId === project.id && bt.title.trim().toLowerCase() === pt.title.trim().toLowerCase(),
+      );
+      if (match) {
+        backfillRef.current.add(pt.id);
+        linkProjectTask(project.id, pt.id, match.id);
+      }
+    }
+  }, [boardTasks, project?.tasks, project?.id]);
 
   // Project Value is never in the bulk project object — fetch it via the
   // authorized get_project_value() RPC. History is only ever fetched for
   // managers/admins (the same audience already allowed to edit the value),
   // matching how the edit trigger is already permission-gated in the UI.
   useEffect(() => {
+    if (!project) return;
     let cancelled = false;
     projectDb.getValue(project.id, keepMockData).then((res) => { if (!cancelled) setValueInfo(res); });
     if (canManage) {
       projectValueHistoryDb.fetchForProject(project.id, keepMockData).then((rows) => { if (!cancelled) setValueHistory(rows); });
     }
     return () => { cancelled = true; };
-  }, [project.id, keepMockData, canManage]);
+  }, [project?.id, keepMockData, canManage]);
+
+  // Keep the edit form in sync when the project changes (e.g. after save)
+  useEffect(() => {
+    if (project) {
+      setEditName(project.name);
+      setEditDescription(project.description || '');
+    }
+  }, [project?.id]);
 
   // Build suggestions: template tasks + industry tasks that haven't been added yet
   const existingTitles = new Set(project.tasks.map((t) => t.title.toLowerCase()));
@@ -1432,6 +1667,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       estimatedHours: s.estimatedHours,
       tags: s.tags,
       order: project.tasks.length + 1,
+      templateId: project.templateId,
     });
     setNewTaskTitle('');
     setShowSuggestions(false);
@@ -1446,6 +1682,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       estimatedHours: 4,
       tags: [],
       order: project.tasks.length + 1,
+      templateId: null,
     });
     setNewTaskTitle('');
     setNewTaskDescription('');
@@ -1469,6 +1706,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
       progress: 0,
       projectId: project.id,
     }, newTaskId);
+    // Link the project task back to this board task so progress shows live.
+    linkProjectTask(project.id, pt.id, newTaskId);
 
     // Notify the current user that the task was added
     addNotification({
@@ -1503,6 +1742,87 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
     });
   };
 
+  // ── Inline project edit (1) ──
+  const handleSaveProjectEdit = () => {
+    if (!canManage) return;
+    if (!editName.trim()) return;
+    updateProject(project.id, { name: editName.trim(), description: editDescription.trim() });
+    setIsEditingProject(false);
+    addToast({ type: 'success', title: 'Project updated', message: 'Changes saved.', duration: 3500 });
+  };
+
+  // ── Change project lead (4) ──
+  const handleChangeLead = (leadId: string) => {
+    if (!canManage) return;
+    updateProject(project.id, { projectLeadId: leadId || undefined });
+    setShowLeadPicker(false);
+    addToast({ type: 'success', title: 'Project lead updated', message: leadId ? 'New lead assigned.' : 'Lead cleared.', duration: 3500 });
+  };
+
+  // ── Completion + support handover (6) ──
+  const handleCompleteWithHandover = () => {
+    if (!canManage) return;
+    if (!supportOwnerId && !supportSkip) return;
+    const owner = supportOwnerId ? assignableMembers.find((m) => m.id === supportOwnerId) : null;
+    updateProject(project.id, {
+      status: 'completed' as any,
+      supportOwnerId: supportOwnerId || undefined,
+    });
+    setShowSupportModal(false);
+    setSupportSkip(false);
+    addToast({
+      type: 'success',
+      title: 'Project completed',
+      message: owner ? `${project.name} marked Completed and handed over to ${owner.name} for Support.` : `${project.name} marked Completed.`,
+      duration: 4500,
+    });
+  };
+
+  const handleSaveSupportOwner = () => {
+    if (!canManage) return;
+    if (!supportOwnerId && !supportSkip) return;
+    const owner = supportOwnerId ? assignableMembers.find((m) => m.id === supportOwnerId) : null;
+    updateProject(project.id, { supportOwnerId: supportOwnerId || undefined });
+    setShowSupportModal(false);
+    setSupportSkip(false);
+    addToast({
+      type: 'success',
+      title: 'Support owner updated',
+      message: owner ? `${owner.name} notified of the handover.` : 'Support owner cleared.',
+      duration: 3500,
+    });
+  };
+
+  const handleStatusChange = (next: string) => {
+    if (!canManage) return;
+    if (next === 'completed') {
+      // Completing requires a support owner OR an explicit skip
+      setSupportOwnerId(project.supportOwnerId || '');
+      setSupportSkip(false);
+      setShowSupportModal(true);
+      return;
+    }
+    updateProject(project.id, { status: next as any });
+  };
+
+  // ── Template tab grouping (5) ──
+  // Tabs come from the DISTINCT templateIds present on the tasks themselves
+  // (merged with the project's stored templateIds). This matters for
+  // projects created BEFORE task-level templateId existed (templateId is
+  // NULL on all their tasks): the project-level list alone collapses to
+  // [templateId] and would hide tabs entirely — e.g. "X Spark Website
+  // Redev". The backfill effect below tags legacy tasks by title, after
+  // which they group correctly without re-creating the project.
+  const sortedTasks = [...project.tasks].sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+  const declaredTemplateIds = (project.templateIds && project.templateIds.length > 0 ? project.templateIds : [project.templateId]).filter((id) => id && id !== 'custom');
+  const taskTemplateIds = [...new Set(sortedTasks.map((t) => t.templateId).filter((id): id is string => !!id && id !== 'custom'))];
+  // Union: stored list first, then any task-level ids not yet listed
+  const templateIds = [...new Set([...declaredTemplateIds, ...taskTemplateIds])];
+  const countByTemplate = (tid: string) => sortedTasks.filter((t) => t.templateId === tid).length;
+  const visibleTasks = activeTemplateTab === 'all' ? sortedTasks : sortedTasks.filter((t) => t.templateId === activeTemplateTab);
+  const effectiveTasks = activeTemplateTab === 'all' || visibleTasks.length > 0 ? visibleTasks : sortedTasks;
+  const effectiveTab = activeTemplateTab === 'all' || visibleTasks.length > 0 ? activeTemplateTab : 'all';
+
   return (
     <div className="space-y-6">
       {/* Back + Header */}
@@ -1518,20 +1838,74 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
             <span className="inline-flex items-center justify-center w-12 h-12 rounded-xl text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 flex-shrink-0">
               {getTemplateIcon(project.templateId, 28)}
             </span>
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-slate-100">{project.name}</h1>
+            <div className="min-w-0 flex-1">
+              {isEditingProject && canManage ? (
+                <div className="space-y-2 min-w-64">
+                  <input
+                    autoFocus
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveProjectEdit(); if (e.key === 'Escape') { setIsEditingProject(false); setEditName(project.name); setEditDescription(project.description || ''); } }}
+                    placeholder="Project name"
+                    className={clsx(
+                      'w-full px-3 py-2 rounded-xl text-base font-bold border',
+                      'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                      'border-gray-200 dark:border-slate-600 placeholder-gray-400',
+                      'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400'
+                    )}
+                  />
+                  <textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSaveProjectEdit(); if (e.key === 'Escape') { setIsEditingProject(false); setEditName(project.name); setEditDescription(project.description || ''); } }}
+                    rows={2}
+                    placeholder="Project description / brief (optional)"
+                    className={clsx(
+                      'w-full px-3 py-2 rounded-xl text-sm border resize-none',
+                      'bg-white dark:bg-slate-700 text-gray-700 dark:text-slate-200',
+                      'border-gray-200 dark:border-slate-600 placeholder-gray-400',
+                      'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400'
+                    )}
+                  />
+                  <div className="flex gap-2">
+                    <button onClick={() => { setIsEditingProject(false); setEditName(project.name); setEditDescription(project.description || ''); }} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors">Cancel</button>
+                    <button onClick={handleSaveProjectEdit} disabled={!editName.trim()} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all">Save</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-start gap-2">
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-slate-100">{project.name}</h1>
+                    {canManage && (
+                      <button
+                        onClick={() => { setEditName(project.name); setEditDescription(project.description || ''); setIsEditingProject(true); }}
+                        title="Edit project name & description"
+                        className="p-1.5 rounded-lg text-gray-300 hover:text-purple-600 hover:bg-purple-50 dark:text-slate-600 dark:hover:text-purple-400 dark:hover:bg-purple-900/20 transition-colors mt-0.5"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
               {project.productName && (
                 <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center gap-1">
                   <ShoppingCart size={11} /> {project.productName}
                 </p>
               )}
-              {project.description && (
+              {!isEditingProject && project.description && (
                 <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{project.description}</p>
               )}
               <div className="flex items-center flex-wrap gap-2 mt-2 text-[11px] text-gray-400 dark:text-slate-500">
                 <span>Created {new Date(project.createdAt).toLocaleDateString()}</span>
                 <span>&middot;</span>
                 <span className="capitalize">{project.templateId.replace('-', ' ')} template</span>
+                {project.templateIds && project.templateIds.length > 1 && (
+                  <>
+                    <span>&middot;</span>
+                    <span>+ {project.templateIds.length - 1} more template{project.templateIds.length - 1 !== 1 ? 's' : ''}</span>
+                  </>
+                )}
                 {project.projectType && (
                   <>
                     <span>&middot;</span>
@@ -1553,6 +1927,21 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                     </>
                   );
                 })()}
+                {(() => {
+                  const support = project.supportOwnerId
+                    ? assignableMembers.find((m) => m.id === project.supportOwnerId)
+                    : undefined;
+                  if (!support) return null;
+                  return (
+                    <>
+                      <span>&middot;</span>
+                      <span className="inline-flex items-center gap-1">
+                        <HeartHandshake size={11} className="text-teal-500" />
+                        Support: <span className="font-medium text-teal-700 dark:text-teal-300">{support.name}</span>
+                      </span>
+                    </>
+                  );
+                })()}
                 {project.plannedStartDate && project.plannedCompletionDate && (
                   <>
                     <span>&middot;</span>
@@ -1562,15 +1951,37 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex items-center gap-3 flex-shrink-0 flex-wrap">
             {renderProjectLogo(project, 'w-11 h-11')}
             <span className={clsx('px-3 py-1 rounded-full text-xs font-semibold', sc.bg, sc.color)}>
               {sc.label}
             </span>
+            {canManage && project.status !== 'support' && project.status !== 'completed' && (
+              <button
+                onClick={() => { setSupportOwnerId(project.supportOwnerId || ''); setSupportSkip(false); setShowSupportModal(true); }}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors',
+                  'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
+                )}
+              >
+                Mark Completed
+              </button>
+            )}
+            {canManage && project.status === 'completed' && !project.supportOwnerId && (
+              <button
+                onClick={() => { setSupportOwnerId(''); setSupportSkip(false); setShowSupportModal(true); }}
+                className={clsx(
+                  'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors',
+                  'bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300 dark:hover:bg-teal-900/50'
+                )}
+              >
+                <HeartHandshake size={12} className="inline mr-1 -mt-0.5" /> Assign Support Owner
+              </button>
+            )}
             {canManage && (
               <select
                 value={project.status}
-                onChange={(e) => updateProject(project.id, { status: e.target.value as any })}
+                onChange={(e) => handleStatusChange(e.target.value)}
                 className={clsx(
                   'rounded-lg px-3 py-2 sm:py-1.5 text-sm sm:text-xs flex-1 sm:flex-none',
                   'bg-white border border-gray-300 text-gray-800',
@@ -1582,10 +1993,63 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                 <option value="active">Active</option>
                 <option value="on-hold">On Hold</option>
                 <option value="completed">Completed</option>
+                <option value="support">Support / Maintenance</option>
               </select>
             )}
           </div>
         </div>
+
+        {/* Project Lead — reassign (admin/manager) + Support owner display */}
+        {canManage && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400">
+              <Crown size={12} className="text-amber-500" /> Project Lead
+            </span>
+            <select
+              value={project.projectLeadId || ''}
+              onChange={(e) => handleChangeLead(e.target.value)}
+              className={clsx(
+                'rounded-lg px-3 py-1.5 text-xs',
+                'bg-white border border-gray-300 text-gray-800',
+                'dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100',
+                'focus:outline-none focus:border-purple-500 cursor-pointer'
+              )}
+            >
+              <option value="">No lead assigned</option>
+              {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            {(() => {
+              const support = project.supportOwnerId
+                ? assignableMembers.find((m) => m.id === project.supportOwnerId)
+                : undefined;
+              return (
+                <>
+                  <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400 ml-2">
+                    <HeartHandshake size={12} className="text-teal-500" /> Support & Maintenance
+                  </span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-slate-300">
+                    {support ? support.name : <span className="text-gray-400 dark:text-slate-500 italic">Not assigned</span>}
+                  </span>
+                  <button
+                    onClick={() => { setSupportOwnerId(project.supportOwnerId || ''); setSupportSkip(false); setShowSupportModal(true); }}
+                    className="text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 hover:underline"
+                  >
+                    Change
+                  </button>
+                </>
+              );
+            })()}
+          </div>
+        )}
+        {!canManage && project.supportOwnerId && (() => {
+          const support = assignableMembers.find((m) => m.id === project.supportOwnerId);
+          return support ? (
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
+              <HeartHandshake size={12} className="text-teal-500" />
+              Support & Maintenance: <span className="font-medium text-teal-700 dark:text-teal-300">{support.name}</span>
+            </div>
+          ) : null;
+        })()}
       </div>
 
       {/* Stats */}
@@ -1772,6 +2236,50 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
           </div>
         </div>
 
+        {/* Template tabs (5) — only when the project has multiple templates */}
+        {(templateIds.length > 1 || sortedTasks.some((t) => t.templateId)) && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              onClick={() => setActiveTemplateTab('all')}
+              className={clsx(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
+                effectiveTab === 'all'
+                  ? 'bg-purple-600 border-purple-600 text-white shadow-sm dark:bg-purple-500 dark:border-purple-500'
+                  : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-600'
+              )}
+            >
+              <Layers size={12} />
+              All
+              <span className={clsx('text-[10px] font-semibold', effectiveTab === 'all' ? 'text-purple-100' : 'text-purple-600 dark:text-purple-400')}>
+                {sortedTasks.length}
+              </span>
+            </button>
+            {templateIds.map((tid) => {
+              const tmpl = projectTemplates.find((t) => t.id === tid);
+              const count = countByTemplate(tid);
+              const isActive = effectiveTab === tid;
+              return (
+                <button
+                  key={tid}
+                  onClick={() => setActiveTemplateTab(tid)}
+                  className={clsx(
+                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
+                    isActive
+                      ? 'bg-purple-600 border-purple-600 text-white shadow-sm dark:bg-purple-500 dark:border-purple-500'
+                      : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:border-slate-600'
+                  )}
+                >
+                  <span>{getTemplateIcon(tid, 12)}</span>
+                  {tmpl?.name || tid}
+                  <span className={clsx('text-[10px] font-semibold', isActive ? 'text-purple-100' : 'text-purple-600 dark:text-purple-400')}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {showAddTask && (
           <div className="mb-3 relative">
             <div className="flex gap-2">
@@ -1915,14 +2423,14 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
         )}
 
         <div className="space-y-2">
-          {project.tasks.length === 0 ? (
+          {effectiveTasks.length === 0 ? (
             <div className="py-12 text-center">
               <AlertCircle size={32} className="mx-auto text-gray-300 dark:text-slate-600 mb-2" />
               <p className="text-sm text-gray-400 dark:text-slate-500">No tasks yet. Add tasks to get started.</p>
             </div>
           ) : (
             <>
-            {[...project.tasks].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((task) => {
+            {effectiveTasks.map((task) => {
               const assignee = task.assignedTo ? assignableMembers.find((p) => p.id === task.assignedTo) : null;
               const pc = priorityConfig[task.priority];
               const isEditingThis = editingTaskId === task.id;
@@ -2008,6 +2516,11 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                         <span className={clsx('w-1.5 h-1.5 rounded-full', pc.dot)} />
                         {pc.label}
                       </span>
+                      {task.templateId && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-300">
+                          {projectTemplates.find((t) => t.id === task.templateId)?.name || task.templateId}
+                        </span>
+                      )}
                     </div>
                     {task.description && (
                       <p className="text-xs text-gray-500 dark:text-slate-400 line-clamp-2 sm:truncate">{task.description}</p>
@@ -2022,6 +2535,27 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                         </span>
                       ))}
                     </div>
+
+                    {/* 2) Task progress visibility — live from the linked board task.
+                        The same `progress` value drives 'In Progress' status in taskStore. */}
+                    {(() => {
+                      const linked = task.linkedTaskId ? boardTasks.find((bt) => bt.id === task.linkedTaskId) : undefined;
+                      const pct = linked ? Math.round(linked.progress ?? 0) : 0;
+                      const label = !linked ? 'Not started' : linked.status === 'completed' ? 'Completed' : `${pct}%`;
+                      return (
+                        <div className="flex items-center gap-2 mt-2 max-w-56">
+                          <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+                            <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className={clsx(
+                            'text-[10px] font-semibold flex-shrink-0',
+                            !linked ? 'text-gray-400 dark:text-slate-500' : linked.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' : 'text-purple-600 dark:text-purple-400'
+                          )}>
+                            {label}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Assignee + actions — full width on mobile */}
@@ -2194,6 +2728,70 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
           </div>
         </div>
       )}
+      {/* 6) Support & Maintenance handover modal */}
+      {showSupportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowSupportModal(false)}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 w-full max-w-md z-10" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center flex-shrink-0">
+                <HeartHandshake size={18} className="text-teal-600 dark:text-teal-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-slate-100">Support handover</h3>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                  {project.status === 'completed' ? 'Assign who owns Support & Maintenance for this completed project.' : 'Who owns this project after delivery?'}
+                </p>
+              </div>
+            </div>
+
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">Support & Maintenance Owner</label>
+            <select
+              value={supportOwnerId}
+              onChange={(e) => { setSupportOwnerId(e.target.value); if (e.target.value) setSupportSkip(false); }}
+              className={clsx(
+                'w-full px-3 py-2.5 rounded-xl text-sm border',
+                'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                'border-gray-200 dark:border-slate-600',
+                'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 cursor-pointer mb-3'
+              )}
+            >
+              <option value="">Select owner…</option>
+              {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-slate-300 mb-5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={supportSkip}
+                onChange={(e) => { setSupportSkip(e.target.checked); if (e.target.checked) setSupportOwnerId(''); }}
+                className="rounded border-gray-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500/30"
+              />
+              Skip for now (I’ll assign later)
+            </label>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowSupportModal(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={project.status === 'completed' ? handleSaveSupportOwner : handleCompleteWithHandover}
+                disabled={!supportOwnerId && !supportSkip}
+                className={clsx(
+                  'flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed',
+                  'bg-gradient-to-r from-purple-600 to-blue-600 text-white',
+                  'hover:from-purple-700 hover:to-blue-700'
+                )}
+              >
+                {project.status === 'completed' ? 'Assign Support Owner' : 'Mark Completed & Hand Over'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -2204,6 +2802,7 @@ const PROJECT_STATUSES = [
   { value: 'active',   label: 'Active' },
   { value: 'on-hold',  label: 'On Hold' },
   { value: 'completed',label: 'Completed' },
+  { value: 'support',  label: 'Support / Maintenance' },
 ] as const;
 
 interface EditProjectModalProps {
@@ -2212,18 +2811,21 @@ interface EditProjectModalProps {
     attachments?: Attachment[]; links?: TaskLink[];
     valueVisibility?: Project['valueVisibility']; valueVisibleUserIds?: string[]; cardDisplay?: Project['cardDisplay'];
     projectType?: Project['projectType']; projectLeadId?: string; plannedStartDate?: Date; plannedCompletionDate?: Date;
+    supportOwnerId?: string;
   };
   onClose: () => void;
   onSave: (id: string, updates: {
     name: string; description: string; status: string; icon: string; attachments?: Attachment[]; links?: TaskLink[];
     value?: number; currency?: string; valueVisibility?: Project['valueVisibility']; valueVisibleUserIds?: string[]; cardDisplay?: Project['cardDisplay'];
     projectType?: Project['projectType']; projectLeadId?: string; plannedStartDate?: Date; plannedCompletionDate?: Date;
+    supportOwnerId?: string;
   }) => void;
 }
 const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, onSave }) => {
   const user = useUserStore((s) => s.user);
   const assignableMembers = useUserStore((s) => s.assignableMembers);
   const keepMockData = useSettingsStore((s) => s.keepMockData);
+  const { items: mediaItems, add: addToMediaLibrary } = useMediaLibrary();
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description || '');
   const [status, setStatus] = useState(project.status);
@@ -2232,6 +2834,7 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
   );
   const [logoError, setLogoError] = useState('');
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const [showImagePicker, setShowImagePicker] = useState(false);
   const [refAttachments, setRefAttachments] = useState<Attachment[]>(project.attachments || []);
   const [refLinks, setRefLinks] = useState<TaskLink[]>(project.links || []);
   const [valueAmount, setValueAmount] = useState('');
@@ -2244,6 +2847,7 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
   const [projectLeadId, setProjectLeadId] = useState(project.projectLeadId || '');
   const [plannedStart, setPlannedStart] = useState(toDateInputValue(project.plannedStartDate));
   const [plannedCompletion, setPlannedCompletion] = useState(toDateInputValue(project.plannedCompletionDate));
+  const [supportOwnerId, setSupportOwnerId] = useState(project.supportOwnerId || '');
 
   // Prefill the current value/currency via the authorized RPC — never
   // trust/derive this from the bulk project object, since it's
@@ -2275,7 +2879,12 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setLogoDataUrl(reader.result as string);
+    reader.onload = () => {
+      const result = reader.result as string;
+      setLogoDataUrl(result);
+      // Save to the central media library so it can be re-picked later
+      addToMediaLibrary(result, { name: file.name, size: file.size, type: file.type });
+    };
     reader.readAsDataURL(file);
     if (logoInputRef.current) logoInputRef.current.value = '';
   };
@@ -2302,6 +2911,7 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
       projectLeadId,
       plannedStartDate: plannedStart ? new Date(plannedStart) : undefined,
       plannedCompletionDate: plannedCompletion ? new Date(plannedCompletion) : undefined,
+      supportOwnerId,
     });
     onClose();
   };
@@ -2389,7 +2999,7 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
                 )}
               </div>
               <div className="flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => logoInputRef.current?.click()}
@@ -2397,6 +3007,14 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
                   >
                     <ImageIcon size={12} />
                     {logoDataUrl ? 'Change logo' : 'Upload logo'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowImagePicker(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/20 dark:text-purple-300 dark:hover:bg-purple-900/40 transition-colors"
+                  >
+                    <ImageIcon size={12} />
+                    Choose from library ({mediaItems.length})
                   </button>
                   {logoDataUrl && (
                     <button
@@ -2409,7 +3027,7 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
                   )}
                 </div>
                 <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
-                  Shown as a circular badge on this project's cards. PNG/JPG, up to 1MB.
+                  Shown as a circular badge on this project's cards. Uploaded images are saved to the media library automatically. PNG/JPG, up to 1MB.
                 </p>
                 {logoError && <p className="text-[11px] text-red-500 mt-1">{logoError}</p>}
               </div>
@@ -2422,6 +3040,7 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
               />
             </div>
           </div>
+          <ImagePickerModal isOpen={showImagePicker} onClose={() => setShowImagePicker(false)} onPick={setLogoDataUrl} />
           <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">
               Project References <span className="text-gray-400 dark:text-slate-500 font-normal">(optional)</span>
@@ -2477,6 +3096,27 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5 inline-flex items-center gap-1.5">
+              <HeartHandshake size={11} className="text-teal-500" /> Support & Maintenance Owner
+            </label>
+            <select
+              value={supportOwnerId}
+              onChange={(e) => setSupportOwnerId(e.target.value)}
+              className={clsx(
+                'w-full px-3 py-2.5 rounded-xl text-sm border',
+                'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                'border-gray-200 dark:border-slate-600',
+                'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 cursor-pointer'
+              )}
+            >
+              <option value="">No support owner assigned</option>
+              {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+              The person/team in charge after delivery. They'll be notified when you assign them.
+            </p>
           </div>
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className={clsx(
@@ -3159,7 +3799,7 @@ export const Projects: React.FC = () => {
               id: proj.id, name: proj.name, description: proj.description, status: (proj as any).status || 'active', icon: proj.icon, templateId: proj.templateId,
               attachments: proj.attachments, links: proj.links,
               valueVisibility: proj.valueVisibility, valueVisibleUserIds: proj.valueVisibleUserIds, cardDisplay: proj.cardDisplay,
-              projectType: proj.projectType, projectLeadId: proj.projectLeadId, plannedStartDate: proj.plannedStartDate, plannedCompletionDate: proj.plannedCompletionDate,
+              projectType: proj.projectType, projectLeadId: proj.projectLeadId, plannedStartDate: proj.plannedStartDate, plannedCompletionDate: proj.plannedCompletionDate, supportOwnerId: proj.supportOwnerId,
             }}
             onClose={() => setEditProjectId(null)}
             onSave={(id, updates) => updateProject(id, updates as any)}

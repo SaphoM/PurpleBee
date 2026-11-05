@@ -49,6 +49,7 @@ const toDbProjectTask = (projectId: string, t: ProjectTask): DbProjectTaskInsert
   assigned_to: t.assignedTo && isValidUuid(t.assignedTo) ? t.assignedTo : null,
   order: t.order,
   linked_task_id: t.linkedTaskId || null,
+  template_id: (t as ProjectTask).templateId || null,
 });
 
 // ─── Project task template (suggested tasks for a project type) ────────
@@ -304,7 +305,11 @@ export interface ProjectTask {
   assignedTo?: string;
   order: number;
   linkedTaskId?: string; // Reference to actual task in taskStore once created
+  /** Template this task originated from (for template-tab grouping). Null = custom task. */
+  templateId?: string | null;
 }
+
+export type ProjectStatus = 'planning' | 'active' | 'on-hold' | 'completed' | 'support';
 
 export interface Project {
   id: string;
@@ -313,11 +318,15 @@ export interface Project {
   icon: string;
   color: string;
   templateId: string;
-  status: 'planning' | 'active' | 'on-hold' | 'completed';
+  /** All templates the project was created with (multi-template projects). */
+  templateIds?: string[];
+  status: ProjectStatus;
   tasks: ProjectTask[];
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  /** Support & Maintenance owner — assigned when the project is marked complete. */
+  supportOwnerId?: string;
   /** Optional product name for Product Sales projects (and any project where it's relevant) */
   productName?: string;
   /** Project References — supporting material for the project as a whole (discovery meetings, requirements, scope docs, screenshots, etc.), distinct from any individual task's own attachments/links. */
@@ -458,6 +467,7 @@ interface ProjectStore {
     name: string;
     description: string;
     templateId: string;
+    templateIds?: string[];
     icon: string;
     color: string;
     tasks: Omit<ProjectTask, 'id'>[];
@@ -474,6 +484,7 @@ interface ProjectStore {
     projectLeadId?: string;
     plannedStartDate?: Date;
     plannedCompletionDate?: Date;
+    supportOwnerId?: string;
   }) => string; // returns project id
   /** `notify` (default true) — pass false for system-derived updates (e.g. auto status derivation from linked task progress) so they don't spam project members with a notification for something nobody actively did. */
   updateProject: (id: string, updates: Partial<Project>, notify?: boolean) => void;
@@ -508,19 +519,22 @@ const seedProjects: Project[] = [
     icon: '🌐',
     color: '#7c3aed',
     templateId: 'web-app',
+    templateIds: ['web-app', 'marketing'],
     status: 'active',
     createdBy: 'user-1',
     createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
     updatedAt: new Date(),
     tasks: [
-      { id: 'pt-0', title: 'Product Requirements Document (PRD)', description: 'Define portal goals, user personas, feature scope, user stories, and acceptance criteria', priority: 'urgent', estimatedHours: 8, tags: ['planning', 'documentation'], assignedTo: 'user-1', order: 1 },
-      { id: 'pt-1', title: 'Design system & UI kit', description: 'Create reusable component library, color palette, and typography', priority: 'high', estimatedHours: 16, tags: ['design', 'ui'], assignedTo: 'user-2', order: 2 },
-      { id: 'pt-2', title: 'Database schema design', description: 'Design and implement data models, relationships, and migrations', priority: 'high', estimatedHours: 8, tags: ['database', 'backend'], assignedTo: 'user-1', order: 3 },
-      { id: 'pt-3', title: 'Authentication & authorization', description: 'Implement user auth flow with OAuth, JWT, and role-based access', priority: 'urgent', estimatedHours: 12, tags: ['security', 'backend'], assignedTo: 'user-3', order: 4 },
-      { id: 'pt-4', title: 'API development', description: 'Build REST/GraphQL endpoints for core business logic', priority: 'high', estimatedHours: 20, tags: ['backend', 'api'], assignedTo: 'user-3', order: 5 },
-      { id: 'pt-5', title: 'Frontend pages & routing', description: 'Build main pages, navigation, and client-side routing', priority: 'high', estimatedHours: 16, tags: ['frontend', 'ui'], assignedTo: 'user-5', order: 6 },
-      { id: 'pt-6', title: 'Testing & QA', description: 'Write unit, integration, and E2E tests for critical flows', priority: 'high', estimatedHours: 14, tags: ['testing', 'qa'], order: 7 },
-      { id: 'pt-7', title: 'Deployment & monitoring', description: 'Deploy to production, set up monitoring, and error tracking', priority: 'high', estimatedHours: 6, tags: ['devops', 'infrastructure'], assignedTo: 'user-4', order: 8 },
+      { id: 'pt-0', title: 'Product Requirements Document (PRD)', description: 'Define portal goals, user personas, feature scope, user stories, and acceptance criteria', priority: 'urgent', estimatedHours: 8, tags: ['planning', 'documentation'], assignedTo: 'user-1', order: 1, templateId: 'web-app' },
+      { id: 'pt-1', title: 'Design system & UI kit', description: 'Create reusable component library, color palette, and typography', priority: 'high', estimatedHours: 16, tags: ['design', 'ui'], assignedTo: 'user-2', order: 2, templateId: 'web-app' },
+      { id: 'pt-2', title: 'Database schema design', description: 'Design and implement data models, relationships, and migrations', priority: 'high', estimatedHours: 8, tags: ['database', 'backend'], assignedTo: 'user-1', order: 3, templateId: 'web-app' },
+      { id: 'pt-3', title: 'Authentication & authorization', description: 'Implement user auth flow with OAuth, JWT, and role-based access', priority: 'urgent', estimatedHours: 12, tags: ['security', 'backend'], assignedTo: 'user-3', order: 4, templateId: 'web-app' },
+      { id: 'pt-4', title: 'API development', description: 'Build REST/GraphQL endpoints for core business logic', priority: 'high', estimatedHours: 20, tags: ['backend', 'api'], assignedTo: 'user-3', order: 5, templateId: 'web-app' },
+      { id: 'pt-5', title: 'Frontend pages & routing', description: 'Build main pages, navigation, and client-side routing', priority: 'high', estimatedHours: 16, tags: ['frontend', 'ui'], assignedTo: 'user-2', order: 6, templateId: 'web-app' },
+      { id: 'pt-6', title: 'Testing & QA', description: 'Write unit, integration, and E2E tests for critical flows', priority: 'high', estimatedHours: 14, tags: ['testing', 'qa'], assignedTo: 'user-3', order: 7, templateId: 'web-app' },
+      { id: 'pt-7', title: 'Deployment & monitoring', description: 'Deploy to production, set up monitoring, and error tracking', priority: 'high', estimatedHours: 6, tags: ['devops', 'infrastructure'], assignedTo: 'user-4', order: 8, templateId: 'web-app' },
+      { id: 'pt-8', title: 'Campaign strategy & goals', description: 'Define KPIs, budget, timeline, and channel strategy for the portal launch', priority: 'urgent', estimatedHours: 6, tags: ['strategy', 'marketing'], assignedTo: 'user-2', order: 9, templateId: 'marketing' },
+      { id: 'pt-9', title: 'Content creation', description: 'Write copy, blog posts, and launch announcements for the portal', priority: 'high', estimatedHours: 16, tags: ['content', 'marketing'], assignedTo: 'user-2', order: 10, templateId: 'marketing' },
     ],
   },
   {
@@ -530,16 +544,17 @@ const seedProjects: Project[] = [
     icon: '📣',
     color: '#f59e0b',
     templateId: 'marketing',
+    templateIds: ['marketing'],
     status: 'active',
     createdBy: 'user-4',
     createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
     updatedAt: new Date(),
     tasks: [
-      { id: 'pt-20', title: 'Market research & competitor analysis', description: 'Analyse competitor positioning and identify key differentiators', priority: 'high', estimatedHours: 10, tags: ['research', 'strategy'], assignedTo: 'user-5', order: 1 },
-      { id: 'pt-21', title: 'Campaign messaging & creative brief', description: 'Draft core messaging, tone of voice, and visual direction', priority: 'high', estimatedHours: 8, tags: ['branding', 'content'], assignedTo: 'user-2', order: 2 },
-      { id: 'pt-22', title: 'Content calendar & copy', description: 'Create content schedule and write copy for all channels', priority: 'medium', estimatedHours: 14, tags: ['marketing', 'content'], assignedTo: 'user-2', order: 3 },
-      { id: 'pt-23', title: 'Social media assets', description: 'Design graphics and video for social media posts', priority: 'medium', estimatedHours: 12, tags: ['design', 'social'], assignedTo: 'user-2', order: 4 },
-      { id: 'pt-24', title: 'Email sequences', description: 'Build drip campaigns for leads, customers, and re-engagement', priority: 'medium', estimatedHours: 10, tags: ['email', 'automation'], assignedTo: 'user-5', order: 5 },
+      { id: 'pt-20', title: 'Market research & competitor analysis', description: 'Analyse competitor positioning and identify key differentiators', priority: 'high', estimatedHours: 10, tags: ['research', 'strategy'], assignedTo: 'user-2', order: 1, templateId: 'marketing' },
+      { id: 'pt-21', title: 'Campaign messaging & creative brief', description: 'Draft core messaging, tone of voice, and visual direction', priority: 'high', estimatedHours: 8, tags: ['branding', 'content'], assignedTo: 'user-2', order: 2, templateId: 'marketing' },
+      { id: 'pt-22', title: 'Content calendar & copy', description: 'Create content schedule and write copy for all channels', priority: 'medium', estimatedHours: 14, tags: ['marketing', 'content'], assignedTo: 'user-2', order: 3, templateId: 'marketing' },
+      { id: 'pt-23', title: 'Social media assets', description: 'Design graphics and video for social media posts', priority: 'medium', estimatedHours: 12, tags: ['design', 'social'], assignedTo: 'user-2', order: 4, templateId: 'marketing' },
+      { id: 'pt-24', title: 'Email sequences', description: 'Build drip campaigns for leads, customers, and re-engagement', priority: 'medium', estimatedHours: 10, tags: ['email', 'automation'], assignedTo: 'user-2', order: 5, templateId: 'marketing' },
     ],
   },
   {
@@ -549,16 +564,17 @@ const seedProjects: Project[] = [
     icon: '🛡️',
     color: '#0891b2',
     templateId: 'services',
+    templateIds: ['services'],
     status: 'active',
     createdBy: 'user-1',
     createdAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000),
     updatedAt: new Date(),
     tasks: [
-      { id: 'pt-30', title: 'POPIA compliance audit', description: 'Review all data processes against POPIA requirements', priority: 'high', estimatedHours: 16, tags: ['compliance', 'security'], assignedTo: 'user-5', order: 1 },
-      { id: 'pt-31', title: 'Vendor contract renewals', description: 'Negotiate and renew annual contracts with key suppliers', priority: 'urgent', estimatedHours: 10, tags: ['legal', 'procurement'], assignedTo: 'user-3', order: 2 },
-      { id: 'pt-32', title: 'Infrastructure migration', description: 'Move staging and production to new hosting provider', priority: 'high', estimatedHours: 8, tags: ['devops', 'infrastructure'], assignedTo: 'user-4', order: 3 },
-      { id: 'pt-33', title: 'New hire onboarding process', description: 'Standardise onboarding checklists and orientation schedules', priority: 'medium', estimatedHours: 12, tags: ['hr', 'onboarding'], assignedTo: 'user-5', order: 4 },
-      { id: 'pt-34', title: 'Payment gateway testing', description: 'Validate all payment flows and error handling end-to-end', priority: 'medium', estimatedHours: 8, tags: ['testing', 'payments'], assignedTo: 'user-3', order: 5 },
+      { id: 'pt-30', title: 'POPIA compliance audit', description: 'Review all data processes against POPIA requirements', priority: 'high', estimatedHours: 16, tags: ['compliance', 'security'], assignedTo: 'user-2', order: 1, templateId: 'services' },
+      { id: 'pt-31', title: 'Vendor contract renewals', description: 'Negotiate and renew annual contracts with key suppliers', priority: 'urgent', estimatedHours: 10, tags: ['legal', 'procurement'], assignedTo: 'user-3', order: 2, templateId: 'services' },
+      { id: 'pt-32', title: 'Infrastructure migration', description: 'Move staging and production to new hosting provider', priority: 'high', estimatedHours: 8, tags: ['devops', 'infrastructure'], assignedTo: 'user-4', order: 3, templateId: 'services' },
+      { id: 'pt-33', title: 'New hire onboarding process', description: 'Standardise onboarding checklists and orientation schedules', priority: 'medium', estimatedHours: 12, tags: ['hr', 'onboarding'], assignedTo: 'user-2', order: 4, templateId: 'services' },
+      { id: 'pt-34', title: 'Payment gateway testing', description: 'Validate all payment flows and error handling end-to-end', priority: 'medium', estimatedHours: 8, tags: ['testing', 'payments'], assignedTo: 'user-3', order: 5, templateId: 'services' },
     ],
   },
 ];
@@ -620,11 +636,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   selectedProjectId: null,
   createProject: (data) => {
     const id = uuidv4();
+    const primaryTemplateId = data.templateId || 'custom';
+    const allTemplateIds = data.templateIds && data.templateIds.length > 0 ? data.templateIds : [primaryTemplateId];
     const project: Project = {
       id,
       name: data.name,
       description: data.description,
-      templateId: data.templateId,
+      templateId: primaryTemplateId,
+      templateIds: allTemplateIds,
       icon: data.icon,
       color: data.color,
       status: 'planning',
@@ -644,6 +663,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       projectLeadId: data.projectLeadId || undefined,
       plannedStartDate: data.plannedStartDate || undefined,
       plannedCompletionDate: data.plannedCompletionDate || undefined,
+      supportOwnerId: data.supportOwnerId || undefined,
     };
     set((state) => {
       const next = [project, ...state.projects];
@@ -662,6 +682,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         icon: project.icon,
         color: project.color,
         template_id: project.templateId,
+        template_ids: project.templateIds || null,
         status: project.status,
         team_id: teamId || null,
         created_by: data.createdBy,
@@ -677,6 +698,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         project_lead_id: project.projectLeadId || null,
         planned_start_date: project.plannedStartDate ? project.plannedStartDate.toISOString().slice(0, 10) : null,
         planned_completion_date: project.plannedCompletionDate ? project.plannedCompletionDate.toISOString().slice(0, 10) : null,
+        support_owner_id: project.supportOwnerId || null,
       },
       project.tasks.map((t) => toDbProjectTask(project.id, t)),
       isMockMode(),
@@ -701,6 +723,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.icon !== undefined) payload.icon = updates.icon;
     if (updates.color !== undefined) payload.color = updates.color;
     if (updates.status !== undefined) payload.status = updates.status;
+    if (updates.templateIds !== undefined) payload.template_ids = updates.templateIds && updates.templateIds.length > 0 ? updates.templateIds : null;
+    if (updates.templateId !== undefined) payload.template_id = updates.templateId;
+    if (updates.supportOwnerId !== undefined) payload.support_owner_id = updates.supportOwnerId || null;
     if (updates.productName !== undefined) payload.product_name = updates.productName || null;
     if (updates.attachments !== undefined) payload.attachments = updates.attachments && updates.attachments.length > 0 ? updates.attachments : null;
     if (updates.links !== undefined) payload.links = updates.links && updates.links.length > 0 ? updates.links : null;
@@ -754,6 +779,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         type: 'project-updated',
         title: 'Project updated',
         message: `${userName} changed "${prevProject.name}" status to ${updates.status}`,
+        actionUrl: `#projects?projectId=${id}`,
+      });
+    }
+
+    // ── Notify the support owner whenever they are newly assigned (handover) ──
+    if (
+      updates.supportOwnerId !== undefined &&
+      prevProject &&
+      updates.supportOwnerId !== prevProject.supportOwnerId &&
+      updates.supportOwnerId &&
+      isValidUuid(updates.supportOwnerId)
+    ) {
+      const { userId: currentUserId, userName } = getTeamContext();
+      notifyUser({
+        actorId: currentUserId,
+        recipientId: updates.supportOwnerId,
+        type: 'project-updated',
+        title: 'Support handover',
+        message: `${userName} handed over "${prevProject.name}" to you for Support & Maintenance`,
         actionUrl: `#projects?projectId=${id}`,
       });
     }
@@ -826,6 +870,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.assignedTo !== undefined) payload.assigned_to = updates.assignedTo || null;
     if (updates.order !== undefined) payload.order = updates.order;
     if (updates.linkedTaskId !== undefined) payload.linked_task_id = updates.linkedTaskId || null;
+    if ((updates as ProjectTask).templateId !== undefined) payload.template_id = ((updates as ProjectTask).templateId) || null;
     if (Object.keys(payload).length > 0) {
       projectDb.updateTask(taskId, payload, isMockMode());
     }
@@ -980,6 +1025,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       icon: r.icon || '🔧',
       color: r.color || '#6b7280',
       templateId: r.template_id || 'custom',
+      templateIds: Array.isArray(r.template_ids) && r.template_ids.length > 0 ? r.template_ids : (r.template_id ? [r.template_id] : undefined),
       status: r.status,
       createdBy: r.created_by || '',
       createdAt: new Date(r.created_at),
@@ -995,6 +1041,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       projectLeadId: r.project_lead_id || undefined,
       plannedStartDate: r.planned_start_date ? new Date(r.planned_start_date) : undefined,
       plannedCompletionDate: r.planned_completion_date ? new Date(r.planned_completion_date) : undefined,
+      supportOwnerId: r.support_owner_id || undefined,
       tasks: ((r.project_tasks as Array<Record<string, any>>) || [])
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map((t) => ({
@@ -1007,6 +1054,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           assignedTo: t.assigned_to || undefined,
           order: t.order ?? 0,
           linkedTaskId: t.linked_task_id || undefined,
+          templateId: t.template_id ?? undefined,
         })),
     }));
 

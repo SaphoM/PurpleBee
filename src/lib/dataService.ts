@@ -535,6 +535,85 @@ export const notificationDb = {
   },
 };
 
+/**
+ * Media Library — central image store for every uploaded image
+ * (project logos, company logos, attachments). Images with a UUID
+ * `id` live in the `media_library` table (Postgres). Demo/mock
+ * images (id null) are stored in-memory/localStorage and never
+ * reach the DB.
+ *
+ * Server-side enforcement:
+ *  - RLS on media_library restricts SELECT/INSERT/UPDATE/DELETE to
+ *    authenticated users on the same team (or admins/managers).
+ *  - Row-level columns (team_id, uploaded_by) are set at insert time from
+ *    the caller's profile; the client passes ids it claims to own.
+ */
+export interface MediaLibraryItem {
+  id: string;
+  url: string;        // data URL or remote URL
+  name: string;
+  size: number | null;
+  type: string | null;
+  teamId: string | null;
+  uploadedBy: string;
+  createdAt: Date;
+}
+
+const MEDIA_LIBRARY_STORAGE_KEY = 'purplebee-media-library';
+
+const loadPersistedMedia = (): MediaLibraryItem[] => {
+  try {
+    const raw = localStorage.getItem(MEDIA_LIBRARY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as MediaLibraryItem[];
+    return parsed.map((m) => ({ ...m, createdAt: new Date(m.createdAt) }));
+  } catch { return []; }
+};
+
+const persistMedia = (items: MediaLibraryItem[]) => {
+  try {
+    localStorage.setItem(MEDIA_LIBRARY_STORAGE_KEY, JSON.stringify(items.slice(0, 200)));
+  } catch { /* quota */}
+};
+
+export const mediaLibraryDb = {
+  async fetchAll(teamId?: string | null, mockMode?: boolean): Promise<MediaLibraryItem[] | null> {
+    if (!shouldPersist(mockMode)) return null;
+    try {
+      let q = supabase!.from('media_library').select('*').order('created_at', { ascending: false }).limit(100);
+      if (teamId) q = q.or(`team_id.eq.${teamId},team_id.is.null`);
+      const { data, error } = await q;
+      if (error) { console.error('[dataService] media_library.fetchAll', error); return null; }
+      return (data as any[]).map((r: any) => ({
+        id: r.id,
+        url: r.url,
+        name: r.name || 'Image',
+        size: r.size ?? null,
+        type: r.type ?? null,
+        teamId: r.team_id ?? null,
+        uploadedBy: r.uploaded_by || '',
+        createdAt: new Date(r.created_at),
+      }));
+    } catch (e) { console.error('[dataService] media_library.fetchAll', e); return null; }
+  },
+
+  async insert(item: { url: string; name: string; size?: number | null; type?: string | null; teamId?: string | null; uploadedBy: string }, mockMode?: boolean): Promise<string | null> {
+    if (!shouldPersist(mockMode)) return null;
+    try {
+      const { data, error } = await supabase!.from('media_library').insert({
+        url: item.url,
+        name: item.name,
+        size: item.size ?? null,
+        type: item.type ?? null,
+        team_id: item.teamId ?? null,
+        uploaded_by: item.uploadedBy,
+      }).select('id').single();
+      if (error) { console.error('[dataService] media_library.insert', error); return null; }
+      return (data as any)?.id ?? null;
+    } catch (e) { console.error('[dataService] media_library.insert', e); return null; }
+  },
+};
+
 // ═══════════════════════════════════════════════════════════════════════
 // PROJECTS
 // ═══════════════════════════════════════════════════════════════════════
@@ -550,6 +629,7 @@ export interface DbProjectTaskInsert {
   assigned_to: string | null;
   order: number;
   linked_task_id: string | null;
+  template_id?: string | null;
 }
 
 export const projectDb = {
@@ -567,7 +647,7 @@ export const projectDb = {
     // is row-level only.
     let q = supabase!
       .from('projects')
-      .select('id, name, description, icon, color, template_id, status, team_id, created_by, created_at, updated_at, product_name, attachments, links, card_display, project_type, project_lead_id, planned_start_date, planned_completion_date, project_tasks(*)')
+      .select('id, name, description, icon, color, template_id, template_ids, status, team_id, created_by, created_at, updated_at, product_name, attachments, links, card_display, project_type, project_lead_id, planned_start_date, planned_completion_date, support_owner_id, project_tasks(*)')
       .order('created_at', { ascending: false })
       .order('order', { referencedTable: 'project_tasks', ascending: true });
     // Admins/managers: let RLS is_admin_or_manager() return everything — no client filter.
