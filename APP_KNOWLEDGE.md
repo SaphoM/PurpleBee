@@ -281,7 +281,12 @@ the team which insights were useful. "Refresh" recomputes from the latest
 task data.
 
 **Ask the assistant** — AI Insights page → bottom-right bubble → type a
-question like "How do I create a task?" → send.
+question like "How do I create a task?" → send. Tap **What should I do?**
+(Compass button) for a personal briefing: it knows who is signed in,
+lists the projects they are assigned to, points at the open tasks they
+should complete next (most urgent/overdue first), and — if they have no
+open work at all — tells them to message Sapho in the PurpleBee chat
+(Direct messages) to ask for their next project.
 
 ---
 

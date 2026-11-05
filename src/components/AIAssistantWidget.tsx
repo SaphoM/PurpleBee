@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
-import { Bot, Send, Minus, X } from 'lucide-react';
+import { Bot, Send, Minus, X, Compass } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 /**
@@ -57,10 +57,11 @@ export const AIAssistantWidget: React.FC = () => {
     if (open) inputRef.current?.focus();
   }, [open]);
 
-  const send = async () => {
-    const text = input.trim();
+  const send = async (override?: string) => {
+    const text = (override ?? input).trim();
     if (!text || loading) return;
     setError(null);
+    const isFocus = override !== undefined;
     const history = [...messages, { id: `u-${Date.now()}`, role: 'user' as const, content: text }];
     setMessages(history);
     setInput('');
@@ -89,6 +90,7 @@ export const AIAssistantWidget: React.FC = () => {
             messages: history
               .slice(-10)
               .map((m) => ({ role: m.role, content: m.content })),
+            ...(isFocus ? { context: 'my-focus' as const } : {}),
           },
         });
         data = (resp.data as { reply?: string; error?: string } | null) ?? {};
@@ -228,6 +230,29 @@ export const AIAssistantWidget: React.FC = () => {
             {error}
           </div>
         )}
+      </div>
+
+      {/* Quick action: personalised "What should I do?" briefing */}
+      <div className="px-3 pt-2 pb-1 bg-white dark:bg-slate-800 flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => void send('What should I do?')}
+          disabled={loading}
+          className={clsx(
+            'w-full inline-flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-colors',
+            'bg-purple-50 hover:bg-purple-100 border border-purple-200',
+            'dark:bg-purple-900/20 dark:hover:bg-purple-900/40 dark:border-purple-800',
+            'text-purple-700 dark:text-purple-300',
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+          )}
+          title="Get a personal briefing: your projects and the tasks to finish next"
+        >
+          <span className="inline-flex items-center gap-2">
+            <Compass size={15} />
+            What should I do?
+          </span>
+          <span className="text-[11px] text-purple-400 dark:text-purple-500">Your projects + next tasks</span>
+        </button>
       </div>
 
       {/* Input */}
