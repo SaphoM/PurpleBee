@@ -38,7 +38,8 @@ import {
 } from 'lucide-react';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
-import { useProjectStore } from '@stores/projectStore';
+import { useProjectStore, getAssigneeIds } from '@stores/projectStore';
+import { AssigneePicker, AssigneeAvatarStack } from '@components/shared/AssigneePicker';
 import { useUserStore } from '@stores/userStore';
 import { useToastStore } from '@components/Toast';
 import { useSettingsStore } from '@stores/settingsStore';
@@ -240,11 +241,13 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const canDelete = !task?.createdBy || task.createdBy === user?.id;
   const project = task?.projectId ? getProjectById(task.projectId) : null;
 
-  // Resolve assignee: check assignableMembers first, fall back to current user if id matches
-  const assignee = task?.assignedTo
-    ? assignableMembers.find((m) => m.id === task.assignedTo) ??
-      (user?.id === task.assignedTo ? { name: user.name, avatar: user.avatar } : null)
-    : null;
+  // Resolve assignees (multi-aware): primary stays for avatars, full list for display/editing
+  const assigneeIds: string[] = task ? getAssigneeIds(task) : [];
+  const assignees = assigneeIds.map((id) =>
+    assignableMembers.find((m) => m.id === id) ??
+    (user?.id === id ? { name: user.name, avatar: user.avatar, id } as any : null)
+  ).filter((m): m is { name: string; avatar?: string; id: string } => !!m);
+  const assignee = assignees[0] ?? null;
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -1320,27 +1323,14 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 <Users size={12} />
                 Assigned To
               </label>
-              {assignee ? (
-                <div className="flex items-center gap-2">
-                  {assignee.avatar ? (
-                    <img
-                      src={assignee.avatar}
-                      alt={assignee.name}
-                      title={assignee.name}
-                      className="w-6 h-6 rounded-full object-cover flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-bold text-purple-600 dark:text-purple-400">
-                        {assignee.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                  )}
-                  <span className="text-sm font-medium text-gray-700 dark:text-slate-200 truncate">
-                    {assignee.name}
+              {assignees.length > 0 ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <AssigneeAvatarStack members={assignees} max={5} />
+                  <span className="text-sm text-gray-500 dark:text-slate-400">
+                    {assignees.length > 1 ? `${assignees.length} people` : ''}
                   </span>
                 </div>
-              ) : task.assignedTo ? (
+              ) : (task?.assignedTo || assigneeIds.length > 0) ? (
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
                     <span className="text-xs font-bold text-gray-500 dark:text-slate-400">?</span>
@@ -1350,6 +1340,18 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               ) : (
                 <p className="text-sm text-gray-400 dark:text-slate-500">Unassigned</p>
               )}
+              <div className="mt-2">
+                <AssigneePicker
+                  selectedIds={assigneeIds}
+                  members={assignableMembers}
+                  onChange={(ids) => updateTask(task.id, { assignedTo: ids[0], assignedToIds: ids })}
+                  placeholder={assignees.length > 0 ? 'Change assignees…' : 'Assign…'}
+                  align="left"
+                />
+                <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
+                  Pick one or more people — each gets notified.
+                </p>
+              </div>
             </div>
 
             {/* Project */}

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { TaskStatus, TaskPriority, Attachment, TaskLink } from '@/types/index';
 import { useTaskStore } from '@stores/taskStore';
-import { useProjectStore } from '@stores/projectStore';
+import { useProjectStore, isTaskAssignedTo } from '@stores/projectStore';
 import { useUserStore } from '@stores/userStore';
 import { ReferencesSection } from '@components/shared/ReferencesSection';
 import { LinkedProjectReferences } from '@components/shared/LinkedProjectReferences';
@@ -70,7 +70,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   const top3Projects = useMemo(() => {
     const userProjects = canManageTeam()
       ? projects
-      : projects.filter((p) => p.tasks.some((t) => t.assignedTo === user?.id));
+      : projects.filter((p) => p.tasks.some((t) => isTaskAssignedTo(t, user?.id)));
     return [...userProjects]
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 3);
@@ -82,7 +82,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
     ? allProjectTasks
     : allProjectTasks.filter((pt) => {
         const proj = projects.find((p) => p.id === pt.projectId);
-        return proj?.tasks.some((t) => t.assignedTo === user?.id);
+        return proj?.tasks.some((t) => isTaskAssignedTo(t, user?.id));
       });
   const filteredSuggestions = title.trim()
     ? projectTasks.filter((pt) =>
@@ -99,8 +99,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
   }, {});
   Object.keys(groupedSuggestions).forEach((projId) => {
     groupedSuggestions[projId].sort((a, b) => {
-      const aMe = !!a.assignedTo && !!user?.id && a.assignedTo === user?.id ? 0 : 1;
-      const bMe = !!b.assignedTo && !!user?.id && b.assignedTo === user?.id ? 0 : 1;
+      const aMe = isTaskAssignedTo(a, user?.id) ? 0 : 1;
+      const bMe = isTaskAssignedTo(b, user?.id) ? 0 : 1;
       return aMe - bMe;
     });
   });
@@ -228,8 +228,8 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
             <h2 className="text-xl font-bold text-gray-900 dark:text-slate-100">Create New Task</h2>
             <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">Fill in the details for your new task</p>
             {projectTasks.length > 0 && (() => {
-              const myScheduled = boardTasks.filter(t => !!user?.id && t.assignedTo === user.id).length;
-              const myUnscheduled = projectTasks.filter(pt => !!user?.id && pt.assignedTo === user.id && !scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length;
+              const myScheduled = boardTasks.filter(t => isTaskAssignedTo(t, user?.id)).length;
+              const myUnscheduled = projectTasks.filter(pt => isTaskAssignedTo(pt, user?.id) && !scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length;
               const allScheduled = projectTasks.filter(pt => scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length;
               const allUnscheduled = projectTasks.filter(pt => !scheduledTitles.has(pt.taskTitle.toLowerCase().trim())).length;
               return (
@@ -394,7 +394,7 @@ export const CreateTaskModal: React.FC<CreateTaskModalProps> = ({
                         </span>
                       </div>
                       {tasks.map((pt) => {
-                        const isAssignedToMe = !!pt.assignedTo && !!user?.id && pt.assignedTo === user?.id;
+                        const isAssignedToMe = isTaskAssignedTo(pt, user?.id);
                         const isScheduled = scheduledTitles.has(pt.taskTitle.toLowerCase().trim());
                         return (
                           <button

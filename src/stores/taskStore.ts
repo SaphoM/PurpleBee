@@ -308,6 +308,13 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   addTask: (taskData, forcedId, skipPersist) => {
     const { teamId, userId, userName } = getTeamContext();
+    // Normalise multi-assignee: union the legacy single field into the list.
+    const normalizedIds = (() => {
+      const ids = new Set<string>();
+      if (taskData.assignedTo) ids.add(taskData.assignedTo);
+      for (const id of taskData.assignedToIds ?? []) if (id) ids.add(id);
+      return ids.size > 0 ? [...ids] : undefined;
+    })();
     const newTask: Task = {
       ...taskData,
       id: forcedId || uuidv4(),
@@ -315,6 +322,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       createdBy: userId || undefined,
       createdAt: new Date(),
       updatedAt: new Date(),
+      assignedTo: taskData.assignedTo || normalizedIds?.[0],
+      assignedToIds: normalizedIds,
     };
     set((state) => ({ tasks: [newTask, ...state.tasks] }));
     // Persist to DB only when mock mode is OFF (fire-and-forget), and only
@@ -323,18 +332,21 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     // created_by is the real creator so RLS sees a valid author.
     if (!skipPersist) taskDb.insert(newTask, newTask.createdBy || userId || undefined, isMockMode());
 
-    // Notify the assignee if they're someone other than the creator
-    if (newTask.assignedTo && newTask.assignedTo !== userId) {
+    // Notify every assignee (fan-out) if they're someone other than the creator
+    const notifyIds = (normalizedIds ?? []).filter((id) => id !== userId);
+    if (notifyIds.length > 0) {
       const projectName = getProjectName(newTask.projectId);
-      notifyUser({
-        actorId: userId,
-        recipientId: newTask.assignedTo,
-        type: 'task-assigned',
-        title: 'New task assigned to you',
-        message: `${userName} assigned "${newTask.title}" to you${projectName ? ` in ${projectName}` : ''}`,
-        actionUrl: `#tasks?taskId=${newTask.id}`,
-        taskId: newTask.id,
-      });
+      for (const recipientId of notifyIds) {
+        notifyUser({
+          actorId: userId,
+          recipientId,
+          type: 'task-assigned',
+          title: 'New task assigned to you',
+          message: `${userName} assigned "${newTask.title}" to you${projectName ? ` in ${projectName}` : ''}`,
+          actionUrl: `#tasks?taskId=${newTask.id}`,
+          taskId: newTask.id,
+        });
+      }
     }
 
     logActivity({ taskId: newTask.id, taskTitle: newTask.title, action: 'created' });
@@ -343,36 +355,60 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   updateTask: (id, updates) => {
     const prevTask = get().tasks.find((t) => t.id === id);
+    // Normalise: whichever assignment field the caller touched, sync both.
+    let normalizedUpdates: Partial<Task> = { ...updates };
+    if (updates.assignedTo !== undefined || updates.assignedToIds !== undefined) {
+      const ids = new Set<string>();
+      if (updates.assignedTo !== undefined) { if (updates.assignedTo) ids.add(updates.assignedTo); }
+      else if (prevTask?.assignedTo) ids.add(prevTask.assignedTo);
+      for (const u of updates.assignedToIds ?? []) if (u) ids.add(u);
+      if (updates.assignedToIds === undefined && prevTask?.assignedToIds) {
+        for (const u of prevTask.assignedToIds) ids.add(u);
+      }
+      const idList = [...ids];
+      // Legacy callers that pass ONLY assignedTo intend "replace with this one person".
+      const replaceSingle = updates.assignedTo !== undefined && updates.assignedToIds === undefined;
+      normalizedUpdates = {
+        ...normalizedUpdates,
+        assignedTo: idList[0],
+        assignedToIds: replaceSingle ? (idList.length ? idList : []) : idList,
+      };
+    }
     set((state) => ({
       tasks: state.tasks.map((task) =>
         task.id === id
-          ? { ...task, ...updates, updatedAt: new Date() }
+          ? { ...task, ...normalizedUpdates, updatedAt: new Date() }
           : task
       ),
     }));
-    taskDb.update(id, updates, isMockMode());
+    taskDb.update(id, normalizedUpdates, isMockMode());
     recordMeaningfulActivity();
 
     const { userId, userName } = getTeamContext();
     const projectName = getProjectName(prevTask?.projectId);
 
-    // ── Notify assignee when the task is (re)assigned ──
-    if (
-      updates.assignedTo !== undefined &&
-      updates.assignedTo !== prevTask?.assignedTo &&
-      updates.assignedTo &&
-      updates.assignedTo !== userId
-    ) {
+    // ── Notify every newly assigned assignee when the task is (re)assigned ──
+    const prevAssigneeIds = new Set<string>();
+    if (prevTask?.assignedTo) prevAssigneeIds.add(prevTask.assignedTo);
+    for (const u of prevTask?.assignedToIds ?? []) if (u) prevAssigneeIds.add(u);
+    const nextAssigneeIds = new Set<string>();
+    if (normalizedUpdates.assignedTo !== undefined) { if (normalizedUpdates.assignedTo) nextAssigneeIds.add(normalizedUpdates.assignedTo); }
+    else if (prevTask?.assignedTo) nextAssigneeIds.add(prevTask.assignedTo);
+    for (const u of normalizedUpdates.assignedToIds ?? []) if (u) nextAssigneeIds.add(u);
+    const newlyAssigned = [...nextAssigneeIds].filter((u) => !prevAssigneeIds.has(u) && u !== userId);
+    if (newlyAssigned.length > 0) {
       const taskTitle = updates.title || prevTask?.title || 'a task';
-      notifyUser({
-        actorId: userId,
-        recipientId: updates.assignedTo,
-        type: 'task-assigned',
-        title: 'Task assigned to you',
-        message: `${userName} assigned "${taskTitle}" to you${projectName ? ` in ${projectName}` : ''}`,
-        actionUrl: `#tasks?taskId=${id}`,
-        taskId: id,
-      });
+      for (const recipientId of newlyAssigned) {
+        notifyUser({
+          actorId: userId,
+          recipientId,
+          type: 'task-assigned',
+          title: 'Task assigned to you',
+          message: `${userName} assigned "${taskTitle}" to you${projectName ? ` in ${projectName}` : ''}`,
+          actionUrl: `#tasks?taskId=${id}`,
+          taskId: id,
+        });
+      }
     }
 
     // ── Notify creator when their task is marked complete ──
@@ -411,7 +447,10 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       prevTask?.status === 'completed'
     ) {
       const taskTitle = updates.title || prevTask.title;
-      const recipients = [prevTask.createdBy, prevTask.assignedTo].filter(
+      const assigneeIdsForDelete = new Set<string>();
+      if (prevTask.assignedTo) assigneeIdsForDelete.add(prevTask.assignedTo);
+      for (const u of prevTask.assignedToIds ?? []) if (u) assigneeIdsForDelete.add(u);
+      const recipients = [prevTask.createdBy, ...assigneeIdsForDelete].filter(
         (uid): uid is string => !!uid
       );
       recipients.forEach((recipientId) => {
@@ -427,8 +466,14 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       });
     }
 
-    // ── Notify assignee when due date or priority changes (not on the assignee's own edit) ──
-    if (prevTask?.assignedTo && prevTask.assignedTo !== userId) {
+    // ── Notify assignees when due date or priority changes (not on an assignee's own edit) ──
+    const prevAssigneeList = (() => {
+      const s = new Set<string>();
+      if (prevTask?.assignedTo) s.add(prevTask.assignedTo);
+      for (const u of prevTask?.assignedToIds ?? []) if (u) s.add(u);
+      return [...s].filter((u) => u !== userId);
+    })();
+    if (prevAssigneeList.length > 0 && prevTask) {
       const taskTitle = updates.title || prevTask.title;
       if (
         updates.dueDate !== undefined &&
@@ -437,26 +482,30 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         const formattedDate = updates.dueDate
           ? updates.dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
           : 'no due date';
-        notifyUser({
-          actorId: userId,
-          recipientId: prevTask.assignedTo,
-          type: 'task-updated',
-          title: 'Due date changed',
-          message: `${userName} moved the due date for "${taskTitle}" to ${formattedDate}`,
-          actionUrl: `#tasks?taskId=${id}`,
-          taskId: id,
-        });
+        for (const recipientId of prevAssigneeList) {
+          notifyUser({
+            actorId: userId,
+            recipientId,
+            type: 'task-updated',
+            title: 'Due date changed',
+            message: `${userName} moved the due date for "${taskTitle}" to ${formattedDate}`,
+            actionUrl: `#tasks?taskId=${id}`,
+            taskId: id,
+          });
+        }
       }
       if (updates.priority !== undefined && updates.priority !== prevTask.priority) {
-        notifyUser({
-          actorId: userId,
-          recipientId: prevTask.assignedTo,
-          type: 'task-updated',
-          title: 'Priority changed',
-          message: `${userName} changed the priority of "${taskTitle}" to ${updates.priority}`,
-          actionUrl: `#tasks?taskId=${id}`,
-          taskId: id,
-        });
+        for (const recipientId of prevAssigneeList) {
+          notifyUser({
+            actorId: userId,
+            recipientId,
+            type: 'task-updated',
+            title: 'Priority changed',
+            message: `${userName} changed the priority of "${taskTitle}" to ${updates.priority}`,
+            actionUrl: `#tasks?taskId=${id}`,
+            taskId: id,
+          });
+        }
       }
     }
 
@@ -485,19 +534,21 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         (prevTask.attachments || []).filter((a) => !nextIds.has(a.id)).forEach((a) =>
           logActivity({ taskId: id, taskTitle, action: 'attachment_removed', oldValue: a.name }));
 
-        // Notify the assignee (if someone else added it) so they don't have to re-open the task to notice
-        if (added.length > 0 && prevTask.assignedTo && prevTask.assignedTo !== userId) {
-          notifyUser({
-            actorId: userId,
-            recipientId: prevTask.assignedTo,
-            type: 'attachment-added',
-            title: 'New attachment',
-            message: added.length === 1
-              ? `${userName} added "${added[0].name}" to "${taskTitle}"`
-              : `${userName} added ${added.length} attachments to "${taskTitle}"`,
-            actionUrl: `#tasks?taskId=${id}`,
-            taskId: id,
-          });
+        // Notify every assignee (if someone else added it) so they don't have to re-open the task to notice
+        if (added.length > 0 && prevAssigneeList.length > 0) {
+          for (const recipientId of prevAssigneeList) {
+            notifyUser({
+              actorId: userId,
+              recipientId,
+              type: 'attachment-added',
+              title: 'New attachment',
+              message: added.length === 1
+                ? `${userName} added "${added[0].name}" to "${taskTitle}"`
+                : `${userName} added ${added.length} attachments to "${taskTitle}"`,
+              actionUrl: `#tasks?taskId=${id}`,
+              taskId: id,
+            });
+          }
         }
 
         // Record a successful upload in the activity log (only after the
@@ -547,7 +598,13 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     // no actionUrl/taskId since the task no longer exists to link to.
     const { userId: actorId, userName } = getTeamContext();
     notifyUsers(
-      [task.assignedTo, task.createdBy].filter((uid): uid is string => !!uid),
+      (() => {
+        const s = new Set<string>();
+        if (task.assignedTo) s.add(task.assignedTo);
+        for (const u of task.assignedToIds ?? []) if (u) s.add(u);
+        if (task.createdBy) s.add(task.createdBy);
+        return [...s];
+      })(),
       {
         actorId,
         type: 'update',
@@ -573,7 +630,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     return state.tasks.filter((task) => {
       if (state.filter.status && task.status !== state.filter.status) return false;
       if (state.filter.priority && task.priority !== state.filter.priority) return false;
-      if (state.filter.assignedTo && task.assignedTo !== state.filter.assignedTo) return false;
+      if (state.filter.assignedTo) {
+        const ids = new Set<string>();
+        if (task.assignedTo) ids.add(task.assignedTo);
+        for (const u of task.assignedToIds ?? []) if (u) ids.add(u);
+        if (!ids.has(state.filter.assignedTo)) return false;
+      }
       if (state.filter.tags && !state.filter.tags.some((tag) => task.tags.includes(tag))) {
         return false;
       }
@@ -643,7 +705,10 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 
   getTasksForUser: (userId) => {
-    return get().tasks.filter((t) => t.assignedTo === userId);
+    return get().tasks.filter((t) => {
+      if (t.assignedTo === userId) return true;
+      return (t.assignedToIds ?? []).includes(userId);
+    });
   },
 
   completeTask: (id) => {

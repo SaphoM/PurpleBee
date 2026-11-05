@@ -213,9 +213,10 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick
     } else if (taskOwnerFilter === 'all') {
       // Admin/manager chose "All Tasks" — show everything, own tasks first
       const all = getTasksByStatus(status);
+      const isMine = (t: typeof all[number]) => t.assignedTo === effectiveId || (t.assignedToIds ?? []).includes(effectiveId);
       tasks = [
-        ...all.filter((t) => t.assignedTo === effectiveId),
-        ...all.filter((t) => t.assignedTo !== effectiveId),
+        ...all.filter(isMine),
+        ...all.filter((t) => !isMine(t)),
       ];
     } else if (taskOwnerFilter === 'mine') {
       // Admin/manager default — only their own tasks

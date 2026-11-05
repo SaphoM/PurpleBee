@@ -26,7 +26,14 @@ export interface Task {
   description?: string;
   status: TaskStatus;
   priority: TaskPriority;
+  /** Legacy single assignee (primary) — kept for backwards compatibility. */
   assignedTo?: string;
+  /**
+   * Multi-assignee list — the source of truth for "assigned to 2+ people".
+   * Always includes `assignedTo` when set (see getAssigneeIds). Empty/undefined
+   * means unassigned.
+   */
+  assignedToIds?: string[];
   createdBy?: string; // user id of the person who created the task
   dueDate?: Date;
   createdAt: Date;

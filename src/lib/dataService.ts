@@ -45,6 +45,7 @@ export interface DbTask {
   status: TaskStatus;
   priority: TaskPriority;
   assigned_to: string | null;
+  assigned_to_ids?: string[] | null;
   due_date: string | null;
   tags: string[];
   progress: number;
@@ -60,6 +61,16 @@ export interface DbTask {
   attachments: import('@/types/index').Attachment[] | null;
 }
 
+/** Union of the multi-list and the legacy single field — keep in sync with
+ *  projectStore.getAssigneeIds (duplicated here to avoid a store↔lib import cycle,
+ *  since lib/dataService must not import any Zustand store). */
+const unionAssigneeIds = (assignedTo: string | null | undefined, assignedToIds: string[] | null | undefined): string[] | undefined => {
+  const ids = new Set<string>();
+  if (assignedTo) ids.add(assignedTo);
+  for (const id of assignedToIds ?? []) { if (id) ids.add(id); }
+  return ids.size > 0 ? [...ids] : undefined;
+};
+
 /** Map a Supabase row → app Task */
 const toTask = (row: DbTask): Task => ({
   id: row.id,
@@ -68,6 +79,7 @@ const toTask = (row: DbTask): Task => ({
   status: row.status,
   priority: row.priority,
   assignedTo: row.assigned_to || undefined,
+  assignedToIds: unionAssigneeIds(row.assigned_to, (row as DbTask).assigned_to_ids ?? null),
   createdBy: row.created_by || undefined,
   dueDate: row.due_date ? new Date(row.due_date) : undefined,
   tags: row.tags || [],
@@ -91,6 +103,7 @@ const toDbInsert = (task: Task, createdBy?: string) => ({
   status: task.status,
   priority: task.priority,
   assigned_to: task.assignedTo || null,
+  assigned_to_ids: unionAssigneeIds(task.assignedTo, task.assignedToIds) || null,
   due_date: task.dueDate ? task.dueDate.toISOString() : null,
   tags: task.tags,
   progress: task.progress,
@@ -162,9 +175,9 @@ export const taskDb = {
       .order('created_at', { ascending: false })
       .order('order', { referencedTable: 'subtasks', ascending: true });
     if (teamId) {
-      q = q.or(`team_id.eq.${teamId},assigned_to.eq.${userId},created_by.eq.${userId}`);
+      q = q.or(`team_id.eq.${teamId},assigned_to.eq.${userId},assigned_to_ids.cs.{${userId}},created_by.eq.${userId}`);
     } else {
-      q = q.or(`assigned_to.eq.${userId},created_by.eq.${userId}`);
+      q = q.or(`assigned_to.eq.${userId},assigned_to_ids.cs.{${userId}},created_by.eq.${userId}`);
     }
     const { data, error } = await q;
     if (error) { console.error('[dataService] tasks.fetchAll', error); return null; }
@@ -213,6 +226,13 @@ export const taskDb = {
     if (updates.status !== undefined) payload.status = updates.status;
     if (updates.priority !== undefined) payload.priority = updates.priority;
     if (updates.assignedTo !== undefined) payload.assigned_to = updates.assignedTo || null;
+    // Multi-assignee is always synced together with the single field so the
+    // union stays correct whichever one the caller edited.
+    if (updates.assignedTo !== undefined || updates.assignedToIds !== undefined) {
+      const ids = unionAssigneeIds(updates.assignedTo ?? null, updates.assignedToIds ?? null)
+        ?? (updates.assignedToIds !== undefined ? unionAssigneeIds(null, updates.assignedToIds) : null);
+      payload.assigned_to_ids = ids && ids.length > 0 ? ids : null;
+    }
     if (updates.dueDate !== undefined) payload.due_date = updates.dueDate ? updates.dueDate.toISOString() : null;
     if (updates.tags !== undefined) payload.tags = updates.tags;
     if (updates.progress !== undefined) payload.progress = updates.progress;
@@ -627,6 +647,7 @@ export interface DbProjectTaskInsert {
   estimated_hours: number;
   tags: string[];
   assigned_to: string | null;
+  assigned_to_ids?: string[] | null;
   order: number;
   linked_task_id: string | null;
   template_id?: string | null;
@@ -647,7 +668,7 @@ export const projectDb = {
     // is row-level only.
     let q = supabase!
       .from('projects')
-      .select('id, name, description, icon, color, template_id, template_ids, status, team_id, created_by, created_at, updated_at, product_name, attachments, links, card_display, project_type, project_lead_id, planned_start_date, planned_completion_date, support_owner_id, project_tasks(*)')
+      .select('id, name, description, icon, color, template_id, template_ids, status, team_id, created_by, created_at, updated_at, product_name, attachments, links, card_display, project_type, project_lead_id, planned_start_date, planned_completion_date, support_owner_id, support_owner_ids, project_tasks(*)')
       .order('created_at', { ascending: false })
       .order('order', { referencedTable: 'project_tasks', ascending: true });
     // Admins/managers: let RLS is_admin_or_manager() return everything — no client filter.

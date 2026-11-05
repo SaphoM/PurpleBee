@@ -38,19 +38,23 @@ const getTeamContext = () => _ctx;
 /** Check if a string looks like a valid UUID (not a mock ID like 'user-1') */
 const isValidUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
-const toDbProjectTask = (projectId: string, t: ProjectTask): DbProjectTaskInsert => ({
-  id: t.id,
-  project_id: projectId,
-  title: t.title,
-  description: t.description || null,
-  priority: t.priority,
-  estimated_hours: t.estimatedHours,
-  tags: t.tags,
-  assigned_to: t.assignedTo && isValidUuid(t.assignedTo) ? t.assignedTo : null,
-  order: t.order,
-  linked_task_id: t.linkedTaskId || null,
-  template_id: (t as ProjectTask).templateId || null,
-});
+const toDbProjectTask = (projectId: string, t: ProjectTask): DbProjectTaskInsert => {
+  const validIds = getAssigneeIds(t).filter((id) => isValidUuid(id));
+  return {
+    id: t.id,
+    project_id: projectId,
+    title: t.title,
+    description: t.description || null,
+    priority: t.priority,
+    estimated_hours: t.estimatedHours,
+    tags: t.tags,
+    assigned_to: t.assignedTo && isValidUuid(t.assignedTo) ? t.assignedTo : (validIds[0] ?? null),
+    assigned_to_ids: validIds.length > 0 ? validIds : null,
+    order: t.order,
+    linked_task_id: t.linkedTaskId || null,
+    template_id: (t as ProjectTask).templateId || null,
+  };
+};
 
 // ─── Project task template (suggested tasks for a project type) ────────
 export interface ProjectTaskTemplate {
@@ -302,11 +306,61 @@ export interface ProjectTask {
   priority: 'low' | 'medium' | 'high' | 'urgent';
   estimatedHours: number;
   tags: string[];
+  /** Legacy single assignee (primary) — kept for backwards compatibility. */
   assignedTo?: string;
+  /**
+   * Multi-assignee list — the source of truth for "assigned to 2+ people".
+   * Always includes `assignedTo` when set (see getAssigneeIds). Empty/undefined
+   * means unassigned.
+   */
+  assignedToIds?: string[];
   order: number;
   linkedTaskId?: string; // Reference to actual task in taskStore once created
   /** Template this task originated from (for template-tab grouping). Null = custom task. */
   templateId?: string | null;
+}
+
+/**
+ * All assignee ids for a task — union of the multi-list and the legacy
+ * single field, deduped. Prefer this over reading `assignedTo` directly so
+ * multi-assigned tasks are handled everywhere (queries, counts, RLS-blind
+ * client filtering, notifications).
+ */
+export function getAssigneeIds(
+  task: { assignedTo?: string; assignedToIds?: string[] } | null | undefined,
+): string[] {
+  if (!task) return [];
+  const ids = new Set<string>();
+  if (task.assignedTo) ids.add(task.assignedTo);
+  for (const id of task.assignedToIds ?? []) {
+    if (id) ids.add(id);
+  }
+  return [...ids];
+}
+
+/** True when the user is among the task's assignees (multi-aware). */
+export function isTaskAssignedTo(
+  task: { assignedTo?: string; assignedToIds?: string[] } | null | undefined,
+  userId?: string | null,
+): boolean {
+  if (!userId) return false;
+  return getAssigneeIds(task).includes(userId);
+}
+
+/**
+ * All support-owner ids for a project — union of the multi-list and the
+ * legacy single field, deduped. Same shape as getAssigneeIds.
+ */
+export function getSupportOwnerIds(
+  project: { supportOwnerId?: string; supportOwnerIds?: string[] } | null | undefined,
+): string[] {
+  if (!project) return [];
+  const ids = new Set<string>();
+  if (project.supportOwnerId) ids.add(project.supportOwnerId);
+  for (const id of project.supportOwnerIds ?? []) {
+    if (id) ids.add(id);
+  }
+  return [...ids];
 }
 
 export type ProjectStatus = 'planning' | 'active' | 'on-hold' | 'completed' | 'support';
@@ -327,6 +381,11 @@ export interface Project {
   updatedAt: Date;
   /** Support & Maintenance owner — assigned when the project is marked complete. */
   supportOwnerId?: string;
+  /**
+   * Multi-owner list — 1..N people in charge after delivery.
+   * Always includes `supportOwnerId` when set (see getSupportOwnerIds).
+   */
+  supportOwnerIds?: string[];
   /** Optional product name for Product Sales projects (and any project where it's relevant) */
   productName?: string;
   /** Project References — supporting material for the project as a whole (discovery meetings, requirements, scope docs, screenshots, etc.), distinct from any individual task's own attachments/links. */
@@ -485,6 +544,7 @@ interface ProjectStore {
     plannedStartDate?: Date;
     plannedCompletionDate?: Date;
     supportOwnerId?: string;
+    supportOwnerIds?: string[];
   }) => string; // returns project id
   /** `notify` (default true) — pass false for system-derived updates (e.g. auto status derivation from linked task progress) so they don't spam project members with a notification for something nobody actively did. */
   updateProject: (id: string, updates: Partial<Project>, notify?: boolean) => void;
@@ -496,8 +556,12 @@ interface ProjectStore {
   removeProjectTask: (projectId: string, taskId: string) => void;
   updateProjectTask: (projectId: string, taskId: string, updates: Partial<ProjectTask>) => void;
   assignProjectTask: (projectId: string, taskId: string, userId: string) => void;
-  /** Bulk: assign EVERY task in the project to one person (admin/manager action). Returns count changed. */
-  assignAllProjectTasks: (projectId: string, userId: string) => number;
+  /** Multi-assignee: ADD users to the task (union with existing). */
+  assignProjectTaskIds: (projectId: string, taskId: string, userIds: string[]) => void;
+  /** Multi-assignee: REPLACE the assignee set exactly. */
+  setProjectTaskAssignees: (projectId: string, taskId: string, userIds: string[]) => void;
+  /** Bulk: assign EVERY task in the project to one person or a set of people (admin/manager action). Returns count changed. */
+  assignAllProjectTasks: (projectId: string, userId: string | string[]) => number;
   linkProjectTask: (projectId: string, projectTaskId: string, linkedTaskId: string) => void;
 
   // Queries
@@ -664,6 +728,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       plannedStartDate: data.plannedStartDate || undefined,
       plannedCompletionDate: data.plannedCompletionDate || undefined,
       supportOwnerId: data.supportOwnerId || undefined,
+      supportOwnerIds: data.supportOwnerIds?.length ? data.supportOwnerIds : (data.supportOwnerId ? [data.supportOwnerId] : undefined),
     };
     set((state) => {
       const next = [project, ...state.projects];
@@ -699,6 +764,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         planned_start_date: project.plannedStartDate ? project.plannedStartDate.toISOString().slice(0, 10) : null,
         planned_completion_date: project.plannedCompletionDate ? project.plannedCompletionDate.toISOString().slice(0, 10) : null,
         support_owner_id: project.supportOwnerId || null,
+        support_owner_ids: project.supportOwnerIds && project.supportOwnerIds.length > 0 ? project.supportOwnerIds : null,
       },
       project.tasks.map((t) => toDbProjectTask(project.id, t)),
       isMockMode(),
@@ -726,6 +792,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.templateIds !== undefined) payload.template_ids = updates.templateIds && updates.templateIds.length > 0 ? updates.templateIds : null;
     if (updates.templateId !== undefined) payload.template_id = updates.templateId;
     if (updates.supportOwnerId !== undefined) payload.support_owner_id = updates.supportOwnerId || null;
+    if (updates.supportOwnerIds !== undefined) {
+      const ids = getSupportOwnerIds({
+        supportOwnerId: updates.supportOwnerId ?? prevProject?.supportOwnerId,
+        supportOwnerIds: updates.supportOwnerIds,
+      });
+      payload.support_owner_ids = ids.length > 0 ? ids : null;
+    }
     if (updates.productName !== undefined) payload.product_name = updates.productName || null;
     if (updates.attachments !== undefined) payload.attachments = updates.attachments && updates.attachments.length > 0 ? updates.attachments : null;
     if (updates.links !== undefined) payload.links = updates.links && updates.links.length > 0 ? updates.links : null;
@@ -772,7 +845,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (notify && updates.status !== undefined && prevProject && updates.status !== prevProject.status) {
       const { userId: currentUserId, userName } = getTeamContext();
       const recipients = Array.from(
-        new Set(prevProject.tasks.map((t) => t.assignedTo).filter((uid): uid is string => !!uid))
+        new Set(prevProject.tasks.flatMap((t) => getAssigneeIds(t))),
       );
       notifyUsers(recipients, {
         actorId: currentUserId,
@@ -783,23 +856,30 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       });
     }
 
-    // ── Notify the support owner whenever they are newly assigned (handover) ──
+    // ── Notify every NEW support owner whenever owners change (handover) ──
     if (
-      updates.supportOwnerId !== undefined &&
       prevProject &&
-      updates.supportOwnerId !== prevProject.supportOwnerId &&
-      updates.supportOwnerId &&
-      isValidUuid(updates.supportOwnerId)
+      (updates.supportOwnerId !== undefined || updates.supportOwnerIds !== undefined)
     ) {
-      const { userId: currentUserId, userName } = getTeamContext();
-      notifyUser({
-        actorId: currentUserId,
-        recipientId: updates.supportOwnerId,
-        type: 'project-updated',
-        title: 'Support handover',
-        message: `${userName} handed over "${prevProject.name}" to you for Support & Maintenance`,
-        actionUrl: `#projects?projectId=${id}`,
+      const prevOwnerIds = new Set(getSupportOwnerIds(prevProject));
+      const nextOwnerIds = getSupportOwnerIds({
+        supportOwnerId: updates.supportOwnerId ?? prevProject.supportOwnerId,
+        supportOwnerIds: updates.supportOwnerIds ?? prevProject.supportOwnerIds,
       });
+      const newlyAssigned = nextOwnerIds.filter((u) => !prevOwnerIds.has(u) && isValidUuid(u));
+      if (newlyAssigned.length > 0) {
+        const { userId: currentUserId, userName } = getTeamContext();
+        for (const recipientId of newlyAssigned) {
+          notifyUser({
+            actorId: currentUserId,
+            recipientId,
+            type: 'project-updated',
+            title: 'Support handover',
+            message: `${userName} handed over "${prevProject.name}" to you for Support & Maintenance`,
+            actionUrl: `#projects?projectId=${id}`,
+          });
+        }
+      }
     }
   },
 
@@ -867,7 +947,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.priority !== undefined) payload.priority = updates.priority;
     if (updates.estimatedHours !== undefined) payload.estimated_hours = updates.estimatedHours;
     if (updates.tags !== undefined) payload.tags = updates.tags;
-    if (updates.assignedTo !== undefined) payload.assigned_to = updates.assignedTo || null;
+    // Multi-assignee is always synced together with the single field so the
+    // union stays correct whichever one the caller edited.
+    if (updates.assignedTo !== undefined || updates.assignedToIds !== undefined) {
+      const ids = getAssigneeIds({
+        assignedTo: updates.assignedTo ?? prevTask?.assignedTo,
+        assignedToIds: updates.assignedToIds ?? prevTask?.assignedToIds,
+      }).filter((id) => isValidUuid(id));
+      payload.assigned_to = (updates.assignedTo ?? (ids[0] || null)) || null;
+      payload.assigned_to_ids = ids.length > 0 ? ids : null;
+    }
     if (updates.order !== undefined) payload.order = updates.order;
     if (updates.linkedTaskId !== undefined) payload.linked_task_id = updates.linkedTaskId || null;
     if ((updates as ProjectTask).templateId !== undefined) payload.template_id = ((updates as ProjectTask).templateId) || null;
@@ -878,39 +967,81 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     // ── Notify the assignee whenever a project task is (re)assigned — the
     // single source of truth for this, so assignProjectTask (which just
     // delegates here) doesn't need its own duplicate notify logic. ──
-    if (
-      updates.assignedTo !== undefined &&
-      updates.assignedTo !== prevTask?.assignedTo &&
-      updates.assignedTo &&
-      isValidUuid(updates.assignedTo)
-    ) {
+    // Fan out to every NEW assignee (multi-aware): anyone who wasn't an
+    // assignee before and is now one gets notified.
+    const prevAssigneeIds = new Set(getAssigneeIds(prevTask));
+    const nextAssigneeIds = getAssigneeIds({
+      assignedTo: updates.assignedTo ?? prevTask?.assignedTo,
+      assignedToIds: updates.assignedToIds ?? prevTask?.assignedToIds,
+    });
+    const newlyAssigned = nextAssigneeIds.filter(
+      (id) => !prevAssigneeIds.has(id) && isValidUuid(id),
+    );
+    if (newlyAssigned.length > 0) {
       const { userId: currentUserId, userName } = getTeamContext();
       const taskTitle = updates.title || prevTask?.title || 'a task';
-      notifyUser({
-        actorId: currentUserId,
-        recipientId: updates.assignedTo,
-        type: 'task-assigned',
-        title: 'Task assigned to you',
-        message: `${userName} assigned "${taskTitle}" to you${prevProject ? ` in ${prevProject.name}` : ''}`,
-        actionUrl: `#projects?projectId=${projectId}`,
-      });
+      const suffix = prevProject ? ` in ${prevProject.name}` : '';
+      const message = newlyAssigned.length > 1
+        ? `${userName} assigned "${taskTitle}" to you${suffix}`
+        : `${userName} assigned "${taskTitle}" to you${suffix}`;
+      for (const recipientId of newlyAssigned) {
+        notifyUser({
+          actorId: currentUserId,
+          recipientId,
+          type: 'task-assigned',
+          title: 'Task assigned to you',
+          message,
+          actionUrl: `#projects?projectId=${projectId}`,
+        });
+      }
     }
   },
 
   assignProjectTask: (projectId, taskId, userId) => {
-    get().updateProjectTask(projectId, taskId, { assignedTo: userId });
+    // Back-compat single-select: REPLACE the assignee list with just this user.
+    get().updateProjectTask(projectId, taskId, { assignedTo: userId, assignedToIds: userId ? [userId] : [] });
+  },
+
+  /**
+   * Multi-assignee: ADD users to the task's assignee list (union with
+   * existing). Empty array = unassign everyone (primary + list cleared).
+   */
+  assignProjectTaskIds: (projectId, taskId, userIds: string[]) => {
+    const ids = [...new Set(userIds.filter(Boolean))];
+    const task = get().projects.find((p) => p.id === projectId)?.tasks.find((t) => t.id === taskId);
+    const union = [...new Set([...(task ? getAssigneeIds(task) : []), ...ids])];
+    get().updateProjectTask(projectId, taskId, {
+      assignedTo: union[0],
+      assignedToIds: union,
+    });
+  },
+
+  /**
+   * Multi-assignee: REPLACE the assignee list exactly (used by the
+   * multi-select chip UI — checking/unchecking members toggles the set).
+   */
+  setProjectTaskAssignees: (projectId, taskId, userIds: string[]) => {
+    const ids = [...new Set(userIds.filter(Boolean))];
+    get().updateProjectTask(projectId, taskId, {
+      assignedTo: ids[0],
+      assignedToIds: ids,
+    });
   },
 
   /**
    * One-click "Assign all to…" — reassigns every task in the project to the
-   * chosen member so admins/managers don't have to repeat the per-task
-   * dropdown over and over. Persists each task and sends ONE summary
+   * chosen member(s) so admins/managers don't have to repeat the per-task
+   * control over and over. Persists each task and sends ONE summary
    * notification (same pattern as the creation wizard), not one per task.
+   * Accepts one or many assignees — every task gets the full set.
    */
   assignAllProjectTasks: (projectId, userId) => {
+    const userIds = Array.isArray(userId) ? [...new Set(userId.filter(Boolean))] : [userId];
     const project = get().projects.find((p) => p.id === projectId);
     if (!project) return 0;
-    const toAssign = project.tasks.filter((t) => t.assignedTo !== userId);
+    const toAssign = project.tasks.filter(
+      (t) => getAssigneeIds(t).join() !== userIds.join(),
+    );
     if (toAssign.length === 0) return 0;
 
     set((state) => {
@@ -918,7 +1049,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         p.id === projectId
           ? {
               ...p,
-              tasks: p.tasks.map((t) => (t.assignedTo !== userId ? { ...t, assignedTo: userId } : t)),
+              tasks: p.tasks.map((t) =>
+                getAssigneeIds(t).join() !== userIds.join()
+                  ? { ...t, assignedTo: userIds[0], assignedToIds: userIds }
+                  : t,
+              ),
               updatedAt: new Date(),
             }
           : p
@@ -927,23 +1062,27 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       return { projects: next };
     });
 
-    // Persist every changed task (project_tasks.assigned_to) — same write the
-    // per-task dropdown does, just batched here.
+    // Persist every changed task (project_tasks.assigned_to/_ids) — same write the
+    // per-task control does, just batched here.
     toAssign.forEach((t) => {
-      projectDb.updateTask(t.id, { assigned_to: userId }, isMockMode());
+      const validIds = userIds.filter((id) => isValidUuid(id));
+      projectDb.updateTask(t.id, { assigned_to: userIds[0] ?? null, assigned_to_ids: validIds.length > 0 ? validIds : null }, isMockMode());
     });
 
-    // Single summary notification for the assignee.
-    if (isValidUuid(userId)) {
+    // Single summary notification per assignee.
+    const validIds = userIds.filter((id) => isValidUuid(id));
+    if (validIds.length > 0) {
       const { userId: currentUserId, userName } = getTeamContext();
-      notifyUser({
-        actorId: currentUserId,
-        recipientId: userId,
-        type: 'task-assigned',
-        title: 'Tasks assigned to you',
-        message: `${userName} assigned you ${toAssign.length} task${toAssign.length > 1 ? 's' : ''} in ${project.name}`,
-        actionUrl: `#projects?projectId=${projectId}`,
-      });
+      for (const recipientId of validIds) {
+        notifyUser({
+          actorId: currentUserId,
+          recipientId,
+          type: 'task-assigned',
+          title: 'Tasks assigned to you',
+          message: `${userName} assigned you ${toAssign.length} task${toAssign.length > 1 ? 's' : ''} in ${project.name}`,
+          actionUrl: `#projects?projectId=${projectId}`,
+        });
+      }
     }
 
     return toAssign.length;
@@ -962,12 +1101,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
 
   getUnassignedTasks: (projectId) => {
     const project = get().projects.find((p) => p.id === projectId);
-    return (project?.tasks || []).filter((t) => !t.assignedTo);
+    return (project?.tasks || []).filter((t) => getAssigneeIds(t).length === 0);
   },
 
   getAllProjectTaskTitles: () => {
     const projects = get().projects;
-    const results: { projectId: string; projectName: string; projectIcon: string; projectColor: string; taskId: string; taskTitle: string; taskDescription: string; assignedTo?: string }[] = [];
+    const results: { projectId: string; projectName: string; projectIcon: string; projectColor: string; taskId: string; taskTitle: string; taskDescription: string; assignedTo?: string; assignedToIds?: string[] }[] = [];
     projects.forEach((p) => {
       p.tasks.forEach((t) => {
         results.push({
@@ -979,6 +1118,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           taskTitle: t.title,
           taskDescription: t.description,
           assignedTo: t.assignedTo,
+          assignedToIds: getAssigneeIds(t),
         });
       });
     });
@@ -1042,20 +1182,31 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       plannedStartDate: r.planned_start_date ? new Date(r.planned_start_date) : undefined,
       plannedCompletionDate: r.planned_completion_date ? new Date(r.planned_completion_date) : undefined,
       supportOwnerId: r.support_owner_id || undefined,
+      supportOwnerIds: getSupportOwnerIds({
+        supportOwnerId: r.support_owner_id || undefined,
+        supportOwnerIds: Array.isArray(r.support_owner_ids) ? r.support_owner_ids : undefined,
+      }).length > 0 ? getSupportOwnerIds({ supportOwnerId: r.support_owner_id || undefined, supportOwnerIds: Array.isArray(r.support_owner_ids) ? r.support_owner_ids : undefined }) : undefined,
       tasks: ((r.project_tasks as Array<Record<string, any>>) || [])
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-        .map((t) => ({
-          id: t.id,
-          title: t.title,
-          description: t.description || '',
-          priority: t.priority,
-          estimatedHours: Number(t.estimated_hours) || 0,
-          tags: t.tags || [],
-          assignedTo: t.assigned_to || undefined,
-          order: t.order ?? 0,
-          linkedTaskId: t.linked_task_id || undefined,
-          templateId: t.template_id ?? undefined,
-        })),
+        .map((t) => {
+          const ids = getAssigneeIds({
+            assignedTo: t.assigned_to || undefined,
+            assignedToIds: Array.isArray(t.assigned_to_ids) ? t.assigned_to_ids : undefined,
+          });
+          return {
+            id: t.id,
+            title: t.title,
+            description: t.description || '',
+            priority: t.priority,
+            estimatedHours: Number(t.estimated_hours) || 0,
+            tags: t.tags || [],
+            assignedTo: t.assigned_to || ids[0] || undefined,
+            assignedToIds: ids.length > 0 ? ids : undefined,
+            order: t.order ?? 0,
+            linkedTaskId: t.linked_task_id || undefined,
+            templateId: t.template_id ?? undefined,
+          };
+        }),
     }));
 
     // Always replace in-memory state with DB data.

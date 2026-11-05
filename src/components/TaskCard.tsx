@@ -38,16 +38,23 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const canComplete = canViewAllTasks();
   const project = task.projectId ? getProjectById(task.projectId) : null;
 
-  // Resolve the assigned user name from assignableMembers
-  const assignee = task.assignedTo
-    ? assignableMembers.find((p) => p.id === task.assignedTo)
-    : null;
+  // Resolve all assignees from assignableMembers (multi-aware)
+  const assigneeIds = (() => {
+    const ids = new Set<string>();
+    if (task.assignedTo) ids.add(task.assignedTo);
+    for (const u of task.assignedToIds ?? []) if (u) ids.add(u);
+    return [...ids];
+  })();
+  const assignees = assigneeIds
+    .map((id) => assignableMembers.find((p) => p.id === id))
+    .filter((p): p is (typeof assignableMembers)[number] => !!p);
+  const assignee = assignees[0] ?? null;
 
   const collaborators = task.collaborators || [];
 
-  // All people on this task (assignee + collaborators)
+  // All people on this task (assignees + collaborators)
   const allMembers: MemberInfo[] = [
-    ...(assignee ? [{ id: assignee.id, name: assignee.name, avatar: assignee.avatar, role: 'owner' as const }] : []),
+    ...assignees.map((a) => ({ id: a.id, name: a.name, avatar: a.avatar, role: 'owner' as const })),
     ...collaborators.map((c) => ({
       id: c.userId,
       name: c.name,
@@ -82,7 +89,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   };
 
   const currentStatus = statusOptions.find((s) => s.value === task.status);
-  const hasAssignee = !!task.assignedTo;
+  const hasAssignee = assigneeIds.length > 0;
 
   const handleChatDragStart = (e: React.DragEvent) => {
     const priorityLabel = task.priority.charAt(0).toUpperCase() + task.priority.slice(1);
@@ -267,7 +274,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             collaborators={collaborators}
             onInvite={handleInvite}
             onRemove={handleRemove}
-            excludeIds={task.assignedTo ? [task.assignedTo] : []}
+            excludeIds={assigneeIds}
             canInvite
           />
         )}
