@@ -195,7 +195,7 @@ interface KanbanBoardProps {
 }
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick }) => {
-  const { getTasksByStatus, getTasksForUser, moveTask } = useTaskStore();
+  const { getTasksByStatus, getTasksForUser, getCollaboratedTasks, moveTask } = useTaskStore();
   const { canViewAllTasks, getEffectiveUserId } = useUserStore();
   const canComplete = canViewAllTasks();
   const globalSearchQuery = useUIStore((s) => s.globalSearchQuery);
@@ -208,22 +208,22 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ onAddTask, onTaskClick
     let tasks: ReturnType<typeof getTasksByStatus>;
 
     if (!canViewAllTasks()) {
-      // Regular members always see only their own tasks
-      tasks = getTasksForUser(effectiveId).filter((t) => t.status === status);
+      // Regular members: owned + accepted-collaboration tasks (spec §3)
+      tasks = [...getTasksForUser(effectiveId), ...getCollaboratedTasks(effectiveId)].filter((t) => t.status === status);
     } else if (taskOwnerFilter === 'all') {
       // Admin/manager chose "All Tasks" — show everything, own tasks first
       const all = getTasksByStatus(status);
-      const isMine = (t: typeof all[number]) => t.assignedTo === effectiveId || (t.assignedToIds ?? []).includes(effectiveId);
+      const isMine = (t: typeof all[number]) => t.assignedTo === effectiveId;
       tasks = [
         ...all.filter(isMine),
         ...all.filter((t) => !isMine(t)),
       ];
     } else if (taskOwnerFilter === 'mine') {
-      // Admin/manager default — only their own tasks
-      tasks = getTasksForUser(effectiveId).filter((t) => t.status === status);
+      // Admin/manager default — their owned + collaborated tasks
+      tasks = [...getTasksForUser(effectiveId), ...getCollaboratedTasks(effectiveId)].filter((t) => t.status === status);
     } else {
-      // Specific team member selected
-      tasks = getTasksForUser(taskOwnerFilter).filter((t) => t.status === status);
+      // Specific team member selected: owned + collaborated
+      tasks = [...getTasksForUser(taskOwnerFilter), ...getCollaboratedTasks(taskOwnerFilter)].filter((t) => t.status === status);
     }
 
     // Apply global search on top

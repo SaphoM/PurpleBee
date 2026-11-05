@@ -60,6 +60,16 @@ export interface TaskCollaborator {
   name: string;
   avatar: string;
   role: 'helper' | 'reviewer';
+  /** Invite lifecycle: pending (invited, not responded), accepted, declined. */
+  status?: 'pending' | 'accepted' | 'declined';
+  /** Who invited them (for owner notifications). */
+  invitedBy?: string;
+  /**
+   * Their OWN contribution percentage (0-100), completely separate from
+   * the task's official `progress`. Only meaningful when status='accepted';
+   * it never changes the task's progress or status.
+   */
+  myProgress?: number;
   allocatedMinutes?: number; // time the collaborator allocates from their schedule
   addedAt: Date;
 }

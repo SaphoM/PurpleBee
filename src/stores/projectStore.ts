@@ -39,6 +39,7 @@ const getTeamContext = () => _ctx;
 const isValidUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
 const toDbProjectTask = (projectId: string, t: ProjectTask): DbProjectTaskInsert => {
+  // Single-owner rule: exactly one owner (first id wins) or empty.
   const validIds = getAssigneeIds(t).filter((id) => isValidUuid(id));
   return {
     id: t.id,
@@ -48,8 +49,8 @@ const toDbProjectTask = (projectId: string, t: ProjectTask): DbProjectTaskInsert
     priority: t.priority,
     estimated_hours: t.estimatedHours,
     tags: t.tags,
-    assigned_to: t.assignedTo && isValidUuid(t.assignedTo) ? t.assignedTo : (validIds[0] ?? null),
-    assigned_to_ids: validIds.length > 0 ? validIds : null,
+    assigned_to: validIds[0] ?? null,
+    assigned_to_ids: validIds.length > 0 ? [validIds[0]] : null,
     order: t.order,
     linked_task_id: t.linkedTaskId || null,
     template_id: (t as ProjectTask).templateId || null,
@@ -309,11 +310,19 @@ export interface ProjectTask {
   /** Legacy single assignee (primary) — kept for backwards compatibility. */
   assignedTo?: string;
   /**
-   * Multi-assignee list — the source of truth for "assigned to 2+ people".
-   * Always includes `assignedTo` when set (see getAssigneeIds). Empty/undefined
-   * means unassigned.
+   * Single owner id (spec: exactly one owner per task). The array is kept
+   * only for hydration tolerance — writes always persist [owner] or empty.
+   * Collaboration goes through invites, never ownership.
    */
   assignedToIds?: string[];
+  /** Accepted/pending collaborators (from project_task_collaborators) — never owners. */
+  projectTaskCollaborators?: {
+    userId: string;
+    name: string;
+    avatar: string;
+    status: 'pending' | 'accepted' | 'declined';
+    myProgress: number;
+  }[];
   order: number;
   linkedTaskId?: string; // Reference to actual task in taskStore once created
   /** Template this task originated from (for template-tab grouping). Null = custom task. */
@@ -321,24 +330,19 @@ export interface ProjectTask {
 }
 
 /**
- * All assignee ids for a task — union of the multi-list and the legacy
- * single field, deduped. Prefer this over reading `assignedTo` directly so
- * multi-assigned tasks are handled everywhere (queries, counts, RLS-blind
- * client filtering, notifications).
+ * Single-owner rework (spec §1): a task has exactly ONE owner. The multi
+ * list is kept only for hydration tolerance — this helper returns at most
+ * the one owner, never two. Collaboration goes through invites instead.
  */
 export function getAssigneeIds(
   task: { assignedTo?: string; assignedToIds?: string[] } | null | undefined,
 ): string[] {
   if (!task) return [];
-  const ids = new Set<string>();
-  if (task.assignedTo) ids.add(task.assignedTo);
-  for (const id of task.assignedToIds ?? []) {
-    if (id) ids.add(id);
-  }
-  return [...ids];
+  const owner = task.assignedTo || task.assignedToIds?.[0];
+  return owner ? [owner] : [];
 }
 
-/** True when the user is among the task's assignees (multi-aware). */
+/** True when the user owns the task (single-owner). */
 export function isTaskAssignedTo(
   task: { assignedTo?: string; assignedToIds?: string[] } | null | undefined,
   userId?: string | null,
@@ -556,11 +560,11 @@ interface ProjectStore {
   removeProjectTask: (projectId: string, taskId: string) => void;
   updateProjectTask: (projectId: string, taskId: string, updates: Partial<ProjectTask>) => void;
   assignProjectTask: (projectId: string, taskId: string, userId: string) => void;
-  /** Multi-assignee: ADD users to the task (union with existing). */
+  /** Single-owner: set the sole owner (first id wins; never a second owner). */
   assignProjectTaskIds: (projectId: string, taskId: string, userIds: string[]) => void;
-  /** Multi-assignee: REPLACE the assignee set exactly. */
+  /** Single-owner: set the sole owner (first id wins). */
   setProjectTaskAssignees: (projectId: string, taskId: string, userIds: string[]) => void;
-  /** Bulk: assign EVERY task in the project to one person or a set of people (admin/manager action). Returns count changed. */
+  /** Bulk: assign EVERY task in the project to ONE owner (admin/manager action). Returns count changed. */
   assignAllProjectTasks: (projectId: string, userId: string | string[]) => number;
   linkProjectTask: (projectId: string, projectTaskId: string, linkedTaskId: string) => void;
 
@@ -568,6 +572,10 @@ interface ProjectStore {
   getProjectById: (id: string) => Project | undefined;
   getProjectTasks: (projectId: string) => ProjectTask[];
   getUnassignedTasks: (projectId: string) => ProjectTask[];
+  /** Project tasks where the user is an ACCEPTED project-task collaborator (not owner). */
+  getProjectTasksForUser: (userId: string) => { project: Project; task: ProjectTask }[];
+  /** Set the collaborator's own contribution % on a project task. */
+  setProjectTaskCollabProgress: (projectId: string, taskId: string, userId: string, progress: number) => void;
   getAllProjectTaskTitles: () => { projectId: string; projectName: string; projectIcon: string; projectColor: string; taskId: string; taskTitle: string; taskDescription: string; assignedTo?: string }[];
   clearMockData: () => void;
   restoreMockData: () => void;
@@ -728,7 +736,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       plannedStartDate: data.plannedStartDate || undefined,
       plannedCompletionDate: data.plannedCompletionDate || undefined,
       supportOwnerId: data.supportOwnerId || undefined,
-      supportOwnerIds: data.supportOwnerIds?.length ? data.supportOwnerIds : (data.supportOwnerId ? [data.supportOwnerId] : undefined),
+      // Single support owner (spec): first id wins, the array holds at most one.
+      supportOwnerIds: (data.supportOwnerIds?.[0] || data.supportOwnerId) ? [(data.supportOwnerIds?.[0] || data.supportOwnerId)!] : undefined,
     };
     set((state) => {
       const next = [project, ...state.projects];
@@ -792,12 +801,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.templateIds !== undefined) payload.template_ids = updates.templateIds && updates.templateIds.length > 0 ? updates.templateIds : null;
     if (updates.templateId !== undefined) payload.template_id = updates.templateId;
     if (updates.supportOwnerId !== undefined) payload.support_owner_id = updates.supportOwnerId || null;
-    if (updates.supportOwnerIds !== undefined) {
-      const ids = getSupportOwnerIds({
-        supportOwnerId: updates.supportOwnerId ?? prevProject?.supportOwnerId,
-        supportOwnerIds: updates.supportOwnerIds,
-      });
-      payload.support_owner_ids = ids.length > 0 ? ids : null;
+    // Single support owner (spec): first id wins, the array holds at most one.
+    if (updates.supportOwnerId !== undefined || updates.supportOwnerIds !== undefined) {
+      const first = updates.supportOwnerId ?? (Array.isArray(updates.supportOwnerIds) ? updates.supportOwnerIds[0] : undefined);
+      payload.support_owner_id = first || null;
+      payload.support_owner_ids = first ? [first] : null;
     }
     if (updates.productName !== undefined) payload.product_name = updates.productName || null;
     if (updates.attachments !== undefined) payload.attachments = updates.attachments && updates.attachments.length > 0 ? updates.attachments : null;
@@ -947,15 +955,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (updates.priority !== undefined) payload.priority = updates.priority;
     if (updates.estimatedHours !== undefined) payload.estimated_hours = updates.estimatedHours;
     if (updates.tags !== undefined) payload.tags = updates.tags;
-    // Multi-assignee is always synced together with the single field so the
-    // union stays correct whichever one the caller edited.
+    // Single-owner rule: ANY ownership edit rewrites both columns to the
+    // exactly-one owner (or empty). Arrays truncate to the first entry.
     if (updates.assignedTo !== undefined || updates.assignedToIds !== undefined) {
-      const ids = getAssigneeIds({
-        assignedTo: updates.assignedTo ?? prevTask?.assignedTo,
-        assignedToIds: updates.assignedToIds ?? prevTask?.assignedToIds,
-      }).filter((id) => isValidUuid(id));
-      payload.assigned_to = (updates.assignedTo ?? (ids[0] || null)) || null;
-      payload.assigned_to_ids = ids.length > 0 ? ids : null;
+      const owner =
+        updates.assignedTo ??
+        (Array.isArray(updates.assignedToIds) ? updates.assignedToIds[0] : undefined) ??
+        prevTask?.assignedTo;
+      const validOwner = owner && isValidUuid(owner) ? owner : null;
+      payload.assigned_to = validOwner;
+      payload.assigned_to_ids = validOwner ? [validOwner] : null;
     }
     if (updates.order !== undefined) payload.order = updates.order;
     if (updates.linkedTaskId !== undefined) payload.linked_task_id = updates.linkedTaskId || null;
@@ -1003,40 +1012,38 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   /**
-   * Multi-assignee: ADD users to the task's assignee list (union with
-   * existing). Empty array = unassign everyone (primary + list cleared).
+   * Single-owner rework (spec §1): this API can no longer add a second
+   * owner. If a legacy caller passes several ids, the FIRST one wins and
+   * becomes the sole owner (replace, never union). Collaboration goes
+   * through task invites instead.
    */
   assignProjectTaskIds: (projectId, taskId, userIds: string[]) => {
-    const ids = [...new Set(userIds.filter(Boolean))];
-    const task = get().projects.find((p) => p.id === projectId)?.tasks.find((t) => t.id === taskId);
-    const union = [...new Set([...(task ? getAssigneeIds(task) : []), ...ids])];
+    const first = userIds.filter(Boolean)[0];
     get().updateProjectTask(projectId, taskId, {
-      assignedTo: union[0],
-      assignedToIds: union,
+      assignedTo: first,
+      assignedToIds: first ? [first] : [],
     });
   },
 
   /**
-   * Multi-assignee: REPLACE the assignee list exactly (used by the
-   * multi-select chip UI — checking/unchecking members toggles the set).
+   * Single-owner rework (spec §1): sets the sole owner. The array is
+   * truncated to the first entry — two owners can never be written.
    */
   setProjectTaskAssignees: (projectId, taskId, userIds: string[]) => {
-    const ids = [...new Set(userIds.filter(Boolean))];
+    const first = userIds.filter(Boolean)[0];
     get().updateProjectTask(projectId, taskId, {
-      assignedTo: ids[0],
-      assignedToIds: ids,
+      assignedTo: first,
+      assignedToIds: first ? [first] : [],
     });
   },
 
   /**
-   * One-click "Assign all to…" — reassigns every task in the project to the
-   * chosen member(s) so admins/managers don't have to repeat the per-task
-   * control over and over. Persists each task and sends ONE summary
-   * notification (same pattern as the creation wizard), not one per task.
-   * Accepts one or many assignees — every task gets the full set.
+   * One-click "Assign all to…" — reassigns every task in the project to
+   * ONE owner (spec §1). Array input is truncated to the first entry.
    */
   assignAllProjectTasks: (projectId, userId) => {
-    const userIds = Array.isArray(userId) ? [...new Set(userId.filter(Boolean))] : [userId];
+    const only = (Array.isArray(userId) ? userId.filter(Boolean)[0] : userId);
+    const userIds = only ? [only] : [];
     const project = get().projects.find((p) => p.id === projectId);
     if (!project) return 0;
     const toAssign = project.tasks.filter(
@@ -1102,6 +1109,44 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   getUnassignedTasks: (projectId) => {
     const project = get().projects.find((p) => p.id === projectId);
     return (project?.tasks || []).filter((t) => getAssigneeIds(t).length === 0);
+  },
+
+  /**
+   * Project tasks where the user is an ACCEPTED project-task collaborator
+   * (not the owner). Surfaced in the Tasks list with an "Owner: {name}"
+   * tag and their own separate progress (spec §3 for project tasks).
+   */
+  getProjectTasksForUser: (userId: string) =>
+    get().projects.flatMap((p) =>
+      (p.tasks || [])
+        .filter((t) => t.assignedTo !== userId && (t.projectTaskCollaborators || []).some((c) => c.userId === userId && c.status === 'accepted'))
+        .map((t) => ({ project: p, task: t })),
+    ),
+
+  /** Set the collaborator's own contribution % on a project task (never owner progress). */
+  setProjectTaskCollabProgress: (projectId, taskId, userId, progress) => {
+    const pct = Math.max(0, Math.min(100, Math.round(progress)));
+    set((state) => ({
+      projects: state.projects.map((p) =>
+        p.id === projectId
+          ? {
+              ...p,
+              tasks: (p.tasks || []).map((t) =>
+                t.id === taskId
+                  ? {
+                      ...t,
+                      projectTaskCollaborators: (t.projectTaskCollaborators || []).map((c) =>
+                        c.userId === userId ? { ...c, myProgress: pct } : c,
+                      ),
+                    }
+                  : t,
+              ),
+              updatedAt: new Date(),
+            }
+          : p,
+      ),
+    }));
+    projectDb.setProjectTaskCollabProgress(taskId, userId, pct, isMockMode());
   },
 
   getAllProjectTaskTitles: () => {
@@ -1208,6 +1253,42 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           };
         }),
     }));
+
+    // Merge accepted project-task collaborators (migrated multi-assigns +
+    // future invites) so they surface alongside the single owner.
+    try {
+      const taskIds = mapped.flatMap((p) => p.tasks.map((t) => t.id));
+      if (taskIds.length > 0 && !isMockMode()) {
+        const { supabase } = await import('@/lib/supabase');
+        if (supabase) {
+          const { data, error } = await supabase
+            .from('project_task_collaborators')
+            .select('project_task_id, user_id, status, my_progress, profiles!inner(name, avatar)')
+            .in('project_task_id', taskIds)
+            .eq('status', 'accepted');
+          if (!error && Array.isArray(data)) {
+            const byTask = new Map<string, NonNullable<ProjectTask['projectTaskCollaborators']>>();
+            for (const row of data as any[]) {
+              const arr = byTask.get(row.project_task_id) ?? [];
+              arr.push({
+                userId: row.user_id,
+                name: row.profiles?.name || 'Teammate',
+                avatar: row.profiles?.avatar || '',
+                status: row.status || 'accepted',
+                myProgress: Number(row.my_progress ?? 0),
+              });
+              byTask.set(row.project_task_id, arr);
+            }
+            for (const p of mapped) {
+              for (const t of p.tasks) {
+                const cols = byTask.get(t.id);
+                if (cols && cols.length > 0) t.projectTaskCollaborators = cols;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) { /* best-effort — collaborators are additive */ }
 
     // Always replace in-memory state with DB data.
     // An empty array is correct for a fresh account — sample data is only

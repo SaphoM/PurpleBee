@@ -39,7 +39,7 @@ import {
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useTaskStore } from '@stores/taskStore';
 import { useProjectStore, getAssigneeIds } from '@stores/projectStore';
-import { AssigneePicker, AssigneeAvatarStack } from '@components/shared/AssigneePicker';
+import { UserPlus } from 'lucide-react';
 import { useUserStore } from '@stores/userStore';
 import { useToastStore } from '@components/Toast';
 import { useSettingsStore } from '@stores/settingsStore';
@@ -231,7 +231,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { updateTask, deleteTask } = useTaskStore();
+  const { updateTask, deleteTask, addCollaborator, respondToInvite, cancelInvite, removeCollaborator, setMyCollabProgress } = useTaskStore();
   const { getProjectById } = useProjectStore();
   const { assignableMembers, user } = useUserStore();
   const { addToast } = useToastStore();
@@ -241,13 +241,20 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   const canDelete = !task?.createdBy || task.createdBy === user?.id;
   const project = task?.projectId ? getProjectById(task.projectId) : null;
 
-  // Resolve assignees (multi-aware): primary stays for avatars, full list for display/editing
+  // Single owner (spec §1)
   const assigneeIds: string[] = task ? getAssigneeIds(task) : [];
   const assignees = assigneeIds.map((id) =>
     assignableMembers.find((m) => m.id === id) ??
     (user?.id === id ? { name: user.name, avatar: user.avatar, id } as any : null)
   ).filter((m): m is { name: string; avatar?: string; id: string } => !!m);
   const assignee = assignees[0] ?? null;
+  const collaborators = (task?.collaborators || []) as NonNullable<Task['collaborators']>;
+  const acceptedCollabs = collaborators.filter((col) => col.status === 'accepted');
+  const pendingCollabs = collaborators.filter((col) => col.status === 'pending');
+  const myCollab = collaborators.find((col) => col.userId === user?.id && col.status === 'accepted') ?? null;
+  const myPendingInvite = collaborators.find((col) => col.userId === user?.id && col.status === 'pending') ?? null;
+  const isOwner = !!user?.id && task?.assignedTo === user.id;
+  const [invitePickerOpen, setInvitePickerOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -1317,17 +1324,28 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               )}
             </div>
 
-            {/* Assigned */}
+            {/* Assigned — single owner (spec §1) */}
             <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4">
               <label className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-2">
                 <Users size={12} />
-                Assigned To
+                Owner
               </label>
-              {assignees.length > 0 ? (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <AssigneeAvatarStack members={assignees} max={5} />
-                  <span className="text-sm text-gray-500 dark:text-slate-400">
-                    {assignees.length > 1 ? `${assignees.length} people` : ''}
+              {assignee ? (
+                <div className="flex items-center gap-2">
+                  {assignee.avatar ? (
+                    <img src={assignee.avatar} alt={assignee.name} title={assignee.name} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
+                      <span className="text-xs font-bold text-purple-600 dark:text-purple-400">
+                        {assignee.name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  <span className="text-sm font-medium text-gray-700 dark:text-slate-200 truncate">
+                    {assignee.name}
+                  </span>
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+                    Owner: {task.progress}%
                   </span>
                 </div>
               ) : (task?.assignedTo || assigneeIds.length > 0) ? (
@@ -1341,16 +1359,142 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 <p className="text-sm text-gray-400 dark:text-slate-500">Unassigned</p>
               )}
               <div className="mt-2">
-                <AssigneePicker
-                  selectedIds={assigneeIds}
-                  members={assignableMembers}
-                  onChange={(ids) => updateTask(task.id, { assignedTo: ids[0], assignedToIds: ids })}
-                  placeholder={assignees.length > 0 ? 'Change assignees…' : 'Assign…'}
-                  align="left"
-                />
+                <select
+                  value={task?.assignedTo || ''}
+                  onChange={(e) => updateTask(task.id, { assignedTo: e.target.value || undefined })}
+                  className={clsx(
+                    'w-full px-3 py-2 rounded-xl text-sm border',
+                    'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                    'border-gray-200 dark:border-slate-600',
+                    'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 cursor-pointer'
+                  )}
+                >
+                  <option value="">Assign owner…</option>
+                  {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
                 <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
-                  Pick one or more people — each gets notified.
+                  One owner only — assigning replaces the current owner. To work together, invite collaborators below.
                 </p>
+              </div>
+
+              {/* ── Invites & collaborators (spec §2/§3) ── */}
+              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-slate-700/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">Collaborators</span>
+                  {(isOwner || (user?.role === 'admin' || user?.role === 'manager')) && (
+                    <button
+                      type="button"
+                      onClick={() => setInvitePickerOpen((v) => !v)}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300"
+                    >
+                      <UserPlus size={12} /> Invite
+                    </button>
+                  )}
+                </div>
+
+                {invitePickerOpen && (isOwner || user?.role === 'admin' || user?.role === 'manager') && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {assignableMembers
+                      .filter((m) => m.id !== task.assignedTo && !collaborators.some((col) => col.userId === m.id && col.status !== 'declined'))
+                      .map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            addCollaborator(task.id, { userId: m.id, name: m.name, avatar: m.avatar, role: 'helper' });
+                            setInvitePickerOpen(false);
+                          }}
+                          className="px-2.5 py-1 rounded-full text-xs font-medium border bg-white border-gray-200 text-gray-600 hover:border-purple-400 hover:text-purple-600 dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-purple-500 dark:hover:text-purple-400 transition-colors"
+                        >
+                          + {m.name}
+                        </button>
+                      ))}
+                    {assignableMembers.filter((m) => m.id !== task.assignedTo && !collaborators.some((col) => col.userId === m.id && col.status !== 'declined')).length === 0 && (
+                      <p className="text-xs text-gray-400 dark:text-slate-500">Everyone is already on this task.</p>
+                    )}
+                  </div>
+                )}
+
+                {pendingCollabs.map((p) => (
+                  <div key={p.userId} className="flex items-center gap-2 text-xs">
+                    <span className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                      {p.name.charAt(0).toUpperCase()}
+                    </span>
+                    <span className="text-gray-600 dark:text-slate-300">Invited: {p.name}, pending</span>
+                    {(isOwner || user?.role === 'admin' || user?.role === 'manager') && (
+                      <button
+                        type="button"
+                        onClick={() => cancelInvite(task.id, p.userId)}
+                        className="ml-auto text-[11px] font-medium text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                {/* Invitee's own accept/decline (their pending invite on this task) */}
+                {myPendingInvite && (
+                  <div className="flex items-center gap-2 p-2 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+                    <span className="flex-1 text-xs text-purple-700 dark:text-purple-300">
+                      You were invited to collaborate on this task.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => respondToInvite(task.id, user!.id, true)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-500 hover:bg-green-600 text-white transition-colors"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => respondToInvite(task.id, user!.id, false)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                )}
+
+                {acceptedCollabs.map((a) => (
+                  <div key={a.userId} className="flex items-center gap-2 text-xs">
+                    {a.avatar ? (
+                      <img src={a.avatar} alt={a.name} className="w-5 h-5 rounded-full object-cover" />
+                    ) : (
+                      <span className="w-5 h-5 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center text-[10px] font-bold text-teal-600 dark:text-teal-400">
+                        {a.name.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                    <span className="text-gray-600 dark:text-slate-300">{a.name}</span>
+                    <span className="text-teal-600 dark:text-teal-400 font-semibold">{a.myProgress ?? 0}%</span>
+                    {a.userId === user?.id ? (
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={a.myProgress ?? 0}
+                        onChange={(e) => setMyCollabProgress(task.id, a.userId, Number(e.target.value))}
+                        className="ml-auto w-24 accent-teal-500"
+                        title="Your contribution % (separate from task progress)"
+                      />
+                    ) : (isOwner || user?.role === 'admin' || user?.role === 'manager') ? (
+                      <button
+                        type="button"
+                        onClick={() => removeCollaborator(task.id, a.userId)}
+                        className="ml-auto text-[11px] font-medium text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+
+                {collaborators.length === 0 && !myPendingInvite && (
+                  <p className="text-[11px] text-gray-400 dark:text-slate-500">
+                    No collaborators yet. The owner can invite teammates — they get an Accept/Decline prompt.
+                  </p>
+                )}
               </div>
             </div>
 

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Task, TaskStatus, TaskPriority, TaskCollaborator } from '@/types/index';
 import { v4 as uuidv4 } from 'uuid';
-import { taskDb, botTaskDb, taskActivityDb, activityLogDb } from '@/lib/dataService';
+import { taskDb, botTaskDb, taskActivityDb, activityLogDb, taskCollaboratorDb } from '@/lib/dataService';
 import { notifyUser, notifyUsers } from '@/lib/notify';
 import { recordMeaningfulActivity } from '@/lib/inactivityTracker';
 
@@ -108,9 +108,23 @@ interface TaskStore {
   updateTaskStatus: (id: string, status: TaskStatus) => void;
   moveTask: (taskId: string, newStatus: TaskStatus, newIndex: number) => void;
   completeTask: (id: string) => void;
+  // ── Single owner + invite collaborators ──
   getTasksForUser: (userId: string) => Task[];
-  addCollaborator: (taskId: string, collaborator: Omit<TaskCollaborator, 'addedAt'>) => void;
+  /** Tasks where the user is an ACCEPTED collaborator (they see the task, tagged Owner: …). */
+  getCollaboratedTasks: (userId: string) => Task[];
+  /**
+   * THE invite flow: the owner (or admin/manager) invites another person.
+   * Creates a PENDING collaborator row + notifies the invitee. Replaces any
+   * old addCollaborator usage — direct adds no longer bypass acceptance.
+   */
+  addCollaborator: (taskId: string, collaborator: Omit<TaskCollaborator, 'addedAt' | 'status'>) => void;
+  /** Invitee answers: accepted (task joins their list, own progress) or declined (owner notified). */
+  respondToInvite: (taskId: string, userId: string, accepted: boolean) => void;
+  /** Owner cancels a pending invite (row removed, invitee notified). */
+  cancelInvite: (taskId: string, userId: string) => void;
   removeCollaborator: (taskId: string, userId: string) => void;
+  /** Collaborator's OWN contribution % — never changes the task's progress/status. */
+  setMyCollabProgress: (taskId: string, userId: string, progress: number) => void;
   updateCollaboratorTime: (taskId: string, userId: string, minutes: number) => void;
   hydrateFromDb: (userId: string) => Promise<void>;
   clearMockData: () => void;
@@ -308,13 +322,9 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   addTask: (taskData, forcedId, skipPersist) => {
     const { teamId, userId, userName } = getTeamContext();
-    // Normalise multi-assignee: union the legacy single field into the list.
-    const normalizedIds = (() => {
-      const ids = new Set<string>();
-      if (taskData.assignedTo) ids.add(taskData.assignedTo);
-      for (const id of taskData.assignedToIds ?? []) if (id) ids.add(id);
-      return ids.size > 0 ? [...ids] : undefined;
-    })();
+    // ── Single owner (spec): exactly ONE owner per task. Any array input
+    // is truncated to the first id — a second owner can never be created.
+    const ownerId = taskData.assignedTo || (Array.isArray(taskData.assignedToIds) ? taskData.assignedToIds[0] : undefined);
     const newTask: Task = {
       ...taskData,
       id: forcedId || uuidv4(),
@@ -322,8 +332,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       createdBy: userId || undefined,
       createdAt: new Date(),
       updatedAt: new Date(),
-      assignedTo: taskData.assignedTo || normalizedIds?.[0],
-      assignedToIds: normalizedIds,
+      assignedTo: ownerId,
+      assignedToIds: ownerId ? [ownerId] : [],
     };
     set((state) => ({ tasks: [newTask, ...state.tasks] }));
     // Persist to DB only when mock mode is OFF (fire-and-forget), and only
@@ -332,21 +342,18 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     // created_by is the real creator so RLS sees a valid author.
     if (!skipPersist) taskDb.insert(newTask, newTask.createdBy || userId || undefined, isMockMode());
 
-    // Notify every assignee (fan-out) if they're someone other than the creator
-    const notifyIds = (normalizedIds ?? []).filter((id) => id !== userId);
-    if (notifyIds.length > 0) {
+    // Notify the single owner if they're someone other than the creator
+    if (ownerId && ownerId !== userId) {
       const projectName = getProjectName(newTask.projectId);
-      for (const recipientId of notifyIds) {
-        notifyUser({
-          actorId: userId,
-          recipientId,
-          type: 'task-assigned',
-          title: 'New task assigned to you',
-          message: `${userName} assigned "${newTask.title}" to you${projectName ? ` in ${projectName}` : ''}`,
-          actionUrl: `#tasks?taskId=${newTask.id}`,
-          taskId: newTask.id,
-        });
-      }
+      notifyUser({
+        actorId: userId,
+        recipientId: ownerId,
+        type: 'task-assigned',
+        title: 'New task assigned to you',
+        message: `${userName} assigned "${newTask.title}" to you${projectName ? ` in ${projectName}` : ''}`,
+        actionUrl: `#tasks?taskId=${newTask.id}`,
+        taskId: newTask.id,
+      });
     }
 
     logActivity({ taskId: newTask.id, taskTitle: newTask.title, action: 'created' });
@@ -355,23 +362,18 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   updateTask: (id, updates) => {
     const prevTask = get().tasks.find((t) => t.id === id);
-    // Normalise: whichever assignment field the caller touched, sync both.
+    // ── Single owner (spec): ANY ownership edit rewrites BOTH columns to
+    // the exactly-one owner (or empty). Arrays are truncated to first id.
     let normalizedUpdates: Partial<Task> = { ...updates };
     if (updates.assignedTo !== undefined || updates.assignedToIds !== undefined) {
-      const ids = new Set<string>();
-      if (updates.assignedTo !== undefined) { if (updates.assignedTo) ids.add(updates.assignedTo); }
-      else if (prevTask?.assignedTo) ids.add(prevTask.assignedTo);
-      for (const u of updates.assignedToIds ?? []) if (u) ids.add(u);
-      if (updates.assignedToIds === undefined && prevTask?.assignedToIds) {
-        for (const u of prevTask.assignedToIds) ids.add(u);
-      }
-      const idList = [...ids];
-      // Legacy callers that pass ONLY assignedTo intend "replace with this one person".
-      const replaceSingle = updates.assignedTo !== undefined && updates.assignedToIds === undefined;
+      const owner =
+        updates.assignedTo ??
+        (Array.isArray(updates.assignedToIds) ? updates.assignedToIds[0] : undefined) ??
+        prevTask?.assignedTo;
       normalizedUpdates = {
         ...normalizedUpdates,
-        assignedTo: idList[0],
-        assignedToIds: replaceSingle ? (idList.length ? idList : []) : idList,
+        assignedTo: owner,
+        assignedToIds: owner ? [owner] : [],
       };
     }
     set((state) => ({
@@ -387,28 +389,23 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     const { userId, userName } = getTeamContext();
     const projectName = getProjectName(prevTask?.projectId);
 
-    // ── Notify every newly assigned assignee when the task is (re)assigned ──
-    const prevAssigneeIds = new Set<string>();
-    if (prevTask?.assignedTo) prevAssigneeIds.add(prevTask.assignedTo);
-    for (const u of prevTask?.assignedToIds ?? []) if (u) prevAssigneeIds.add(u);
-    const nextAssigneeIds = new Set<string>();
-    if (normalizedUpdates.assignedTo !== undefined) { if (normalizedUpdates.assignedTo) nextAssigneeIds.add(normalizedUpdates.assignedTo); }
-    else if (prevTask?.assignedTo) nextAssigneeIds.add(prevTask.assignedTo);
-    for (const u of normalizedUpdates.assignedToIds ?? []) if (u) nextAssigneeIds.add(u);
-    const newlyAssigned = [...nextAssigneeIds].filter((u) => !prevAssigneeIds.has(u) && u !== userId);
-    if (newlyAssigned.length > 0) {
+    // ── Notify the new single owner when the task is (re)assigned ──
+    if (
+      normalizedUpdates.assignedTo !== undefined &&
+      normalizedUpdates.assignedTo !== prevTask?.assignedTo &&
+      normalizedUpdates.assignedTo &&
+      normalizedUpdates.assignedTo !== userId
+    ) {
       const taskTitle = updates.title || prevTask?.title || 'a task';
-      for (const recipientId of newlyAssigned) {
-        notifyUser({
-          actorId: userId,
-          recipientId,
-          type: 'task-assigned',
-          title: 'Task assigned to you',
-          message: `${userName} assigned "${taskTitle}" to you${projectName ? ` in ${projectName}` : ''}`,
-          actionUrl: `#tasks?taskId=${id}`,
-          taskId: id,
-        });
-      }
+      notifyUser({
+        actorId: userId,
+        recipientId: normalizedUpdates.assignedTo,
+        type: 'task-assigned',
+        title: 'Task assigned to you',
+        message: `${userName} assigned "${taskTitle}" to you${projectName ? ` in ${projectName}` : ''}`,
+        actionUrl: `#tasks?taskId=${id}`,
+        taskId: id,
+      });
     }
 
     // ── Notify creator when their task is marked complete ──
@@ -447,11 +444,9 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       prevTask?.status === 'completed'
     ) {
       const taskTitle = updates.title || prevTask.title;
-      const assigneeIdsForDelete = new Set<string>();
-      if (prevTask.assignedTo) assigneeIdsForDelete.add(prevTask.assignedTo);
-      for (const u of prevTask.assignedToIds ?? []) if (u) assigneeIdsForDelete.add(u);
-      const recipients = [prevTask.createdBy, ...assigneeIdsForDelete].filter(
-        (uid): uid is string => !!uid
+      // Single owner (spec): notify creator + the one owner.
+      const recipients = [prevTask.createdBy, prevTask.assignedTo].filter(
+        (uid): uid is string => !!uid && uid !== userId
       );
       recipients.forEach((recipientId) => {
         notifyUser({
@@ -466,13 +461,8 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       });
     }
 
-    // ── Notify assignees when due date or priority changes (not on an assignee's own edit) ──
-    const prevAssigneeList = (() => {
-      const s = new Set<string>();
-      if (prevTask?.assignedTo) s.add(prevTask.assignedTo);
-      for (const u of prevTask?.assignedToIds ?? []) if (u) s.add(u);
-      return [...s].filter((u) => u !== userId);
-    })();
+    // ── Notify the owner when due date or priority changes (not on an owner's own edit) ──
+    const prevAssigneeList = prevTask?.assignedTo && prevTask.assignedTo !== userId ? [prevTask.assignedTo] : [];
     if (prevAssigneeList.length > 0 && prevTask) {
       const taskTitle = updates.title || prevTask.title;
       if (
@@ -598,13 +588,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     // no actionUrl/taskId since the task no longer exists to link to.
     const { userId: actorId, userName } = getTeamContext();
     notifyUsers(
-      (() => {
-        const s = new Set<string>();
-        if (task.assignedTo) s.add(task.assignedTo);
-        for (const u of task.assignedToIds ?? []) if (u) s.add(u);
-        if (task.createdBy) s.add(task.createdBy);
-        return [...s];
-      })(),
+      [task.assignedTo, task.createdBy].filter((uid): uid is string => !!uid),
       {
         actorId,
         type: 'update',
@@ -630,12 +614,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     return state.tasks.filter((task) => {
       if (state.filter.status && task.status !== state.filter.status) return false;
       if (state.filter.priority && task.priority !== state.filter.priority) return false;
-      if (state.filter.assignedTo) {
-        const ids = new Set<string>();
-        if (task.assignedTo) ids.add(task.assignedTo);
-        for (const u of task.assignedToIds ?? []) if (u) ids.add(u);
-        if (!ids.has(state.filter.assignedTo)) return false;
-      }
+      if (state.filter.assignedTo && task.assignedTo !== state.filter.assignedTo) return false;
       if (state.filter.tags && !state.filter.tags.some((tag) => task.tags.includes(tag))) {
         return false;
       }
@@ -705,10 +684,17 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   },
 
   getTasksForUser: (userId) => {
-    return get().tasks.filter((t) => {
-      if (t.assignedTo === userId) return true;
-      return (t.assignedToIds ?? []).includes(userId);
-    });
+    // Single owner (spec): "your tasks" = tasks you OWN.
+    return get().tasks.filter((t) => t.assignedTo === userId);
+  },
+
+  getCollaboratedTasks: (userId) => {
+    // Tasks where you're an ACCEPTED collaborator (not owner).
+    return get().tasks.filter(
+      (t) =>
+        t.assignedTo !== userId &&
+        (t.collaborators || []).some((c) => c.userId === userId && c.status === 'accepted'),
+    );
   },
 
   completeTask: (id) => {
@@ -717,36 +703,120 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
 
   addCollaborator: (taskId, collaborator) => {
     const task = get().tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    // ── Spec guards (backend-enforced, mirrored in dataService): ──
+    // 1) No self-invites — you cannot invite yourself to your own task.
+    const { userId: actorIdForGuard } = getTeamContext();
+    if (collaborator.userId === actorIdForGuard) return;
+    // 2) No invites on completed tasks.
+    if (task.status === 'completed') return;
+    // Re-inviting someone who declined re-opens the invite (pending).
+    const existing = (task.collaborators || []).find((c) => c.userId === collaborator.userId);
+    if (existing && existing.status === 'accepted') return; // already collaborating
+    const { userId: actorId, userName } = getTeamContext();
     set((state) => ({
-      tasks: state.tasks.map((task) =>
-        task.id === taskId
+      tasks: state.tasks.map((t) =>
+        t.id === taskId
           ? {
-              ...task,
-              collaborators: [
-                ...(task.collaborators || []),
-                { ...collaborator, addedAt: new Date() },
-              ],
+              ...t,
+              collaborators: (t.collaborators || []).map((c) =>
+                c.userId === collaborator.userId
+                  ? { ...c, role: collaborator.role, status: 'pending' as const, invitedBy: actorId || undefined }
+                  : c,
+              ).concat(
+                existing ? [] : [{
+                  ...collaborator,
+                  status: 'pending' as const,
+                  invitedBy: actorId || undefined,
+                  myProgress: 0,
+                  addedAt: new Date(),
+                }],
+              ),
               updatedAt: new Date(),
             }
-          : task
+          : t
       ),
     }));
+    // Persist + notify the invitee (invite = task-relevant responsibility)
+    taskCollaboratorDb.upsertInvite(taskId, collaborator.userId, { role: collaborator.role, invitedBy: actorId || null, status: 'pending' }, isMockMode());
+    const projectName = getProjectName(task.projectId);
+    notifyUser({
+      actorId,
+      recipientId: collaborator.userId,
+      type: 'task-assigned',
+      title: 'Task invitation',
+      message: `${userName} invited you to collaborate on "${task.title}"${projectName ? ` in ${projectName}` : ''}. Open it to accept or decline.`,
+      actionUrl: `#tasks?taskId=${taskId}`,
+      taskId,
+    });
+  },
 
-    // Notify the invited collaborator (reuses the existing task-assigned
-    // type — an invite is a task-relevant responsibility just like an
-    // assignment; not adding a new NotificationType for this).
-    if (task) {
+  respondToInvite: (taskId, userId, accepted) => {
+    const task = get().tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const collab = (task.collaborators || []).find((c) => c.userId === userId);
+    if (!collab || collab.status !== 'pending') return;
+    const ownerId = task.assignedTo;
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.id === taskId
+          ? {
+              ...t,
+              collaborators: (t.collaborators || []).map((c) =>
+                c.userId === userId
+                  ? { ...c, status: accepted ? ('accepted' as const) : ('declined' as const) }
+                  : c,
+              ),
+              updatedAt: new Date(),
+            }
+          : t
+      ),
+    }));
+    taskCollaboratorDb.setStatus(taskId, userId, accepted ? 'accepted' : 'declined', isMockMode());
+    // Notify the OWNER of the response (spec §2).
+    if (ownerId) {
       const { userId: actorId, userName } = getTeamContext();
       notifyUser({
         actorId,
-        recipientId: collaborator.userId,
-        type: 'task-assigned',
-        title: 'Added as collaborator',
-        message: `${userName} added you as a ${collaborator.role} on "${task.title}"`,
+        recipientId: ownerId,
+        type: 'update',
+        title: accepted ? 'Invite accepted' : 'Invite declined',
+        message: accepted
+          ? `${userName} accepted your invitation to "${task.title}" — it's now on their Tasks list.`
+          : `${userName} declined your invitation to "${task.title}".`,
         actionUrl: `#tasks?taskId=${taskId}`,
         taskId,
       });
     }
+  },
+
+  cancelInvite: (taskId, userId) => {
+    const task = get().tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const collab = (task.collaborators || []).find((c) => c.userId === userId);
+    if (!collab || collab.status !== 'pending') return;
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.id === taskId
+          ? {
+              ...t,
+              collaborators: (t.collaborators || []).filter((c) => c.userId !== userId),
+              updatedAt: new Date(),
+            }
+          : t
+      ),
+    }));
+    taskCollaboratorDb.remove(taskId, userId, isMockMode());
+    const { userId: actorId, userName } = getTeamContext();
+    notifyUser({
+      actorId,
+      recipientId: userId,
+      type: 'update',
+      title: 'Invitation cancelled',
+      message: `${userName} cancelled the invitation to "${task.title}".`,
+      actionUrl: `#tasks?taskId=${taskId}`,
+      taskId,
+    });
   },
 
   removeCollaborator: (taskId, userId) => {
@@ -764,6 +834,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
           : task
       ),
     }));
+    taskCollaboratorDb.remove(taskId, userId, isMockMode());
 
     if (task) {
       const { userId: actorId, userName } = getTeamContext();
@@ -793,6 +864,27 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
           : task
       ),
     })),
+
+  setMyCollabProgress: (taskId, userId, progress) => {
+    const pct = Math.max(0, Math.min(100, Math.round(progress)));
+    set((state) => ({
+      tasks: state.tasks.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              collaborators: (task.collaborators || []).map((c) =>
+                c.userId === userId
+                  ? { ...c, myProgress: pct }
+                  : c,
+              ),
+              updatedAt: new Date(),
+            }
+          : task
+      ),
+    }));
+    // Separate from task progress — writes ONLY the collaborator row.
+    taskCollaboratorDb.setMyProgress(taskId, userId, pct, isMockMode());
+  },
 
   /**
    * Hydrate store from Supabase when mock mode is OFF and DB is connected.

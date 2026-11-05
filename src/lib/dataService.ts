@@ -102,8 +102,11 @@ const toDbInsert = (task: Task, createdBy?: string) => ({
   description: task.description || null,
   status: task.status,
   priority: task.priority,
+  // Single-owner rule (enforced server-side via the client write layer):
+  // assigned_to_ids always holds exactly {assignedTo} or is empty —
+  // a task can never be persisted with two owners.
   assigned_to: task.assignedTo || null,
-  assigned_to_ids: unionAssigneeIds(task.assignedTo, task.assignedToIds) || null,
+  assigned_to_ids: task.assignedTo ? [task.assignedTo] : null,
   due_date: task.dueDate ? task.dueDate.toISOString() : null,
   tags: task.tags,
   progress: task.progress,
@@ -160,6 +163,97 @@ export const subtaskDb = {
   },
 };
 
+// ── Task collaborator persistence (invites + separate progress) ──────────
+export const taskCollaboratorDb = {
+  /** Fetch collaborator rows for the given task IDs (includes names/avatars via profiles join). */
+  async fetchForTasks(taskIds: string[], mockMode?: boolean): Promise<Map<string, import('@/types/index').TaskCollaborator[]>> {
+    const map = new Map<string, import('@/types/index').TaskCollaborator[]>();
+    if (!shouldPersist(mockMode) || taskIds.length === 0) return map;
+    const { data, error } = await supabase!
+      .from('task_collaborators')
+      .select('task_id, user_id, role, status, invited_by, my_progress, allocated_minutes, added_at, profiles!inner(name, avatar)')
+      .in('task_id', taskIds)
+      .order('added_at', { ascending: true });
+    if (error) { console.error('[dataService] task_collaborators.fetchForTasks', error); return map; }
+    for (const row of (data as any[])) {
+      const arr = map.get(row.task_id) ?? [];
+      arr.push({
+        userId: row.user_id,
+        name: row.profiles?.name || 'Teammate',
+        avatar: row.profiles?.avatar || '',
+        role: row.role,
+        status: row.status || 'accepted',
+        invitedBy: row.invited_by || undefined,
+        myProgress: Number(row.my_progress ?? 0),
+        allocatedMinutes: row.allocated_minutes ?? undefined,
+        addedAt: new Date(row.added_at),
+      });
+      map.set(row.task_id, arr);
+    }
+    return map;
+  },
+
+  /** Insert a new collaborator invite (pending) or re-open a declined one. */
+  async upsertInvite(
+    taskId: string,
+    userId: string,
+    opts: { role: 'helper' | 'reviewer'; invitedBy?: string | null; status?: 'pending' | 'accepted' },
+    mockMode?: boolean,
+  ): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    // Backend guards (mirror the store): no self-invites, no invites on
+    // completed tasks. The store is the primary enforcer; this is the net.
+    if (opts.invitedBy && opts.invitedBy === userId) return false;
+    if (opts.status !== 'accepted') {
+      const { data: parent } = await supabase!.from('tasks').select('status').eq('id', taskId).maybeSingle();
+      if (parent?.status === 'completed') return false;
+    }
+    const { error } = await supabase!.from('task_collaborators').upsert(
+      {
+        task_id: taskId,
+        user_id: userId,
+        role: opts.role,
+        status: opts.status || 'pending',
+        invited_by: opts.invitedBy || null,
+        my_progress: 0,
+      },
+      { onConflict: 'task_id,user_id' },
+    );
+    if (error) { console.error('[dataService] task_collaborators.upsertInvite', error); return false; }
+    return true;
+  },
+
+  async setStatus(taskId: string, userId: string, status: 'pending' | 'accepted' | 'declined', mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('task_collaborators')
+      .update({ status })
+      .eq('task_id', taskId)
+      .eq('user_id', userId);
+    if (error) { console.error('[dataService] task_collaborators.setStatus', error); return false; }
+    return true;
+  },
+
+  async setMyProgress(taskId: string, userId: string, progress: number, mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('task_collaborators')
+      .update({ my_progress: Math.max(0, Math.min(100, progress)) })
+      .eq('task_id', taskId)
+      .eq('user_id', userId);
+    if (error) { console.error('[dataService] task_collaborators.setMyProgress', error); return false; }
+    return true;
+  },
+
+  async remove(taskId: string, userId: string, mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('task_collaborators')
+      .delete()
+      .eq('task_id', taskId)
+      .eq('user_id', userId);
+    if (error) { console.error('[dataService] task_collaborators.remove', error); return false; }
+    return true;
+  },
+};
+
 export const taskDb = {
   /**
    * Fetch all tasks for the current user from Supabase, including their subtasks.
@@ -181,7 +275,7 @@ export const taskDb = {
     }
     const { data, error } = await q;
     if (error) { console.error('[dataService] tasks.fetchAll', error); return null; }
-    return (data as (DbTask & { subtasks: { id: string; title: string; description: string | null; completed: boolean; created_at: string }[] })[]).map((row) => ({
+    const tasks = (data as (DbTask & { subtasks: { id: string; title: string; description: string | null; completed: boolean; created_at: string }[] })[]).map((row) => ({
       ...toTask(row),
       subtasks: (row.subtasks ?? []).map((s) => ({
         id: s.id,
@@ -191,6 +285,61 @@ export const taskDb = {
         createdAt: new Date(s.created_at),
       })),
     }));
+    // Single-owner rule: discard any legacy multi-owner arrays on read —
+    // the union helper exists only for hydration tolerance.
+    for (const t of tasks) {
+      if (t.assignedToIds && t.assignedToIds.length > 1) {
+        const keep = t.assignedTo || t.assignedToIds[0];
+        t.assignedTo = keep;
+        t.assignedToIds = keep ? [keep] : [];
+      }
+    }
+    // Hydrate collaborators (invites + separate progress) for these tasks.
+    const collabMap = await taskCollaboratorDb.fetchForTasks(tasks.map((t) => t.id), mockMode);
+    for (const t of tasks) {
+      const cols = collabMap.get(t.id);
+      if (cols && cols.length > 0) t.collaborators = cols;
+    }
+    // Accepted-collaboration tasks: owned by someone else, but they're on my
+    // list (spec §3). Fetch them so they hydrate alongside owned tasks.
+    try {
+      const { data: myCollabRows } = await supabase!
+        .from('task_collaborators')
+        .select('task_id')
+        .eq('user_id', userId)
+        .eq('status', 'accepted');
+      const collabTaskIds = [...new Set(((myCollabRows ?? []) as any[]).map((r) => r.task_id).filter(Boolean))];
+      const missing = collabTaskIds.filter((id) => !tasks.some((t) => t.id === id));
+      if (missing.length > 0) {
+        const { data: extraData, error: extraErr } = await supabase!
+          .from('tasks')
+          .select('*, subtasks(*)')
+          .in('id', missing)
+          .order('created_at', { ascending: false })
+          .order('order', { referencedTable: 'subtasks', ascending: true });
+        if (!extraErr && Array.isArray(extraData)) {
+          const extra = (extraData as any[]).map((row: any) => ({
+            ...toTask(row),
+            subtasks: (row.subtasks ?? []).map((s: any) => ({
+              id: s.id,
+              title: s.title,
+              description: s.description ?? undefined,
+              completed: s.completed,
+              createdAt: new Date(s.created_at),
+            })),
+          }));
+          const extraCollabMap = await taskCollaboratorDb.fetchForTasks(extra.map((t) => t.id), mockMode);
+          for (const t of extra) {
+            const cols = extraCollabMap.get(t.id);
+            if (cols && cols.length > 0) t.collaborators = cols;
+          }
+          tasks.push(...extra);
+        }
+      }
+    } catch (e) {
+      console.error('[dataService] tasks.fetchAll collaborated tasks', e);
+    }
+    return tasks;
   },
 
   /** Insert a task — skipped when mock mode is ON */
@@ -226,12 +375,13 @@ export const taskDb = {
     if (updates.status !== undefined) payload.status = updates.status;
     if (updates.priority !== undefined) payload.priority = updates.priority;
     if (updates.assignedTo !== undefined) payload.assigned_to = updates.assignedTo || null;
-    // Multi-assignee is always synced together with the single field so the
-    // union stays correct whichever one the caller edited.
+    // Single-owner rule: any ownership edit rewrites both columns to the
+    // exactly-one owner (first id wins) or empty. Callers passing an array
+    // are truncated to the first entry — two owners can never be written.
     if (updates.assignedTo !== undefined || updates.assignedToIds !== undefined) {
-      const ids = unionAssigneeIds(updates.assignedTo ?? null, updates.assignedToIds ?? null)
-        ?? (updates.assignedToIds !== undefined ? unionAssigneeIds(null, updates.assignedToIds) : null);
-      payload.assigned_to_ids = ids && ids.length > 0 ? ids : null;
+      const first = updates.assignedTo ?? (Array.isArray(updates.assignedToIds) ? updates.assignedToIds[0] : undefined);
+      payload.assigned_to = first || null;
+      payload.assigned_to_ids = first ? [first] : null;
     }
     if (updates.dueDate !== undefined) payload.due_date = updates.dueDate ? updates.dueDate.toISOString() : null;
     if (updates.tags !== undefined) payload.tags = updates.tags;
@@ -758,6 +908,17 @@ export const projectDb = {
     if (!shouldPersist(mockMode)) return true;
     const { error } = await supabase!.from('project_tasks').delete().eq('id', id);
     if (error) { console.error('[dataService] project_tasks.delete', error); return false; }
+    return true;
+  },
+
+  /** Set a project-task collaborator's own contribution % (never owner progress). */
+  async setProjectTaskCollabProgress(projectTaskId: string, userId: string, progress: number, mockMode?: boolean): Promise<boolean> {
+    if (!shouldPersist(mockMode)) return true;
+    const { error } = await supabase!.from('project_task_collaborators')
+      .update({ my_progress: Math.max(0, Math.min(100, progress)) })
+      .eq('project_task_id', projectTaskId)
+      .eq('user_id', userId);
+    if (error) { console.error('[dataService] project_task_collaborators.setProgress', error); return false; }
     return true;
   },
 

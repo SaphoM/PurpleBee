@@ -41,7 +41,6 @@ import {
   HeartHandshake,
 } from 'lucide-react';
 import { useProjectStore, projectTemplates, ProjectTask, ProjectTemplate, Project, getProjectTaskStats, getProjectTimeProgress, getProjectPace, getAssigneeIds, isTaskAssignedTo, getSupportOwnerIds } from '@stores/projectStore';
-import { AssigneePicker, AssigneeAvatarStack } from '@components/shared/AssigneePicker';
 import { useUserStore } from '@stores/userStore';
 import { useTaskStore } from '@stores/taskStore';
 import { useNotificationStore } from '@stores/notificationStore';
@@ -487,126 +486,6 @@ const ProjectValueSection: React.FC<ProjectValueSectionProps> = ({
   );
 };
 
-// ── Bulk multi-assign control (Create wizard step 3) ───────────────────
-const BulkAssignAllPicker: React.FC<{
-  members: { id: string; name: string; avatar?: string; title?: string }[];
-  onApply: (ids: string[]) => void;
-}> = ({ members, onApply }) => {
-  const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<string[]>([]);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
-
-  const toggle = (id: string) => {
-    setSelected((prev) => (prev.includes(id) ? prev.filter((u) => u !== id) : [...prev, id]));
-  };
-
-  return (
-    <div ref={rootRef} className="relative flex-1">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={clsx(
-          'w-full flex items-center justify-between rounded-lg px-3 py-1.5 text-sm',
-          'bg-white border border-purple-300 text-gray-800',
-          'dark:bg-slate-700 dark:border-purple-600 dark:text-slate-100',
-          'hover:border-purple-500 transition-colors',
-        )}
-      >
-        <span className="flex items-center gap-2 min-w-0">
-          {selected.length > 0 ? (
-            <>
-              <span className="flex items-center gap-1.5">
-                <span className="flex -space-x-1.5">
-                  {members.filter((m) => selected.includes(m.id)).slice(0, 3).map((m) => (
-                    <img key={m.id} src={m.avatar} alt={m.name} title={m.name}
-                      className="w-5 h-5 rounded-full object-cover ring-2 ring-white dark:ring-slate-700 bg-gray-200 dark:bg-slate-600" />
-                  ))}
-                  {selected.length > 3 && (
-                    <span className="w-5 h-5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-700">
-                      +{selected.length - 3}
-                    </span>
-                  )}
-                </span>
-                <span className="truncate flex-shrink-0">{selected.length} {selected.length === 1 ? 'person' : 'people'}</span>
-              </span>
-            </>
-          ) : (
-            <span className="text-gray-400 dark:text-slate-500">— pick people —</span>
-          )}
-        </span>
-        <ChevronDown size={14} className={clsx('text-gray-400 transition-transform flex-shrink-0', open && 'rotate-180')} />
-      </button>
-
-      {open && (
-        <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl shadow-xl overflow-hidden py-1 bg-white border border-gray-200 dark:bg-slate-800 dark:border-slate-700">
-          <div className="px-3 py-2 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between">
-            <span className="text-[11px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
-              Assign all to ({selected.length})
-            </span>
-            {selected.length > 0 && (
-              <button type="button" onClick={() => setSelected([])}
-                className="text-[11px] font-medium text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors">
-                Clear all
-              </button>
-            )}
-          </div>
-          <div className="max-h-52 overflow-y-auto">
-            {members.map((m) => {
-              const isOn = selected.includes(m.id);
-              return (
-                <button key={m.id} type="button" onClick={() => toggle(m.id)}
-                  className={clsx(
-                    'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors',
-                    isOn ? 'bg-purple-50 dark:bg-purple-900/20' : 'hover:bg-gray-50 dark:hover:bg-slate-700/50',
-                  )}>
-                  <span className={clsx(
-                    'w-[18px] h-[18px] rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all',
-                    isOn ? 'bg-purple-600 border-purple-600 text-white dark:bg-purple-500 dark:border-purple-500' : 'border-gray-300 dark:border-slate-600',
-                  )}>
-                    {isOn && <Check size={11} />}
-                  </span>
-                  {m.avatar ? (
-                    <img src={m.avatar} alt={m.name} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
-                  ) : (
-                    <span className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-purple-600 dark:text-purple-400">
-                      {m.name.charAt(0).toUpperCase()}
-                    </span>
-                  )}
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-xs font-medium text-gray-800 dark:text-slate-200 truncate">{m.name}</span>
-                    {m.title && <span className="block text-[10px] text-gray-400 dark:text-slate-500 truncate">{m.title}</span>}
-                  </span>
-                </button>
-              );
-            })}
-            {members.length === 0 && (
-              <p className="px-3 py-4 text-xs text-gray-400 dark:text-slate-500 text-center">No team members available</p>
-            )}
-          </div>
-          <div className="border-t border-gray-100 dark:border-slate-700 px-3 py-2 flex justify-end">
-            <button
-              type="button"
-              disabled={selected.length === 0}
-              onClick={() => { onApply(selected); setOpen(false); }}
-              className="px-3 py-1 rounded-lg text-xs font-semibold bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-purple-500 dark:hover:bg-purple-600 transition-colors"
-            >
-              Apply to all tasks
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
 // ── Create Project Modal ───────────────────────────────────────────────
 const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const { createProject } = useProjectStore();
@@ -627,8 +506,8 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
   const [customTaskInput, setCustomTaskInput] = useState('');
   const [customTaskDescription, setCustomTaskDescription] = useState('');
   const [customTasks, setCustomTasks] = useState<{ title: string; description: string; priority: 'low' | 'medium' | 'high' | 'urgent'; estimatedHours: number; tags: string[] }[]>([]);
-  // Multi-assign: each task key maps to 0..N assignee ids.
-  const [assignments, setAssignments] = useState<Record<string, string[]>>({});
+  // Single owner (spec §1): each task key maps to at most ONE owner id.
+  const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [productName, setProductName] = useState('');
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [logoError, setLogoError] = useState('');
@@ -730,7 +609,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
       // Drop everything that belonged to the deselected template.
       setSelectedTasks((prev) => new Set([...prev].filter((k) => !k.startsWith(prefix))));
       setAssignments((prev) => {
-        const kept: Record<string, string[]> = {};
+        const kept: Record<string, string> = {};
         for (const [k, v] of Object.entries(prev)) if (!k.startsWith(prefix)) kept[k] = v;
         return kept;
       });
@@ -788,15 +667,15 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
         tmpl.tasks.forEach((t, i) => {
           const key = `${tmpl.id}:${i}`;
           if (selectedTasks.has(key)) {
-            const ids = assignments[key] || [];
+            const single = assignments[key];
             taskList.push({
               title: t.title,
               description: t.description,
               priority: t.priority,
               estimatedHours: t.estimatedHours,
               tags: t.tags,
-              assignedTo: ids[0] || undefined,
-              assignedToIds: ids.length > 0 ? ids : undefined,
+              assignedTo: single || undefined,
+              assignedToIds: single ? [single] : undefined,
               order: taskList.length + 1,
               templateId: tmpl.id,
             });
@@ -806,15 +685,15 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
 
       // Add custom tasks — no templateId (they fall into the "All"/un-grouped view)
       customTasks.forEach((t, i) => {
-        const ids = assignments[`custom:${i}`] || [];
+        const single = assignments[`custom:${i}`];
         taskList.push({
           title: t.title,
           description: t.description,
           priority: t.priority,
           estimatedHours: t.estimatedHours,
           tags: t.tags,
-          assignedTo: ids[0] || undefined,
-          assignedToIds: ids.length > 0 ? ids : undefined,
+          assignedTo: single || undefined,
+          assignedToIds: single ? [single] : undefined,
           order: taskList.length + 1,
           templateId: null,
         });
@@ -1439,21 +1318,33 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
               {/* Bulk-assign all tasks to one or more people */}
               <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
                 <span className="text-sm font-medium text-purple-700 dark:text-purple-300 whitespace-nowrap">Assign all to</span>
-                <BulkAssignAllPicker
-                  members={assignableMembers}
-                  onApply={(ids) => {
-                    const bulk: Record<string, string[]> = {};
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const bulk: Record<string, string> = {};
                     selectedTemplateObjects.forEach((tmpl) => {
                       if (tmpl.id === 'custom') return;
                       tmpl.tasks.forEach((_, i) => {
                         const k = `${tmpl.id}:${i}`;
-                        if (selectedTasks.has(k)) bulk[k] = ids;
+                        if (selectedTasks.has(k)) bulk[k] = val;
                       });
                     });
-                    customTasks.forEach((_, i) => { bulk[`${i}`] = ids; bulk[`custom:${i}`] = ids; });
-                    setAssignments(ids.length > 0 ? bulk : {});
+                    customTasks.forEach((_, i) => { bulk[`custom:${i}`] = val; });
+                    setAssignments(val ? bulk : {});
                   }}
-                />
+                  className={clsx(
+                    'flex-1 rounded-lg px-3 py-1.5 text-sm',
+                    'bg-white border border-purple-300 text-gray-800',
+                    'dark:bg-slate-700 dark:border-purple-600 dark:text-slate-100',
+                    'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20'
+                  )}
+                >
+                  <option value="">— pick a member —</option>
+                  {assignableMembers.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-2">
@@ -1473,13 +1364,21 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                           <span className="text-[10px] text-gray-400 dark:text-slate-500">{tmpl.name}</span>
                         </span>
                       </div>
-                      <AssigneePicker
-                        selectedIds={assignments[key] || []}
-                        members={assignableMembers}
-                        onChange={(ids) => setAssignments({ ...assignments, [key]: ids })}
-                        placeholder="Unassigned"
-                        align="right"
-                      />
+                      <select
+                        value={assignments[key] || ''}
+                        onChange={(e) => setAssignments({ ...assignments, [key]: e.target.value })}
+                        className={clsx(
+                          'rounded-lg px-3 py-2 sm:py-1.5 text-sm sm:text-xs w-full sm:w-44',
+                          'bg-white border border-gray-300 text-gray-800',
+                          'dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100',
+                          'focus:outline-none focus:border-purple-500'
+                        )}
+                      >
+                        <option value="">Unassigned</option>
+                        {assignableMembers.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
                     </div>
                     );
                   })
@@ -1492,13 +1391,21 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
                       <p className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">{ct.title}</p>
                       <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">Medium</span>
                     </div>
-                    <AssigneePicker
-                      selectedIds={assignments[`custom:${i}`] || []}
-                      members={assignableMembers}
-                      onChange={(ids) => setAssignments({ ...assignments, [`custom:${i}`]: ids })}
-                      placeholder="Unassigned"
-                      align="right"
-                    />
+                    <select
+                      value={assignments[`custom:${i}`] || ''}
+                      onChange={(e) => setAssignments({ ...assignments, [`custom:${i}`]: e.target.value })}
+                      className={clsx(
+                        'rounded-lg px-3 py-2 sm:py-1.5 text-sm sm:text-xs w-full sm:w-44',
+                        'bg-white border border-gray-300 text-gray-800',
+                        'dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100',
+                        'focus:outline-none focus:border-purple-500'
+                      )}
+                    >
+                      <option value="">Unassigned</option>
+                      {assignableMembers.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
                   </div>
                 ))}
               </div>
@@ -1506,7 +1413,7 @@ const CreateProjectModal: React.FC<{ isOpen: boolean; onClose: () => void }> = (
               {/* Create button */}
               <div className="flex justify-between pt-4 border-t border-gray-200 dark:border-slate-700/50">
                 <span className="text-xs text-gray-400 dark:text-slate-500 self-center">
-                  {Object.values(assignments).filter((v) => Array.isArray(v) && v.length > 0).length} of {selectedTasks.size + customTasks.length} assigned
+                  {Object.values(assignments).filter(Boolean).length} of {selectedTasks.size + customTasks.length} assigned
                 </span>
                 <button
                   onClick={handleCreate}
@@ -1629,7 +1536,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   const [activeTemplateTab, setActiveTemplateTab] = useState<string>('all');
   // Assign-all (multi): pick 1..N people, every task gets the full set
   const [showAssignAll, setShowAssignAll] = useState(false);
-  const [assignAllIds, setAssignAllIds] = useState<string[]>([]);
+  const [assignAllId, setAssignAllId] = useState('');
 
   // Hooks must run unconditionally — the original `if (!project) return null`
   // below used to sit above these effects. `project` is captured from the
@@ -2630,17 +2537,43 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                       const linked = task.linkedTaskId ? boardTasks.find((bt) => bt.id === task.linkedTaskId) : undefined;
                       const pct = linked ? Math.round(linked.progress ?? 0) : 0;
                       const label = !linked ? 'Not started' : linked.status === 'completed' ? 'Completed' : `${pct}%`;
+                      // Collaborators from BOTH sources (board-task invites + migrated
+                      // project-task collaborators), deduped by user.
+                      const seen = new Set<string>();
+                      const acceptedCollabs: { userId: string; name: string; myProgress?: number }[] = [];
+                      for (const col of (linked?.collaborators || []).filter((x) => x.status === 'accepted')) {
+                        if (seen.has(col.userId)) continue;
+                        seen.add(col.userId);
+                        acceptedCollabs.push(col);
+                      }
+                      for (const col of (task.projectTaskCollaborators || []).filter((x) => x.status === 'accepted')) {
+                        if (seen.has(col.userId)) continue;
+                        seen.add(col.userId);
+                        acceptedCollabs.push(col);
+                      }
                       return (
-                        <div className="flex items-center gap-2 mt-2 max-w-56">
-                          <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
-                            <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        <div className="mt-2 space-y-1">
+                          <div className="flex items-center gap-2 max-w-56">
+                            <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+                              <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className={clsx(
+                              'text-[10px] font-semibold flex-shrink-0',
+                              !linked ? 'text-gray-400 dark:text-slate-500' : linked.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' : 'text-purple-600 dark:text-purple-400'
+                            )}>
+                              Owner {label}
+                            </span>
                           </div>
-                          <span className={clsx(
-                            'text-[10px] font-semibold flex-shrink-0',
-                            !linked ? 'text-gray-400 dark:text-slate-500' : linked.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' : 'text-purple-600 dark:text-purple-400'
-                          )}>
-                            {label}
-                          </span>
+                          {acceptedCollabs.map((col) => (
+                            <div key={col.userId} className="flex items-center gap-2 max-w-56">
+                              <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+                                <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${col.myProgress ?? 0}%` }} />
+                              </div>
+                              <span className="text-[10px] font-semibold flex-shrink-0 text-teal-600 dark:text-teal-400">
+                                {col.name.split(' ')[0]} {col.myProgress ?? 0}%
+                              </span>
+                            </div>
+                          ))}
                         </div>
                       );
                     })()}
@@ -2648,31 +2581,59 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
 
                   {/* Assignee + actions — full width on mobile */}
                   <div className="flex items-center gap-2 flex-shrink-0 border-t sm:border-t-0 border-gray-100 dark:border-slate-700/50 pt-3 sm:pt-0">
-                    {assignees.length > 0 ? (
+                    {assignee ? (
                       <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
                         <button
                           onClick={() => openDmChat(assignee!.id)}
                           className="flex items-center gap-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg px-2 py-1 transition-colors cursor-pointer"
                           title={`Chat with ${assignee!.name}`}
                         >
-                          <AssigneeAvatarStack members={assignees} max={3} />
+                          <img src={assignee!.avatar} alt={assignee!.name} className="w-7 h-7 rounded-full ring-2 ring-transparent hover:ring-purple-400 transition-all object-cover" />
+                          <span className="text-xs text-gray-600 dark:text-slate-300">{assignee!.name.split(' ')[0]}</span>
                         </button>
                         {canManage && (
-                          <AssigneePicker
-                            selectedIds={assigneeIds}
-                            members={assignableMembers}
-                            onChange={(ids) => setProjectTaskAssignees(project.id, task.id, ids)}
-                            align="right"
-                          />
+                          <select
+                            value={task.assignedTo || ''}
+                            onChange={(e) => {
+                              if (e.target.value && e.target.value !== task.assignedTo) {
+                                assignProjectTask(project.id, task.id, e.target.value);
+                              }
+                            }}
+                            className={clsx(
+                              'rounded-lg px-1.5 py-1 text-[10px] font-medium appearance-none cursor-pointer',
+                              'bg-gray-100 border border-gray-200 text-gray-500',
+                              'dark:bg-slate-700 dark:border-slate-600 dark:text-slate-400',
+                              'hover:border-purple-400 dark:hover:border-purple-500',
+                              'focus:outline-none focus:ring-2 focus:ring-purple-500/30'
+                            )}
+                            title="Reassign owner (replaces)"
+                            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 3h5v5'/%3E%3Cpath d='M8 21H3v-5'/%3E%3Cpath d='M21 3l-7 7'/%3E%3Cpath d='M3 21l7-7'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundSize: '12px', width: '28px', height: '28px', color: 'transparent' }}
+                          >
+                            <option value="" style={{ color: 'inherit' }}>Assign…</option>
+                            {assignableMembers.map((p) => (
+                              <option key={p.id} value={p.id} style={{ color: 'inherit' }}>{p.name}</option>
+                            ))}
+                          </select>
                         )}
                       </div>
                     ) : canManage ? (
-                      <AssigneePicker
-                        selectedIds={assigneeIds}
-                        members={assignableMembers}
-                        onChange={(ids) => setProjectTaskAssignees(project.id, task.id, ids)}
-                        align="right"
-                      />
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) assignProjectTask(project.id, task.id, e.target.value);
+                        }}
+                        className={clsx(
+                          'rounded-lg px-3 py-2 sm:py-1 text-sm sm:text-xs flex-1 sm:flex-initial',
+                          'bg-white border border-dashed border-gray-300 text-gray-400',
+                          'dark:bg-slate-700 dark:border-slate-600 dark:text-slate-400',
+                          'focus:outline-none focus:border-purple-500'
+                        )}
+                      >
+                        <option value="">Assign owner…</option>
+                        {assignableMembers.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
                     ) : (
                       <span className="text-xs text-gray-400 dark:text-slate-500 italic">Unassigned</span>
                     )}
@@ -2694,10 +2655,8 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                       return (
                         <button
                           onClick={() => {
-                            // ADD me to the assignee set (union) — don't replace other assignees
-                            if (currentUserId && !isTaskAssignedTo(task, currentUserId)) {
-                              setProjectTaskAssignees(project.id, task.id, [...assigneeIds, currentUserId]);
-                            }
+                            // Become the sole owner (single-owner rule) and add to board.
+                            if (currentUserId) assignProjectTask(project.id, task.id, currentUserId);
                             handleCreateActualTask(task);
                           }}
                           title="Assign to me & add to Tasks board"
@@ -2771,19 +2730,19 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
               <div>
                 <h3 className="text-base font-bold text-gray-900 dark:text-slate-100">Assign all tasks to</h3>
                 <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                  Every task gets all {assignAllIds.length > 0 ? `${assignAllIds.length} selected ${assignAllIds.length === 1 ? 'person' : 'people'}` : 'chosen people'}.
+                  Every task gets one owner. Pick who.
                 </p>
               </div>
             </div>
 
             <div className="max-h-64 overflow-y-auto space-y-1.5 mb-4">
               {assignableMembers.map((m) => {
-                const isOn = assignAllIds.includes(m.id);
+                const isOn = assignAllId === m.id;
                 return (
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => setAssignAllIds(isOn ? assignAllIds.filter((u) => u !== m.id) : [...assignAllIds, m.id])}
+                    onClick={() => setAssignAllId(m.id)}
                     className={clsx(
                       'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left transition-all',
                       isOn
@@ -2792,7 +2751,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                     )}
                   >
                     <span className={clsx(
-                      'w-[18px] h-[18px] rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all',
+                      'w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all',
                       isOn
                         ? 'bg-emerald-500 border-emerald-500 text-white dark:bg-emerald-400 dark:border-emerald-400 dark:text-slate-900'
                         : 'border-gray-300 dark:border-slate-600',
@@ -2826,27 +2785,24 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                 Cancel
               </button>
               <button
-                disabled={assignAllIds.length === 0}
+                disabled={!assignAllId}
                 onClick={() => {
-                  const count = assignAllProjectTasks(project.id, assignAllIds);
-                  const names = assignAllIds
-                    .map((id) => assignableMembers.find((m) => m.id === id)?.name)
-                    .filter(Boolean)
-                    .join(', ');
+                  const count = assignAllProjectTasks(project.id, assignAllId);
+                  const name = assignableMembers.find((m) => m.id === assignAllId)?.name || '';
                   setShowAssignAll(false);
-                  setAssignAllIds([]);
+                  setAssignAllId('');
                   if (count > 0) {
                     addToast({
                       type: 'success',
                       title: 'All tasks assigned',
-                      message: `${count} task${count > 1 ? 's' : ''} now assigned to ${names || 'selected people'}`,
+                      message: `${count} task${count > 1 ? 's' : ''} now owned by ${name}`,
                       duration: 4000,
                     });
                   } else {
                     addToast({
                       type: 'info',
                       title: 'Already assigned',
-                      message: 'Every task already has these assignees',
+                      message: `Every task is already owned by ${name}`,
                       duration: 3500,
                     });
                   }
@@ -2856,7 +2812,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                   'bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600',
                 )}
               >
-                Assign {assignAllIds.length > 0 ? `to ${assignAllIds.length} ${assignAllIds.length === 1 ? 'person' : 'people'}` : ''}
+                Assign owner
               </button>
             </div>
           </div>
@@ -2914,16 +2870,16 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
             </div>
 
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5">
-              Support & Maintenance Owner{supportOwnerIds.length > 0 ? ` (${supportOwnerIds.length} selected)` : ' — pick one or more'}
+              Support & Maintenance Owner — pick one
             </label>
             <div className="max-h-56 overflow-y-auto space-y-1.5 mb-3">
               {assignableMembers.map((m) => {
-                const isOn = supportOwnerIds.includes(m.id);
+                const isOn = supportOwnerIds[0] === m.id;
                 return (
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => { setSupportOwnerIds(isOn ? supportOwnerIds.filter((u) => u !== m.id) : [...supportOwnerIds, m.id]); if (!isOn) setSupportSkip(false); }}
+                    onClick={() => { setSupportOwnerIds([m.id]); setSupportSkip(false); }}
                     className={clsx(
                       'w-full flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left transition-all',
                       isOn
@@ -2932,7 +2888,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                     )}
                   >
                     <span className={clsx(
-                      'w-[18px] h-[18px] rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all',
+                      'w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all',
                       isOn
                         ? 'bg-teal-500 border-teal-500 text-white dark:bg-teal-400 dark:border-teal-400 dark:text-slate-900'
                         : 'border-gray-300 dark:border-slate-600',
@@ -2984,7 +2940,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                   'hover:from-purple-700 hover:to-blue-700'
                 )}
               >
-                {project.status === 'completed' ? `Assign ${supportOwnerIds.length > 0 ? `${supportOwnerIds.length} owner${supportOwnerIds.length === 1 ? '' : 's'}` : 'Owners'}` : 'Mark Completed & Hand Over'}
+                {project.status === 'completed' ? 'Assign Owner' : 'Mark Completed & Hand Over'}
               </button>
             </div>
           </div>
@@ -3298,33 +3254,23 @@ const EditProjectModal: React.FC<EditProjectModalProps> = ({ project, onClose, o
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 dark:text-slate-300 mb-1.5 inline-flex items-center gap-1.5">
-              <HeartHandshake size={11} className="text-teal-500" /> Support & Maintenance Owner{supportOwnerIds.length > 0 ? ` (${supportOwnerIds.length} selected)` : ''}
+              <HeartHandshake size={11} className="text-teal-500" /> Support & Maintenance Owner
             </label>
-            <div className="flex flex-wrap gap-1.5">
-              {assignableMembers.map((m) => {
-                const isOn = supportOwnerIds.includes(m.id);
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setSupportOwnerIds(isOn ? supportOwnerIds.filter((u) => u !== m.id) : [...supportOwnerIds, m.id])}
-                    className={clsx(
-                      'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-                      isOn
-                        ? 'bg-teal-100 border-teal-300 text-teal-700 dark:bg-teal-900/30 dark:border-teal-700 dark:text-teal-300'
-                        : 'bg-white border-gray-200 text-gray-500 dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-400',
-                    )}
-                  >
-                    {m.name}
-                  </button>
-                );
-              })}
-              {assignableMembers.length === 0 && (
-                <span className="text-xs text-gray-400 dark:text-slate-500 italic">No team members available</span>
+            <select
+              value={supportOwnerIds[0] || ''}
+              onChange={(e) => setSupportOwnerIds(e.target.value ? [e.target.value] : [])}
+              className={clsx(
+                'w-full px-3 py-2.5 rounded-xl text-sm border',
+                'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
+                'border-gray-200 dark:border-slate-600',
+                'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 cursor-pointer'
               )}
-            </div>
+            >
+              <option value="">No support owner assigned</option>
+              {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
             <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
-              Pick one or more people in charge after delivery. Each of them gets notified.
+              The one person in charge after delivery. Changing it replaces the previous owner; they get notified.
             </p>
           </div>
           <div className="flex gap-3 pt-2">

@@ -235,7 +235,7 @@ export const ChatBot: React.FC = () => {
   // show projects they have no involvement with. Checked against the real
   // task list (taskStore), not project.tasks — that's a separate seed
   // checklist/template array (ids like 'pt-1') unrelated to actual tasks.
-  const myProjects = () => projects.filter((p) => tasks.some((t) => t.projectId === p.id && (t.assignedTo === user?.id || (t.assignedToIds ?? []).includes(user?.id ?? ''))));
+  const myProjects = () => projects.filter((p) => tasks.some((t) => t.projectId === p.id && (t.assignedTo === user?.id || (t.collaborators || []).some((c) => c.userId === user?.id && c.status === 'accepted'))));
 
   const topProjects = () =>
     [...myProjects()].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -262,7 +262,7 @@ export const ChatBot: React.FC = () => {
     if (!project) return;
 
     const myTasksInProject = tasks
-      .filter((t) => t.projectId === project.id && (t.assignedTo === user?.id || (t.assignedToIds ?? []).includes(user?.id ?? '')))
+      .filter((t) => t.projectId === project.id && (t.assignedTo === user?.id || (t.collaborators || []).some((c) => c.userId === user?.id && c.status === 'accepted')))
       .map((t) => ({ id: t.id, title: t.title }));
 
     setPendingCreate((prev) => ({
@@ -303,7 +303,7 @@ export const ChatBot: React.FC = () => {
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
 
-    const myTasks = tasks.filter((t) => t.projectId === project.id && (t.assignedTo === user?.id || (t.assignedToIds ?? []).includes(user?.id ?? ''))).slice(0, 8);
+    const myTasks = tasks.filter((t) => t.projectId === project.id && (t.assignedTo === user?.id || (t.collaborators || []).some((c) => c.userId === user?.id && c.status === 'accepted'))).slice(0, 8);
 
     if (myTasks.length === 0) {
       addBotMessage(

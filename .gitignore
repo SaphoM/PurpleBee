@@ -8,3 +8,4 @@ dist
 .claude/settings.local.json
 .claude/settings.json
 supabase/.temp/
+/backups/

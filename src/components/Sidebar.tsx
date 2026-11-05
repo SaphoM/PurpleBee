@@ -72,7 +72,7 @@ export const Sidebar: React.FC = () => {
   const taskCount = useTaskStore((s) => {
     if (canViewAllTasks()) return s.tasks.filter((t) => t.status !== 'completed').length;
     const uid = getEffectiveUserId();
-    return s.tasks.filter((t) => (t.assignedTo === uid || (t.assignedToIds ?? []).includes(uid)) && t.status !== 'completed').length;
+    return s.tasks.filter((t) => (t.assignedTo === uid || (t.collaborators || []).some((c) => c.userId === uid && c.status === 'accepted')) && t.status !== 'completed').length;
   });
   const showTips = useSettingsStore((s) => s.showTips);
   const [activePage, setActivePage] = useState(window.location.hash || '#dashboard');

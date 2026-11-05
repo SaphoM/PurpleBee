@@ -8,13 +8,15 @@ import { CreateTaskModal } from '@components/CreateTaskModal';
 import { TaskDetailModal } from '@components/TaskDetailModal';
 import { Plus, Layout, List as ListIcon, Eye, Users, User } from 'lucide-react';
 import { useTaskStore } from '@stores/taskStore';
+import { useProjectStore } from '@stores/projectStore';
 import { useUIStore } from '@stores/uiStore';
 import { useUserStore } from '@stores/userStore';
 import { Task, TaskStatus } from '@/types/index';
 import { Tip } from '@components/Tip';
 
 export const Tasks: React.FC = () => {
-  const { getSortedTasks, getTasksForUser } = useTaskStore();
+  const { getSortedTasks, getTasksForUser, getCollaboratedTasks } = useTaskStore();
+  const { getProjectTasksForUser, setProjectTaskCollabProgress } = useProjectStore();
   const { viewMode, setViewMode, taskOwnerFilter, setTaskOwnerFilter } = useUIStore();
   const {
     user,
@@ -57,14 +59,13 @@ export const Tasks: React.FC = () => {
   const selectedTask = selectedTaskId ? allTasks.find((t) => t.id === selectedTaskId) ?? null : null;
   const effectiveId = getEffectiveUserId();
 
-  // Derive task list for list view (Kanban applies its own filter internally)
+  // Accepted-collaboration tasks belong in the member's list (spec §3).
+  // Admins see their own + collaborated; members always see owned + collaborated.
   const tasks: Task[] = (() => {
-    if (!canViewAllTasks()) {
-      return getTasksForUser(effectiveId);
-    }
-    if (taskOwnerFilter === 'mine') {
-      return getTasksForUser(effectiveId);
-    }
+    const owned = getTasksForUser(effectiveId);
+    const collabed = getCollaboratedTasks(effectiveId);
+    if (!canViewAllTasks()) return [...owned, ...collabed];
+    if (taskOwnerFilter === 'mine') return [...owned, ...collabed];
     if (taskOwnerFilter === 'all') {
       const all = getSortedTasks();
       // Own tasks first
@@ -73,8 +74,8 @@ export const Tasks: React.FC = () => {
         ...all.filter((t) => t.assignedTo !== effectiveId),
       ];
     }
-    // Specific member
-    return getTasksForUser(taskOwnerFilter);
+    // Specific member: their owned + collaborated
+    return [...getTasksForUser(taskOwnerFilter), ...getCollaboratedTasks(taskOwnerFilter)];
   })();
 
   const handleNewTask = (status: TaskStatus = 'todo') => {
@@ -235,6 +236,57 @@ export const Tasks: React.FC = () => {
           </div>
         </Card>
       )}
+
+      {/* ── Collaborated project tasks (spec §3 for checklist tasks) ── */}
+      {(() => {
+        const mine = getProjectTasksForUser(effectiveId);
+        if (mine.length === 0) return null;
+        return (
+          <Card>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Users size={14} className="text-teal-500" />
+                <h2 className="text-sm font-bold text-gray-900 dark:text-slate-100">Collaborating on ({mine.length})</h2>
+                <span className="text-[11px] text-gray-400 dark:text-slate-500">
+                  Project tasks you were invited to — your own contribution % is separate from the owner&rsquo;s progress.
+                </span>
+              </div>
+              {mine.map(({ project, task }) => {
+                const owner = assignableMembers.find((m) => m.id === task.assignedTo)
+                  || (task.assignedTo ? { name: 'Owner' } : null);
+                const mine_collab = (task.projectTaskCollaborators || []).find((col) => col.userId === effectiveId);
+                return (
+                  <div key={task.id} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-4 rounded-xl bg-teal-50/50 dark:bg-teal-900/10 border border-teal-100 dark:border-teal-900/30">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-slate-100">{task.title}</p>
+                      <p className="text-[11px] text-gray-500 dark:text-slate-400 truncate">
+                        {project.name}
+                        {owner && <span className="inline-flex items-center gap-1 ml-2 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">Owner: {owner.name}</span>}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 w-full sm:w-56">
+                      <div className="flex-1 h-1.5 rounded-full bg-white dark:bg-slate-700 overflow-hidden">
+                        <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${mine_collab?.myProgress ?? 0}%` }} />
+                      </div>
+                      <span className="text-[11px] font-semibold text-teal-600 dark:text-teal-400 flex-shrink-0">{mine_collab?.myProgress ?? 0}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={mine_collab?.myProgress ?? 0}
+                      onChange={(e) => setProjectTaskCollabProgress(project.id, task.id, effectiveId, Number(e.target.value))}
+                      className="w-24 accent-teal-500"
+                      title="Your contribution % (separate from the owner's progress)"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* Create Task Modal */}
       <CreateTaskModal

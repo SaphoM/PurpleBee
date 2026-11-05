@@ -33,29 +33,30 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { updateTaskStatus, addCollaborator, removeCollaborator } = useTaskStore();
+  const currentUserId = useUserStore((s) => s.user?.id);
   const { getProjectById } = useProjectStore();
   const { assignableMembers, canViewAllTasks } = useUserStore();
   const canComplete = canViewAllTasks();
   const project = task.projectId ? getProjectById(task.projectId) : null;
 
-  // Resolve all assignees from assignableMembers (multi-aware)
-  const assigneeIds = (() => {
-    const ids = new Set<string>();
-    if (task.assignedTo) ids.add(task.assignedTo);
-    for (const u of task.assignedToIds ?? []) if (u) ids.add(u);
-    return [...ids];
-  })();
-  const assignees = assigneeIds
-    .map((id) => assignableMembers.find((p) => p.id === id))
-    .filter((p): p is (typeof assignableMembers)[number] => !!p);
-  const assignee = assignees[0] ?? null;
+  // Single owner (spec §1): exactly one owner per task.
+  const ownerId = task.assignedTo || (task.assignedToIds ?? [])[0] || null;
+  const owner = ownerId ? assignableMembers.find((p) => p.id === ownerId) : null;
+  const assigneeIds = ownerId ? [ownerId] : [];
+  const assignee = owner;
 
+  // Invite-state collaborators: pending still show (as "Invited: X, pending").
   const collaborators = task.collaborators || [];
+  const acceptedCollabs = collaborators.filter((c) => c.status === 'accepted');
+  const pendingCollabs = collaborators.filter((c) => c.status === 'pending');
+  // Viewpoint: am I seeing this task as an accepted collaborator?
+  const myCollab = collaborators.find((c) => c.userId === currentUserId && c.status === 'accepted') ?? null;
+  const isCollabView = !!myCollab && ownerId !== currentUserId;
 
-  // All people on this task (assignees + collaborators)
+  // All people on this task (owner + active collaborators)
   const allMembers: MemberInfo[] = [
-    ...assignees.map((a) => ({ id: a.id, name: a.name, avatar: a.avatar, role: 'owner' as const })),
-    ...collaborators.map((c) => ({
+    ...(owner ? [{ id: owner.id, name: owner.name, avatar: owner.avatar, role: 'owner' as const }] : []),
+    ...acceptedCollabs.map((c) => ({
       id: c.userId,
       name: c.name,
       avatar: c.avatar,
@@ -280,8 +281,34 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         )}
       </div>
 
+      {/* Owner tag + invite status + dual progress (spec §2/§3) */}
+      {(isCollabView && owner) || pendingCollabs.length > 0 || acceptedCollabs.length > 0 ? (
+        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-slate-700/30 space-y-1.5">
+          {isCollabView && owner && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">
+              Owner: {owner.name}
+            </span>
+          )}
+          {pendingCollabs.map((p) => (
+            <p key={p.userId} className="text-[11px] text-amber-600 dark:text-amber-400">
+              Invited: {p.name}, pending
+            </p>
+          ))}
+          {acceptedCollabs.length > 0 && (
+            <p className="text-[11px] text-teal-600 dark:text-teal-400">
+              {acceptedCollabs.map((a) => `${a.name} · ${a.myProgress ?? 0}%`).join('  ·  ')}
+            </p>
+          )}
+          {isCollabView && (
+            <p className="text-[11px] text-purple-600 dark:text-purple-400">
+              Your contribution: {myCollab.myProgress ?? 0}% · Task progress: {task.progress}%
+            </p>
+          )}
+        </div>
+      ) : null}
+
       {/* Priority Badge */}
-      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-slate-700/30">
+      <div className={clsx('mt-3 pt-3 border-t border-gray-200 dark:border-slate-700/30', (isCollabView || pendingCollabs.length > 0 || acceptedCollabs.length > 0) && 'pt-2')}>
         <PriorityBadge priority={task.priority} size="sm" />
       </div>
     </div>
