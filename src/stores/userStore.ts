@@ -68,6 +68,42 @@ export const teamProfiles: TeamProfile[] = [
     title: 'Full-Stack Developer',
     department: 'Engineering',
   },
+  {
+    id: 'user-6',
+    name: 'Musa',
+    email: 'musa@xspark.co.za',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Musa',
+    role: 'user',
+    title: 'Team Member',
+    department: 'Engineering',
+  },
+  {
+    id: 'user-7',
+    name: 'Maria',
+    email: 'maria@xspark.co.za',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Maria',
+    role: 'user',
+    title: 'Team Member',
+    department: 'Engineering',
+  },
+  {
+    id: 'user-8',
+    name: 'Nomvelo',
+    email: 'nomvelo@xspark.co.za',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Nomvelo',
+    role: 'user',
+    title: 'Team Member',
+    department: 'Engineering',
+  },
+  {
+    id: 'user-9',
+    name: 'Tebogo',
+    email: 'tebogo@xspark.co.za',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Tebogo',
+    role: 'user',
+    title: 'Team Member',
+    department: 'Engineering',
+  },
 ];
 
 interface UserStore {
@@ -635,7 +671,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
   isQuickLoginUser: () => {
     const id = get().user?.id;
     if (!id) return false;
-    return ['user-1', 'user-2', 'user-3', 'user-4', 'user-5'].includes(id);
+    return ['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8', 'user-9'].includes(id);
   },
 
   // RBAC — always based on the REAL logged-in user

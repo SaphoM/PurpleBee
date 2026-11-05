@@ -11,6 +11,7 @@ import { AIInsights } from '@pages/AIInsights';
 import { Chat } from '@pages/Chat';
 import { SettingsPage } from '@pages/SettingsPage';
 import { Projects } from '@pages/Projects';
+import { SalesPayments } from '@pages/SalesPayments';
 import { LoginPage } from '@pages/LoginPage';
 import { InviteAcceptPage } from '@pages/InviteAcceptPage';
 import { InviteOnboardPage } from '@pages/InviteOnboardPage';
@@ -26,7 +27,7 @@ import { useChatStore } from '@stores/chatStore';
 import { useSettingsStore } from '@stores/settingsStore';
 import { useSessionGuard } from '@/lib/sessionGuard';
 
-type PageType = 'dashboard' | 'projects' | 'tasks' | 'calendar' | 'analytics' | 'team' | 'chat' | 'ai-insights' | 'settings' | 'onboard' | 'reset-password';
+type PageType = 'dashboard' | 'projects' | 'tasks' | 'calendar' | 'analytics' | 'team' | 'chat' | 'ai-insights' | 'sales-payments' | 'settings' | 'onboard' | 'reset-password';
 
 const App: React.FC = () => {
   const { darkMode, sidebarCollapsed } = useUIStore();
@@ -109,6 +110,8 @@ const App: React.FC = () => {
         return <Chat />;
       case 'ai-insights':
         return <AIInsights />;
+      case 'sales-payments':
+        return <SalesPayments />;
       case 'settings':
         return <SettingsPage />;
       default:

@@ -70,6 +70,10 @@ const mockExtendedData: Record<string, { department: string; title: string; join
   'user-3': { department: 'Engineering', title: 'Backend Developer', joinedDate: new Date('2024-02-10'), email: 'lerato@xspark.co.za' },
   'user-4': { department: 'Engineering', title: 'Full-Stack Developer', joinedDate: new Date('2024-04-05'), email: 'kabelo@xspark.co.za' },
   'user-5': { department: 'Engineering', title: 'Integration Engineer', joinedDate: new Date('2024-06-12'), email: 'naledi@xspark.co.za' },
+  'user-6': { department: 'Engineering', title: 'Team Member', joinedDate: new Date('2024-06-13'), email: 'musa@xspark.co.za' },
+  'user-7': { department: 'Engineering', title: 'Team Member', joinedDate: new Date('2024-06-13'), email: 'maria@xspark.co.za' },
+  'user-8': { department: 'Engineering', title: 'Team Member', joinedDate: new Date('2024-06-14'), email: 'nomvelo@xspark.co.za' },
+  'user-9': { department: 'Engineering', title: 'Team Member', joinedDate: new Date('2024-06-14'), email: 'tebogo@xspark.co.za' },
 };
 
 // Invite modal

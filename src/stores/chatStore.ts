@@ -110,6 +110,10 @@ const allTeamMembers: TeamMemberInfo[] = [
   { id: 'user-3', name: 'Lerato Molefe', firstName: 'Lerato', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Lerato', role: 'member', department: 'Engineering' },
   { id: 'user-4', name: 'Kabelo Dlamini', firstName: 'Kabelo', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Kabelo', role: 'member', department: 'Engineering' },
   { id: 'user-5', name: 'Naledi Khumalo', firstName: 'Naledi', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Naledi', role: 'member', department: 'Engineering' },
+  { id: 'user-6', name: 'Musa', firstName: 'Musa', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Musa', role: 'member', department: 'Engineering' },
+  { id: 'user-7', name: 'Maria', firstName: 'Maria', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Maria', role: 'member', department: 'Engineering' },
+  { id: 'user-8', name: 'Nomvelo', firstName: 'Nomvelo', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Nomvelo', role: 'member', department: 'Engineering' },
+  { id: 'user-9', name: 'Tebogo', firstName: 'Tebogo', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Tebogo', role: 'member', department: 'Engineering' },
 ];
 
 function getMemberInfo(id: string): TeamMemberInfo {

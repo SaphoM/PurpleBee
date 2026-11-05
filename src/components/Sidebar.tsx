@@ -21,6 +21,7 @@ import {
   FolderKanban,
   PanelLeftClose,
   PanelLeftOpen,
+  Receipt,
 } from 'lucide-react';
 import { useUIStore } from '@stores/uiStore';
 import { useUserStore } from '@stores/userStore';
@@ -49,6 +50,7 @@ const navItems: NavItem[] = [
   { icon: <Users size={20} />, label: 'Team', href: '#team', tip: 'View team members, roles, and workload' },
   { icon: <MessageSquare size={20} />, label: 'Chat', href: '#chat', tip: 'Direct messages, task discussions, and announcements' },
   { icon: <Zap size={20} />, label: 'AI Insights', href: '#ai-insights', tip: 'AI-powered recommendations and forecasts' },
+  { icon: <Receipt size={20} />, label: 'Sales & Payments', href: '#sales-payments', tip: 'Estimates, invoices, payments and recurring billing' },
 ];
 
 const roleConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
