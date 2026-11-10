@@ -1251,7 +1251,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           </div>
 
           {/* Info Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-start">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-start min-w-0">
             {/* Status */}
             <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4">
               <label className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider block mb-2">
@@ -1325,7 +1325,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             </div>
 
             {/* Owner + Collaborators (visual rework; logic unchanged) */}
-            <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4 space-y-4">
+            <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4 space-y-4 min-w-0">
               {/* ── Owner ── */}
               <div>
                 <label htmlFor={`owner-select-${task.id}`} className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-2">
@@ -1403,13 +1403,13 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
               {/* ── Collaborators ── */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2 min-w-0">
-                  <span className="text-[11px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider flex-shrink-0">Collaborators</span>
+                <div className="space-y-2 min-w-0">
+                  <span className="block text-[11px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Collaborators</span>
                   {(isOwner || (user?.role === 'admin' || user?.role === 'manager')) && (
                     <button
                       type="button"
                       onClick={() => setInvitePickerOpen((v) => !v)}
-                      className="inline-flex items-center gap-1 flex-none px-2 py-0.5 rounded-md text-[11px] font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 dark:text-purple-300 dark:border-purple-800 transition-colors"
+                      className="inline-flex items-center justify-center gap-1 w-full px-2 py-1 rounded-md text-[11px] font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 dark:text-purple-300 dark:border-purple-800 transition-colors"
                     >
                       <UserPlus size={11} className="flex-shrink-0" /> Invite
                     </button>
