@@ -1324,70 +1324,94 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               )}
             </div>
 
-            {/* Assigned — single owner (spec §1) */}
-            <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4">
-              <label className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-2">
-                <Users size={12} />
-                Owner
-              </label>
-              {assignee ? (
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {assignee.avatar ? (
-                    <img src={assignee.avatar} alt={assignee.name} title={assignee.name} className="w-6 h-6 rounded-full object-cover flex-shrink-0" />
+            {/* Owner + Collaborators (visual rework; logic unchanged) */}
+            <div className="bg-gray-50 dark:bg-slate-800/50 rounded-xl p-4 space-y-4">
+              {/* ── Owner ── */}
+              <div>
+                <label htmlFor={`owner-select-${task.id}`} className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-2">
+                  <Users size={12} />
+                  Owner
+                </label>
+
+                {/* Single merged control: avatar + name + dropdown in one row.
+                    The owner is shown once here; changing it replaces them. */}
+                <div className="flex items-stretch gap-0 rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-700 overflow-hidden focus-within:ring-2 focus-within:ring-purple-500/30 focus-within:border-purple-400">
+                  {assignee ? (
+                    <>
+                      {assignee.avatar ? (
+                        <img src={assignee.avatar} alt={assignee.name} title={assignee.name} className="w-9 h-9 object-cover flex-shrink-0" />
+                      ) : (
+                        <span className="w-9 h-9 bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
+                          <span className="text-sm font-bold text-purple-600 dark:text-purple-400">
+                            {assignee.name.charAt(0).toUpperCase()}
+                          </span>
+                        </span>
+                      )}
+                      <select
+                        id={`owner-select-${task.id}`}
+                        value={task?.assignedTo || ''}
+                        onChange={(e) => updateTask(task.id, { assignedTo: e.target.value || undefined })}
+                        className="flex-1 min-w-0 px-2 py-2 text-sm font-medium bg-transparent text-gray-900 dark:text-slate-100 focus:outline-none cursor-pointer"
+                      >
+                        <option value="">Assign owner…</option>
+                        {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                    </>
                   ) : (
-                    <div className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-bold text-purple-600 dark:text-purple-400">
-                        {assignee.name.charAt(0).toUpperCase()}
+                    <>
+                      <span className="w-9 h-9 bg-gray-100 dark:bg-slate-600 flex items-center justify-center flex-shrink-0">
+                        <span className="text-sm font-bold text-gray-400 dark:text-slate-400">?</span>
                       </span>
-                    </div>
+                      <select
+                        id={`owner-select-${task.id}`}
+                        value=""
+                        onChange={(e) => updateTask(task.id, { assignedTo: e.target.value || undefined })}
+                        className="flex-1 min-w-0 px-2 py-2 text-sm font-medium bg-transparent text-gray-900 dark:text-slate-100 focus:outline-none cursor-pointer"
+                      >
+                        <option value="">Assign owner…</option>
+                        {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                    </>
                   )}
-                  <span className="text-sm font-medium text-gray-700 dark:text-slate-200 truncate min-w-0">
-                    {assignee.name}
-                  </span>
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 flex-shrink-0">
-                    Owner: {task.progress}%
-                  </span>
                 </div>
-              ) : (task?.assignedTo || assigneeIds.length > 0) ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full bg-gray-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">
-                    <span className="text-xs font-bold text-gray-500 dark:text-slate-400">?</span>
+
+                {/* Owner progress on its own row beneath (labelled, not cramped) */}
+                <div className="mt-2">
+                  <div className="flex items-center justify-between text-[11px] text-gray-400 dark:text-slate-500 mb-1">
+                    <span>Owner progress</span>
+                    <span className="font-semibold text-purple-600 dark:text-purple-400">{task.progress}%</span>
                   </div>
-                  <span className="text-sm text-gray-400 dark:text-slate-500 truncate">Unknown</span>
+                  <div className="h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+                    <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${task.progress}%` }} />
+                  </div>
                 </div>
-              ) : (
-                <p className="text-sm text-gray-400 dark:text-slate-500">Unassigned</p>
-              )}
-              <div className="mt-2">
-                <select
-                  value={task?.assignedTo || ''}
-                  onChange={(e) => updateTask(task.id, { assignedTo: e.target.value || undefined })}
-                  className={clsx(
-                    'w-full px-3 py-2 rounded-xl text-sm border',
-                    'bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100',
-                    'border-gray-200 dark:border-slate-600',
-                    'focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 cursor-pointer'
-                  )}
-                >
-                  <option value="">Assign owner…</option>
-                  {assignableMembers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                </select>
-                <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-1">
-                  One owner only. Assigning replaces the owner — collaboration happens via invites below.
-                </p>
+
+                {/* One-line helper + tooltip with the full explanation */}
+                <div className="mt-2 flex items-center gap-1 text-[11px] text-gray-400 dark:text-slate-500">
+                  <span>One owner per task.</span>
+                  <span className="group relative inline-flex">
+                    <Info size={11} className="text-gray-400 dark:text-slate-500 cursor-help flex-shrink-0" />
+                    <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1 w-56 rounded-lg bg-gray-900 dark:bg-slate-700 text-gray-100 dark:text-slate-100 text-[11px] leading-snug px-2.5 py-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-lg">
+                      Assigning a new owner replaces the current one. To work together without changing ownership, invite collaborators below — they get an Accept/Decline prompt and their own contribution percentage.
+                    </span>
+                  </span>
+                </div>
               </div>
 
-              {/* ── Invites & collaborators (spec §2/§3) ── */}
-              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-slate-700/60 space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[11px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Collaborators</span>
+              {/* Divider */}
+              <div className="border-t border-gray-100 dark:border-slate-700/60" />
+
+              {/* ── Collaborators ── */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  <span className="text-[11px] font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider flex-shrink-0">Collaborators</span>
                   {(isOwner || (user?.role === 'admin' || user?.role === 'manager')) && (
                     <button
                       type="button"
                       onClick={() => setInvitePickerOpen((v) => !v)}
-                      className="inline-flex items-center gap-1.5 flex-none px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 dark:text-purple-300 dark:border-purple-800 transition-colors"
+                      className="inline-flex items-center gap-1 flex-none px-2 py-0.5 rounded-md text-[11px] font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 dark:text-purple-300 dark:border-purple-800 transition-colors"
                     >
-                      <UserPlus size={12} className="flex-shrink-0" /> Invite
+                      <UserPlus size={11} className="flex-shrink-0" /> Invite
                     </button>
                   )}
                 </div>
@@ -1404,52 +1428,55 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                             addCollaborator(task.id, { userId: m.id, name: m.name, avatar: m.avatar, role: 'helper' });
                             setInvitePickerOpen(false);
                           }}
-                          className="px-2.5 py-1 rounded-full text-xs font-medium border bg-white border-gray-200 text-gray-600 hover:border-purple-400 hover:text-purple-600 dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-purple-500 dark:hover:text-purple-400 transition-colors"
+                          className="px-2 py-0.5 rounded-full text-[11px] font-medium border bg-white border-gray-200 text-gray-600 hover:border-purple-400 hover:text-purple-600 dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-300 dark:hover:border-purple-500 dark:hover:text-purple-400 transition-colors"
                         >
                           + {m.name}
                         </button>
                       ))}
                     {assignableMembers.filter((m) => m.id !== task.assignedTo && !collaborators.some((col) => col.userId === m.id && col.status !== 'declined')).length === 0 && (
-                      <p className="text-xs text-gray-400 dark:text-slate-500">Everyone is already on this task.</p>
+                      <p className="text-[11px] text-gray-400 dark:text-slate-500">Everyone is already on this task.</p>
                     )}
                   </div>
                 )}
 
                 {pendingCollabs.map((p) => (
-                  <div key={p.userId} className="flex items-center gap-2 text-xs">
-                    <span className="w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                  <div key={p.userId} className="flex items-center gap-2.5 py-1.5">
+                    <span className="w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-[11px] font-bold text-amber-600 dark:text-amber-400 flex-shrink-0">
                       {p.name.charAt(0).toUpperCase()}
                     </span>
-                    <span className="text-gray-600 dark:text-slate-300">Invited: {p.name}, pending</span>
-                    {(isOwner || user?.role === 'admin' || user?.role === 'manager') && (
-                      <button
-                        type="button"
-                        onClick={() => cancelInvite(task.id, p.userId)}
-                        className="ml-auto text-[11px] font-medium text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
-                      >
-                        Cancel
-                      </button>
-                    )}
+                    <span className="text-sm text-gray-700 dark:text-slate-200 truncate min-w-0">{p.name}</span>
+                    <span className="ml-auto flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">Pending</span>
+                      {(isOwner || user?.role === 'admin' || user?.role === 'manager') && (
+                        <button
+                          type="button"
+                          onClick={() => cancelInvite(task.id, p.userId)}
+                          className="text-[11px] font-medium text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </span>
                   </div>
                 ))}
 
                 {/* Invitee's own accept/decline (their pending invite on this task) */}
                 {myPendingInvite && (
-                  <div className="flex items-center gap-2 p-2 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
-                    <span className="flex-1 text-xs text-purple-700 dark:text-purple-300">
+                  <div className="flex flex-wrap items-center gap-2 p-2 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800">
+                    <span className="flex-1 min-w-0 text-xs text-purple-700 dark:text-purple-300">
                       You were invited to collaborate on this task.
                     </span>
                     <button
                       type="button"
                       onClick={() => respondToInvite(task.id, user!.id, true)}
-                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-500 hover:bg-green-600 text-white transition-colors"
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-500 hover:bg-green-600 text-white transition-colors flex-shrink-0"
                     >
                       Accept
                     </button>
                     <button
                       type="button"
                       onClick={() => respondToInvite(task.id, user!.id, false)}
-                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors"
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-200 hover:bg-gray-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors flex-shrink-0"
                     >
                       Decline
                     </button>
@@ -1457,43 +1484,55 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 )}
 
                 {acceptedCollabs.map((a) => (
-                  <div key={a.userId} className="flex items-center gap-2 text-xs">
-                    {a.avatar ? (
-                      <img src={a.avatar} alt={a.name} className="w-5 h-5 rounded-full object-cover" />
-                    ) : (
-                      <span className="w-5 h-5 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center text-[10px] font-bold text-teal-600 dark:text-teal-400">
-                        {a.name.charAt(0).toUpperCase()}
+                  <div key={a.userId} className="py-1.5">
+                    <div className="flex items-center gap-2.5">
+                      {a.avatar ? (
+                        <img src={a.avatar} alt={a.name} className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+                      ) : (
+                        <span className="w-7 h-7 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center text-[11px] font-bold text-teal-600 dark:text-teal-400 flex-shrink-0">
+                          {a.name.charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="text-sm text-gray-700 dark:text-slate-200 truncate min-w-0">{a.name}</span>
+                      <span className="ml-auto flex items-center gap-2 flex-shrink-0">
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Accepted</span>
+                        {a.userId === user?.id ? (
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={5}
+                            value={a.myProgress ?? 0}
+                            onChange={(e) => setMyCollabProgress(task.id, a.userId, Number(e.target.value))}
+                            className="w-20 sm:w-24 accent-teal-500"
+                            title="Your contribution % (separate from task progress)"
+                          />
+                        ) : (isOwner || user?.role === 'admin' || user?.role === 'manager') ? (
+                          <button
+                            type="button"
+                            onClick={() => removeCollaborator(task.id, a.userId)}
+                            className="text-[11px] font-medium text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors"
+                          >
+                            Remove
+                          </button>
+                        ) : null}
                       </span>
-                    )}
-                    <span className="text-gray-600 dark:text-slate-300">{a.name}</span>
-                    <span className="text-teal-600 dark:text-teal-400 font-semibold">{a.myProgress ?? 0}%</span>
-                    {a.userId === user?.id ? (
-                      <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        step={5}
-                        value={a.myProgress ?? 0}
-                        onChange={(e) => setMyCollabProgress(task.id, a.userId, Number(e.target.value))}
-                        className="ml-auto w-24 accent-teal-500"
-                        title="Your contribution % (separate from task progress)"
-                      />
-                    ) : (isOwner || user?.role === 'admin' || user?.role === 'manager') ? (
-                      <button
-                        type="button"
-                        onClick={() => removeCollaborator(task.id, a.userId)}
-                        className="ml-auto text-[11px] font-medium text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
-                      >
-                        Remove
-                      </button>
-                    ) : null}
+                    </div>
+                    {/* Their own contribution bar under the name (never the owner's progress) */}
+                    <div className="mt-1.5 pl-9">
+                      <div className="flex items-center justify-between text-[10px] text-gray-400 dark:text-slate-500 mb-0.5">
+                        <span>Their contribution</span>
+                        <span className="font-semibold text-teal-600 dark:text-teal-400">{a.myProgress ?? 0}%</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden">
+                        <div className="h-full bg-teal-500 rounded-full transition-all" style={{ width: `${a.myProgress ?? 0}%` }} />
+                      </div>
+                    </div>
                   </div>
                 ))}
 
                 {collaborators.length === 0 && !myPendingInvite && (
-                  <p className="text-[11px] text-gray-400 dark:text-slate-500">
-                    No collaborators yet. The owner can invite teammates — they get an Accept/Decline prompt.
-                  </p>
+                  <p className="text-[11px] text-gray-400 dark:text-slate-500">No collaborators yet.</p>
                 )}
               </div>
             </div>
