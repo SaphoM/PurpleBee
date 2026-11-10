@@ -171,7 +171,7 @@ export const taskCollaboratorDb = {
     if (!shouldPersist(mockMode) || taskIds.length === 0) return map;
     const { data, error } = await supabase!
       .from('task_collaborators')
-      .select('task_id, user_id, role, status, invited_by, my_progress, allocated_minutes, added_at, profiles!inner(name, avatar)')
+      .select('task_id, user_id, role, status, invited_by, my_progress, allocated_minutes, added_at, profiles!task_collaborators_user_id_fkey(name, avatar)')
       .in('task_id', taskIds)
       .order('added_at', { ascending: true });
     if (error) { console.error('[dataService] task_collaborators.fetchForTasks', error); return map; }

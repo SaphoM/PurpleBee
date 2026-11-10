@@ -1263,7 +1263,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         if (supabase) {
           const { data, error } = await supabase
             .from('project_task_collaborators')
-            .select('project_task_id, user_id, status, my_progress, profiles!inner(name, avatar)')
+            .select('project_task_id, user_id, status, my_progress, profiles!project_task_collaborators_user_id_fkey(name, avatar)')
             .in('project_task_id', taskIds)
             .eq('status', 'accepted');
           if (!error && Array.isArray(data)) {
