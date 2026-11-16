@@ -27,9 +27,9 @@ export interface TeamProfile {
 export const teamProfiles: TeamProfile[] = [
   {
     id: 'user-1',
-    name: 'Sapho Maqhwazima',
-    email: 'sapho@xspark.co.za',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sapho',
+    name: 'Sipho Sibiya',
+    email: 'sipho@xspark.co.za',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sipho',
     role: 'admin',
     title: 'Project Lead',
     department: 'Engineering',

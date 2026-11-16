@@ -105,7 +105,7 @@ interface TeamMemberInfo {
 }
 
 const allTeamMembers: TeamMemberInfo[] = [
-  { id: 'user-1', name: 'Sapho Maqhwazima', firstName: 'Sapho', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sapho', role: 'admin', department: 'Engineering' },
+  { id: 'user-1', name: 'Sipho Sibiya', firstName: 'Sipho', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sipho', role: 'admin', department: 'Engineering' },
   { id: 'user-2', name: 'Thando Nkosi', firstName: 'Thando', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Thando', role: 'member', department: 'Design' },
   { id: 'user-3', name: 'Lerato Molefe', firstName: 'Lerato', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Lerato', role: 'member', department: 'Engineering' },
   { id: 'user-4', name: 'Kabelo Dlamini', firstName: 'Kabelo', avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Kabelo', role: 'member', department: 'Engineering' },

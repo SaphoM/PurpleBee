@@ -186,7 +186,7 @@ interface TeamMember {
 }
 
 const teamMembers: TeamMember[] = [
-  { id: 'user-1', name: 'Sapho Maqhwazima', firstName: 'Sapho' },
+  { id: 'user-1', name: 'Sipho Sibiya', firstName: 'Sipho' },
   { id: 'user-2', name: 'Thando Nkosi', firstName: 'Thando' },
   { id: 'user-3', name: 'Lerato Molefe', firstName: 'Lerato' },
   { id: 'user-4', name: 'Kabelo Dlamini', firstName: 'Kabelo' },

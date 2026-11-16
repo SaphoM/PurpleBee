@@ -65,7 +65,7 @@ const DEPARTMENTS = [
 ];
 
 const mockExtendedData: Record<string, { department: string; title: string; joinedDate: Date; email: string }> = {
-  'user-1': { department: 'Product', title: 'Product Lead', joinedDate: new Date('2024-01-15'), email: 'sapho@xspark.co.za' },
+  'user-1': { department: 'Product', title: 'Product Lead', joinedDate: new Date('2024-01-15'), email: 'sipho@xspark.co.za' },
   'user-2': { department: 'Design', title: 'UI/UX Designer', joinedDate: new Date('2024-03-20'), email: 'thando@xspark.co.za' },
   'user-3': { department: 'Engineering', title: 'Backend Developer', joinedDate: new Date('2024-02-10'), email: 'lerato@xspark.co.za' },
   'user-4': { department: 'Engineering', title: 'Full-Stack Developer', joinedDate: new Date('2024-04-05'), email: 'kabelo@xspark.co.za' },
