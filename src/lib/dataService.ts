@@ -1378,7 +1378,7 @@ export const chatDb = {
     // No team — just fetch the user's own profile
     const { data, error } = await supabase!
       .from('profiles')
-      .select('id, name, email, avatar, role, title, department')
+      .select('id, name, email, avatar, role, title, department, last_seen_at')
       .eq('id', userId);
     if (error) { console.error('[dataService] chat.fetchTeamMembers solo', error); return null; }
     return data?.map((p: any) => ({ user_id: p.id, role: p.role, profiles: p })) || null;

@@ -777,7 +777,9 @@ export const Team: React.FC = () => {
 
     // ── Real mode: build from assignableMembers (DB profiles) ──
     return assignableMembers.map((profile) => {
-      // Merge online status from chatStore if available, but always use profile for mutable fields
+      // Merge presence from chatStore (realtime) when available, but always use
+      // profile for mutable fields. Fall back to the profile's last_seen_at so
+      // "Never been online" only shows when we truly have no record.
       const chatMember = teamMembers.find((m) => m.userId === profile.id);
       const member: ChatParticipant = {
         userId: profile.id,
@@ -785,7 +787,7 @@ export const Team: React.FC = () => {
         avatar: profile.avatar,
         role: profile.role === 'admin' ? 'admin' : 'member',
         online: chatMember?.online ?? false,
-        lastSeen: chatMember?.lastSeen,
+        lastSeen: chatMember?.lastSeen ?? profile.lastSeen,
       };
 
       const assigned = tasks.filter((t) => t.assignedTo === profile.id);

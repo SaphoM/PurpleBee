@@ -19,6 +19,8 @@ export interface TeamProfile {
   role: AppRole;
   title: string;
   department: string;
+  /** Last-seen timestamp from profiles.last_seen_at (real mode); used as fallback for presence display. */
+  lastSeen?: Date;
 }
 
 // All available team profiles
@@ -299,7 +301,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
       // 1. Accepted members from team_members + profiles
       const { data: tmData, error: tmError } = await supabase!
         .from('team_members')
-        .select('user_id, role, profiles!inner(id, name, email, avatar, role, title, department)')
+        .select('user_id, role, profiles!inner(id, name, email, avatar, role, title, department, last_seen_at)')
         .eq('team_id', state.currentTeamId);
 
       if (tmError) {
@@ -316,6 +318,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
           role: (row.role || p.role || 'user') as AppRole,
           title: p.title || '',
           department: p.department || '',
+          lastSeen: p.last_seen_at ? new Date(p.last_seen_at) : undefined,
         };
       });
 
@@ -337,7 +340,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
           // expected zero-row case into a noisy 406 (PGRST116) on every load.
           const { data: profileRow } = await supabase!
             .from('profiles')
-            .select('id, name, email, avatar, role, title, department')
+            .select('id, name, email, avatar, role, title, department, last_seen_at')
             .eq('email', inv.email)
             .maybeSingle();
 
@@ -351,6 +354,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
               role: (inv.role || profileRow.role || 'user') as AppRole,
               title: profileRow.title || '',
               department: profileRow.department || '',
+              lastSeen: profileRow.last_seen_at ? new Date(profileRow.last_seen_at) : undefined,
             });
           }
         }
@@ -443,12 +447,15 @@ export const useUserStore = create<UserStore>((set, get) => ({
   getCurrentTeamId: () => get().currentTeamId,
 
   // ── Demo / Quick Login (existing) ──────────────────────────────────
+  // Always isolated to in-memory dummy data — never reads/writes real DB.
   login: (profileId, _password) => {
     const profile = teamProfiles.find((p) => p.id === profileId);
     if (!profile) {
       set({ error: 'User not found' });
       return false;
     }
+    // Force mock/demo mode so stores use dummy data and no real DB traffic occurs.
+    useSettingsStore.getState().setKeepMockData(true);
     set({
       user: {
         id: profile.id,
@@ -463,6 +470,9 @@ export const useUserStore = create<UserStore>((set, get) => ({
       viewingAsId: null,
       error: null,
       sessionExpiredReason: null,
+      currentTeamId: null,
+      currentTeamName: null,
+      assignableMembers: teamProfiles,
     });
     hydrateStores(profile.id, profile.name);
     return true;
