@@ -262,84 +262,106 @@ export const taskDb = {
    */
   async fetchAll(userId: string, mockMode?: boolean, teamId?: string | null): Promise<Task[] | null> {
     if (!shouldPersist(mockMode)) return null;
-    // Single round-trip: join subtasks inline instead of two sequential queries.
-    let q = supabase!
-      .from('tasks')
-      .select('*, subtasks(*)')
-      .order('created_at', { ascending: false })
-      .order('order', { referencedTable: 'subtasks', ascending: true });
-    if (teamId) {
-      q = q.or(`team_id.eq.${teamId},assigned_to.eq.${userId},assigned_to_ids.cs.{${userId}},created_by.eq.${userId}`);
-    } else {
-      q = q.or(`assigned_to.eq.${userId},assigned_to_ids.cs.{${userId}},created_by.eq.${userId}`);
-    }
-    const { data, error } = await q;
-    if (error) { console.error('[dataService] tasks.fetchAll', error); return null; }
-    const tasks = (data as (DbTask & { subtasks: { id: string; title: string; description: string | null; completed: boolean; created_at: string }[] })[]).map((row) => ({
-      ...toTask(row),
-      subtasks: (row.subtasks ?? []).map((s) => ({
-        id: s.id,
-        title: s.title,
-        description: s.description ?? undefined,
-        completed: s.completed,
-        createdAt: new Date(s.created_at),
-      })),
-    }));
-    // Single-owner rule: discard any legacy multi-owner arrays on read —
-    // the union helper exists only for hydration tolerance.
-    for (const t of tasks) {
-      if (t.assignedToIds && t.assignedToIds.length > 1) {
-        const keep = t.assignedTo || t.assignedToIds[0];
-        t.assignedTo = keep;
-        t.assignedToIds = keep ? [keep] : [];
-      }
-    }
-    // Hydrate collaborators (invites + separate progress) for these tasks.
-    const collabMap = await taskCollaboratorDb.fetchForTasks(tasks.map((t) => t.id), mockMode);
-    for (const t of tasks) {
-      const cols = collabMap.get(t.id);
-      if (cols && cols.length > 0) t.collaborators = cols;
-    }
-    // Accepted-collaboration tasks: owned by someone else, but they're on my
-    // list (spec §3). Fetch them so they hydrate alongside owned tasks.
     try {
-      const { data: myCollabRows } = await supabase!
-        .from('task_collaborators')
-        .select('task_id')
-        .eq('user_id', userId)
-        .eq('status', 'accepted');
-      const collabTaskIds = [...new Set(((myCollabRows ?? []) as any[]).map((r) => r.task_id).filter(Boolean))];
-      const missing = collabTaskIds.filter((id) => !tasks.some((t) => t.id === id));
-      if (missing.length > 0) {
-        const { data: extraData, error: extraErr } = await supabase!
-          .from('tasks')
-          .select('*, subtasks(*)')
-          .in('id', missing)
-          .order('created_at', { ascending: false })
-          .order('order', { referencedTable: 'subtasks', ascending: true });
-        if (!extraErr && Array.isArray(extraData)) {
-          const extra = (extraData as any[]).map((row: any) => ({
-            ...toTask(row),
-            subtasks: (row.subtasks ?? []).map((s: any) => ({
-              id: s.id,
-              title: s.title,
-              description: s.description ?? undefined,
-              completed: s.completed,
-              createdAt: new Date(s.created_at),
-            })),
-          }));
-          const extraCollabMap = await taskCollaboratorDb.fetchForTasks(extra.map((t) => t.id), mockMode);
-          for (const t of extra) {
-            const cols = extraCollabMap.get(t.id);
-            if (cols && cols.length > 0) t.collaborators = cols;
-          }
-          tasks.push(...extra);
+      // Resilient fetch: avoid the `*,subtasks(*)` join and redundant OR filters,
+      // which can time out/500 on real data (causing tasks to "disappear").
+      // 1) Core task columns (fast, reliable). RLS enforces visibility.
+      const coreCols = 'id,title,status,priority,assigned_to,assigned_to_ids,due_date,tags,progress,is_recurring,estimated_hours,actual_hours,project_id,team_id,created_by,created_at,updated_at';
+      const { data, error } = await supabase!
+        .from('tasks')
+        .select(coreCols)
+        .order('created_at', { ascending: false });
+      if (error) { console.error('[dataService] tasks.fetchAll', error); return null; }
+      if (!Array.isArray(data)) return [];
+
+      const tasks = (data as any[]).map((row) => ({
+        ...toTask({ ...row, description: null, links: null, attachments: null } as DbTask),
+        subtasks: [] as Subtask[],
+      }));
+      const taskIds = tasks.map((t) => t.id);
+
+      if (taskIds.length > 0) {
+        // 2) Enrich with heavy fields, subtasks, and collaborators in parallel.
+        //    Failures here must never prevent tasks from loading.
+        const [subtaskMap, collabMap, descRes, linksRes, attachRes] = await Promise.all([
+          subtaskDb.fetchForTasks(taskIds, mockMode).catch(() => new Map<string, Subtask[]>()),
+          taskCollaboratorDb.fetchForTasks(taskIds, mockMode).catch(() => new Map<string, any[]>()),
+          Promise.resolve(supabase!.from('tasks').select('id,description').in('id', taskIds)).then((r) => r.error ? null : r.data).catch(() => null),
+          Promise.resolve(supabase!.from('tasks').select('id,links').in('id', taskIds)).then((r) => r.error ? null : r.data).catch(() => null),
+          Promise.resolve(supabase!.from('tasks').select('id,attachments').in('id', taskIds)).then((r) => r.error ? null : r.data).catch(() => null),
+        ]);
+
+        const byId = new Map(tasks.map((t) => [t.id, t]));
+        if (Array.isArray(descRes)) for (const r of descRes as any[]) { const t = byId.get(r.id); if (t) t.description = r.description || undefined; }
+        if (Array.isArray(linksRes)) for (const r of linksRes as any[]) { const t = byId.get(r.id); if (t) t.links = r.links || []; }
+        if (Array.isArray(attachRes)) for (const r of attachRes as any[]) { const t = byId.get(r.id); if (t) t.attachments = r.attachments || []; }
+        for (const t of tasks) {
+          const subs = (subtaskMap as Map<string, Subtask[]>).get(t.id);
+          if (subs && subs.length > 0) t.subtasks = subs;
+          const cols = (collabMap as Map<string, any[]>).get(t.id);
+          if (cols && cols.length > 0) t.collaborators = cols;
         }
       }
+
+      // Single-owner rule: discard any legacy multi-owner arrays on read.
+      for (const t of tasks) {
+        if (t.assignedToIds && t.assignedToIds.length > 1) {
+          const keep = t.assignedTo || t.assignedToIds[0];
+          t.assignedTo = keep;
+          t.assignedToIds = keep ? [keep] : [];
+        }
+      }
+
+      // Accepted-collaboration tasks: fetch any I'm an accepted collaborator on
+      // that RLS/query didn't already include (defensive; RLS usually covers them).
+      try {
+        const { data: myCollabRows } = await supabase!
+          .from('task_collaborators')
+          .select('task_id')
+          .eq('user_id', userId)
+          .eq('status', 'accepted');
+        const collabTaskIds = [...new Set(((myCollabRows ?? []) as any[]).map((r) => r.task_id).filter(Boolean))];
+        const missing = collabTaskIds.filter((id) => !tasks.some((t) => t.id === id));
+        if (missing.length > 0) {
+          const { data: extraData } = await supabase!
+            .from('tasks')
+            .select(coreCols)
+            .in('id', missing)
+            .order('created_at', { ascending: false });
+          if (Array.isArray(extraData) && extraData.length > 0) {
+            const extra = (extraData as any[]).map((row) => ({
+              ...toTask({ ...row, description: null, links: null, attachments: null } as DbTask),
+              subtasks: [] as Subtask[],
+            }));
+            const extraIds = extra.map((t) => t.id);
+            const [exSub, exCol, exDesc, exLinks, exAtt] = await Promise.all([
+              subtaskDb.fetchForTasks(extraIds, mockMode).catch(() => new Map<string, Subtask[]>()),
+              taskCollaboratorDb.fetchForTasks(extraIds, mockMode).catch(() => new Map<string, any[]>()),
+              Promise.resolve(supabase!.from('tasks').select('id,description').in('id', extraIds)).then((r) => r.error ? null : r.data).catch(() => null),
+              Promise.resolve(supabase!.from('tasks').select('id,links').in('id', extraIds)).then((r) => r.error ? null : r.data).catch(() => null),
+              Promise.resolve(supabase!.from('tasks').select('id,attachments').in('id', extraIds)).then((r) => r.error ? null : r.data).catch(() => null),
+            ]);
+            const exById = new Map(extra.map((t) => [t.id, t]));
+            if (Array.isArray(exDesc)) for (const r of exDesc as any[]) { const t = exById.get(r.id); if (t) t.description = r.description || undefined; }
+            if (Array.isArray(exLinks)) for (const r of exLinks as any[]) { const t = exById.get(r.id); if (t) t.links = r.links || []; }
+            if (Array.isArray(exAtt)) for (const r of exAtt as any[]) { const t = exById.get(r.id); if (t) t.attachments = r.attachments || []; }
+            for (const t of extra) {
+              const subs = (exSub as Map<string, Subtask[]>).get(t.id);
+              if (subs && subs.length > 0) t.subtasks = subs;
+              const cols = (exCol as Map<string, any[]>).get(t.id);
+              if (cols && cols.length > 0) t.collaborators = cols;
+            }
+            tasks.push(...extra);
+          }
+        }
+      } catch (e) {
+        console.error('[dataService] tasks.fetchAll collaborated tasks', e);
+      }
+      return tasks;
     } catch (e) {
-      console.error('[dataService] tasks.fetchAll collaborated tasks', e);
+      console.error('[dataService] tasks.fetchAll', e);
+      return null;
     }
-    return tasks;
   },
 
   /**
@@ -350,37 +372,47 @@ export const taskDb = {
    */
   async fetchOne(taskId: string, mockMode?: boolean): Promise<Task | null> {
     if (!shouldPersist(mockMode)) return null;
-    const { data, error } = await supabase!
-      .from('tasks')
-      .select('*, subtasks(*)')
-      .eq('id', taskId)
-      .order('order', { referencedTable: 'subtasks', ascending: true })
-      .maybeSingle();
-    if (error || !data) {
-      if (error) console.error('[dataService] tasks.fetchOne', error);
+    try {
+      // Resilient single-task fetch (avoid heavy joins/columns that can 500/timeout).
+      const coreCols = 'id,title,status,priority,assigned_to,assigned_to_ids,due_date,tags,progress,is_recurring,estimated_hours,actual_hours,project_id,team_id,created_by,created_at,updated_at';
+      const { data, error } = await supabase!
+        .from('tasks')
+        .select(coreCols)
+        .eq('id', taskId)
+        .maybeSingle();
+      if (error || !data) {
+        if (error) console.error('[dataService] tasks.fetchOne', error);
+        return null;
+      }
+      const task: Task = {
+        ...toTask({ ...(data as any), description: null, links: null, attachments: null } as DbTask),
+        subtasks: [],
+      };
+      const [subtaskMap, collabMap, descRes, linksRes, attachRes] = await Promise.all([
+        subtaskDb.fetchForTasks([task.id], mockMode).catch(() => new Map<string, Subtask[]>()),
+        taskCollaboratorDb.fetchForTasks([task.id], mockMode).catch(() => new Map<string, any[]>()),
+        Promise.resolve(supabase!.from('tasks').select('id,description').eq('id', task.id).maybeSingle()).then((r) => r.error ? null : r.data).catch(() => null),
+        Promise.resolve(supabase!.from('tasks').select('id,links').eq('id', task.id).maybeSingle()).then((r) => r.error ? null : r.data).catch(() => null),
+        Promise.resolve(supabase!.from('tasks').select('id,attachments').eq('id', task.id).maybeSingle()).then((r) => r.error ? null : r.data).catch(() => null),
+      ]);
+      if (descRes && (descRes as any).description) task.description = (descRes as any).description || undefined;
+      if (linksRes && (linksRes as any).links) task.links = (linksRes as any).links || [];
+      if (attachRes && (attachRes as any).attachments) task.attachments = (attachRes as any).attachments || [];
+      const subs = (subtaskMap as Map<string, Subtask[]>).get(task.id);
+      if (subs && subs.length > 0) task.subtasks = subs;
+      // Single-owner tolerance (same as fetchAll).
+      if (task.assignedToIds && task.assignedToIds.length > 1) {
+        const keep = task.assignedTo || task.assignedToIds[0];
+        task.assignedTo = keep;
+        task.assignedToIds = keep ? [keep] : [];
+      }
+      const cols = (collabMap as Map<string, any[]>).get(task.id);
+      if (cols && cols.length > 0) task.collaborators = cols;
+      return task;
+    } catch (e) {
+      console.error('[dataService] tasks.fetchOne', e);
       return null;
     }
-    const row = data as DbTask & { subtasks: { id: string; title: string; description: string | null; completed: boolean; created_at: string }[] };
-    const task: Task = {
-      ...toTask(row),
-      subtasks: (row.subtasks ?? []).map((s) => ({
-        id: s.id,
-        title: s.title,
-        description: s.description ?? undefined,
-        completed: s.completed,
-        createdAt: new Date(s.created_at),
-      })),
-    };
-    // Single-owner tolerance (same as fetchAll).
-    if (task.assignedToIds && task.assignedToIds.length > 1) {
-      const keep = task.assignedTo || task.assignedToIds[0];
-      task.assignedTo = keep;
-      task.assignedToIds = keep ? [keep] : [];
-    }
-    const collabMap = await taskCollaboratorDb.fetchForTasks([task.id], mockMode);
-    const cols = collabMap.get(task.id);
-    if (cols && cols.length > 0) task.collaborators = cols;
-    return task;
   },
 
   /** Insert a task — skipped when mock mode is ON */
