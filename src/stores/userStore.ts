@@ -133,28 +133,32 @@ interface UserStore {
   canAssignTasks: () => boolean;
 }
 
+const QUICK_LOGIN_IDS = new Set(['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8', 'user-9']);
+const isQuickLoginId = (id: string) => QUICK_LOGIN_IDS.has(id);
+
 /**
  * Populate stores after any login (demo or Supabase).
  *
- * - Mock ON → fill all stores with sample data (in-memory only).
- * - Mock OFF → hydrate notifications from DB immediately.
- *   Tasks, chat, and projects wait for team context (see hydrateWithTeam).
+ * - Quick Login → always dummy/mock data (in-memory only), never real DB.
+ * - Real users  → always live DB hydration; never fall back to mock/dummy
+ *   even if keepMockData was left stale in localStorage.
  */
 function hydrateStores(userId: string, userName: string) {
-  const { keepMockData } = useSettingsStore.getState();
-
   // Give taskStore + projectStore the current user identity so they can
   // attach teamId/userId to writes. Updated again by hydrateWithTeam once
   // the real team resolves (live mode).
   setTaskUserContext(userId, null, userName);
   setProjectUserContext(userId, null, null, userName);
 
-  if (keepMockData) {
+  if (isQuickLoginId(userId)) {
     useNotificationStore.getState().restoreMockData(userId, userName);
     useChatStore.getState().restoreMockData(userId);
     useTaskStore.getState().restoreMockData(userId);
     useProjectStore.getState().restoreMockData();
-  } else if (isDbConnected()) {
+    return;
+  }
+
+  if (isDbConnected()) {
     useNotificationStore.getState().hydrateFromDb(userId);
   }
 }
@@ -168,8 +172,9 @@ async function hydrateWithTeam(
   teamId: string | null,
   userName: string,
 ) {
-  const { keepMockData } = useSettingsStore.getState();
-  if (keepMockData || !isDbConnected()) return;
+  // Quick-login sessions must never touch the real DB; real users must always
+  // hydrate from DB regardless of any stale keepMockData setting.
+  if (isQuickLoginId(userId) || !isDbConnected()) return;
 
   // Update task + project store context with the now-resolved teamId so
   // writes are scoped correctly and notifications carry the right sender.
@@ -498,7 +503,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
         eventType: 'login',
         outcome: 'success',
         metadata: { source: 'email_password' }
-      }, useSettingsStore.getState().keepMockData).catch(() => {});
+      }, false).catch(() => {});
       set({ isLoading: false });
       return true;
     } catch (err: unknown) {
@@ -572,7 +577,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
           eventType: 'login',
           outcome: 'success',
           metadata: { source: 'session_restore' }
-        }, useSettingsStore.getState().keepMockData).catch(() => {});
+        }, false).catch(() => {});
       }
     } catch (err) {
       console.warn('[userStore] initSession: error restoring session', err);
@@ -636,7 +641,7 @@ export const useUserStore = create<UserStore>((set, get) => ({
   isQuickLoginUser: () => {
     const id = get().user?.id;
     if (!id) return false;
-    return ['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8', 'user-9'].includes(id);
+    return QUICK_LOGIN_IDS.has(id);
   },
 
   // RBAC — always based on the REAL logged-in user

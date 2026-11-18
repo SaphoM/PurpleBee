@@ -1174,8 +1174,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
    * DMs/channels) even on a fresh account.
    */
   hydrateFromDb: async (userId: string) => {
+    // Always hydrate from DB when explicitly requested (callers gate quick-login sessions).
+    // Never leave a real user with empty chat due to a stale keepMockData setting.
     const mock = isMockMode();
-    if (mock) return;
+    void mock;
 
     // ── 1. Load real team members from DB ──────────────────────────
     const useUserStore = await getUserStore();

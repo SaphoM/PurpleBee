@@ -1192,7 +1192,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
    * Also claims orphaned projects (team_id IS NULL) when the team resolves.
    */
   hydrateFromDb: async (userId: string) => {
-    if (isMockMode()) return;
+    // Always hydrate from DB when explicitly requested (callers gate quick-login sessions).
+    if (isMockMode()) { /* stale flag ignored for explicit live hydration */ }
     const { teamId } = getTeamContext();
 
     // If team just resolved, attach any orphaned projects to it

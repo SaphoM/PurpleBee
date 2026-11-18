@@ -922,8 +922,12 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
    * An empty DB returns an empty board so users can create their own tasks.
    */
   hydrateFromDb: async (userId: string) => {
+    // Always hydrate from DB when explicitly requested. Callers (userStore/hydrateWithTeam)
+    // gate quick-login sessions; this must never leave a real user with empty tasks due to
+    // a stale keepMockData setting.
     const mock = isMockMode();
-    if (mock) return; // Mock mode ON → don't touch DB
+    // (mock flag kept for callers that may need it; we still load live data here)
+    void mock;
     const { teamId } = getTeamContext();
     const [dbTasks, botTasks] = await Promise.all([
       taskDb.fetchAll(userId, false, teamId),
