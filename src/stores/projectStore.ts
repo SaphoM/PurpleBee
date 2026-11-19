@@ -449,14 +449,23 @@ export interface ProjectTaskStats {
  * Analytics view.
  */
 export function getProjectTaskStats(
-  project: Pick<Project, 'tasks'>,
-  boardTasks: Array<{ id: string; status: string }>,
+  project: Pick<Project, 'id' | 'tasks'>,
+  boardTasks: Array<{ id: string; status: string; projectId?: string; title?: string }>,
 ): ProjectTaskStats {
   const total = project.tasks.length;
   let completed = 0;
   let inProgress = 0;
   for (const t of project.tasks) {
-    const linked = t.linkedTaskId ? boardTasks.find((bt) => bt.id === t.linkedTaskId) : undefined;
+    // Primary: explicit link. Fallback: find a board task in the same project
+    // with a matching title so progress reflects completed work even if the
+    // legacy link wasn't persisted yet (read-only; no mutation/side effects).
+    let linked = t.linkedTaskId ? boardTasks.find((bt) => bt.id === t.linkedTaskId) : undefined;
+    if (!linked && project.id) {
+      const titleKey = t.title.trim().toLowerCase();
+      linked = boardTasks.find(
+        (bt) => bt.projectId === project.id && (bt.title || '').trim().toLowerCase() === titleKey,
+      );
+    }
     if (linked?.status === 'completed') completed++;
     else if (linked?.status === 'in-progress' || linked?.status === 'review') inProgress++;
   }
@@ -507,8 +516,8 @@ export type ProjectPace = 'ahead' | 'behind' | 'on-pace' | 'unknown';
  * measure completion from) rather than guessing.
  */
 export function getProjectPace(
-  project: Pick<Project, 'tasks' | 'plannedStartDate' | 'plannedCompletionDate'>,
-  boardTasks: Array<{ id: string; status: string }>,
+  project: Pick<Project, 'id' | 'tasks' | 'plannedStartDate' | 'plannedCompletionDate'>,
+  boardTasks: Array<{ id: string; status: string; projectId?: string; title?: string }>,
 ): ProjectPace {
   const time = getProjectTimeProgress(project);
   const stats = getProjectTaskStats(project, boardTasks);

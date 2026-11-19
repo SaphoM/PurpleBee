@@ -1556,8 +1556,11 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
   useEffect(() => {
     if (!project || project.tasks.length === 0) return;
     const linked = project.tasks
-      .filter((t) => t.linkedTaskId)
-      .map((t) => boardTasks.find((bt) => bt.id === t.linkedTaskId))
+      .map((t) => {
+        if (t.linkedTaskId) return boardTasks.find((bt) => bt.id === t.linkedTaskId);
+        const titleKey = t.title.trim().toLowerCase();
+        return boardTasks.find((bt) => bt.projectId === project.id && (bt.title || '').trim().toLowerCase() === titleKey);
+      })
       .filter(Boolean) as typeof boardTasks;
     if (linked.length === 0) return;
     const allCompleted = linked.every((t) => t.status === 'completed');
@@ -2534,7 +2537,10 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                     {/* 2) Task progress visibility — live from the linked board task.
                         The same `progress` value drives 'In Progress' status in taskStore. */}
                     {(() => {
-                      const linked = task.linkedTaskId ? boardTasks.find((bt) => bt.id === task.linkedTaskId) : undefined;
+                      const titleKey = task.title.trim().toLowerCase();
+                      const linked = task.linkedTaskId
+                        ? boardTasks.find((bt) => bt.id === task.linkedTaskId)
+                        : boardTasks.find((bt) => bt.projectId === project.id && (bt.title || '').trim().toLowerCase() === titleKey);
                       const pct = linked ? Math.round(linked.progress ?? 0) : 0;
                       const label = !linked ? 'Not started' : linked.status === 'completed' ? 'Completed' : `${pct}%`;
                       // Collaborators from BOTH sources (board-task invites + migrated
