@@ -2541,8 +2541,9 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                       const linked = task.linkedTaskId
                         ? boardTasks.find((bt) => bt.id === task.linkedTaskId)
                         : boardTasks.find((bt) => bt.projectId === project.id && (bt.title || '').trim().toLowerCase() === titleKey);
-                      const pct = linked ? Math.round(linked.progress ?? 0) : 0;
-                      const label = !linked ? 'Not started' : linked.status === 'completed' ? 'Completed' : `${pct}%`;
+                      const isDone = linked?.status === 'completed' || linked?.status === 'review';
+                      const pct = isDone ? 100 : linked ? Math.round(linked.progress ?? 0) : 0;
+                      const label = !linked ? 'Not started' : isDone ? 'Completed' : `${pct}%`;
                       // Collaborators from BOTH sources (board-task invites + migrated
                       // project-task collaborators), deduped by user.
                       const seen = new Set<string>();
@@ -2565,7 +2566,7 @@ const ProjectDetail: React.FC<{ projectId: string; onBack: () => void }> = ({ pr
                             </div>
                             <span className={clsx(
                               'text-[10px] font-semibold flex-shrink-0',
-                              !linked ? 'text-gray-400 dark:text-slate-500' : linked.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' : 'text-purple-600 dark:text-purple-400'
+                              !linked ? 'text-gray-400 dark:text-slate-500' : isDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-purple-600 dark:text-purple-400'
                             )}>
                               Owner {label}
                             </span>

@@ -449,7 +449,7 @@ export interface ProjectTaskStats {
  * Analytics view.
  */
 export function getProjectTaskStats(
-  project: Pick<Project, 'id' | 'tasks'>,
+  project: Pick<Project, 'id' | 'status' | 'tasks'>,
   boardTasks: Array<{ id: string; status: string; projectId?: string; title?: string }>,
 ): ProjectTaskStats {
   const total = project.tasks.length;
@@ -466,14 +466,21 @@ export function getProjectTaskStats(
         (bt) => bt.projectId === project.id && (bt.title || '').trim().toLowerCase() === titleKey,
       );
     }
-    if (linked?.status === 'completed') completed++;
-    else if (linked?.status === 'in-progress' || linked?.status === 'review') inProgress++;
+    // Review = work done/submitted, so it counts toward completion progress.
+    if (linked?.status === 'completed' || linked?.status === 'review') completed++;
+    else if (linked?.status === 'in-progress') inProgress++;
   }
   const planned = total - completed - inProgress;
   const remaining = planned + inProgress;
+  // Completed projects always show 100%.
+  const completionPct = project.status === 'completed'
+    ? 100
+    : total === 0
+      ? null
+      : Math.round((completed / total) * 100);
   return {
     total, completed, inProgress, planned, remaining,
-    completionPct: total === 0 ? null : Math.round((completed / total) * 100),
+    completionPct,
   };
 }
 
@@ -516,7 +523,7 @@ export type ProjectPace = 'ahead' | 'behind' | 'on-pace' | 'unknown';
  * measure completion from) rather than guessing.
  */
 export function getProjectPace(
-  project: Pick<Project, 'id' | 'tasks' | 'plannedStartDate' | 'plannedCompletionDate'>,
+  project: Pick<Project, 'id' | 'status' | 'tasks' | 'plannedStartDate' | 'plannedCompletionDate'>,
   boardTasks: Array<{ id: string; status: string; projectId?: string; title?: string }>,
 ): ProjectPace {
   const time = getProjectTimeProgress(project);
