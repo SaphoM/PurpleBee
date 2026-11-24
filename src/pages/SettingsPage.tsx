@@ -51,6 +51,7 @@ import { NotificationType } from '@/types/index';
 import { isDbConnected, supabase } from '@/lib/supabase';
 import { authDb } from '@/lib/dataService';
 import { AvatarPickerModal } from '@components/shared/AvatarPickerModal';
+import { useToastStore } from '@components/Toast';
 
 // ─── Demo-to-Real Auth Modal ──────────────────────────────────────────────────
 // Shown when a Quick Login (demo) user tries to turn off mock data.
@@ -629,11 +630,30 @@ export const SettingsPage: React.FC = () => {
   // camera badges, so every entry point behaves identically ──
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const { preferences, updatePreferences, resetPreferences } = useNotificationStore();
-  const { user, isQuickLoginUser } = useUserStore();
+  const { user, isQuickLoginUser, isAdmin } = useUserStore();
   const { darkMode, toggleDarkMode } = useUIStore();
   const { keepMockData, showTips, setKeepMockData, setShowTips, openWelcomeModal, accentColor, setAccentColor, dashboardLayout, setDashboardLayout } = useSettingsStore();
+  const { addToast } = useToastStore();
   const [saved, setSaved] = useState(false);
   const [showDemoModal, setShowDemoModal] = useState(false);
+  const isAdminUser = isAdmin();
+  const [holidayEnabled, setHolidayEnabled] = useState(false);
+  const [holidayLoading, setHolidayLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isAdminUser || !supabase) return;
+    let cancelled = false;
+    supabase
+      .from('app_flags')
+      .select('enabled')
+      .eq('key', 'holiday_mode')
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (!error && data) setHolidayEnabled(Boolean(data.enabled));
+      });
+    return () => { cancelled = true; };
+  }, [isAdminUser]);
 
   // Listen for hash changes (e.g. clicking Demo Mode while already on Settings)
   useEffect(() => {
@@ -828,6 +848,33 @@ export const SettingsPage: React.FC = () => {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const handleHolidayToggle = async (enabled: boolean) => {
+    if (!supabase) return;
+    const previous = holidayEnabled;
+    setHolidayEnabled(enabled);
+    setHolidayLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('holiday-mode', {
+        body: { enabled },
+      });
+      if (error) throw error;
+      if (typeof data?.enabled === 'boolean') {
+        setHolidayEnabled(data.enabled);
+      } else {
+        throw new Error('Invalid response');
+      }
+    } catch {
+      setHolidayEnabled(previous);
+      addToast({
+        type: 'error',
+        title: 'Holiday mode update failed',
+        message: 'Could not update holiday mode. Please try again.',
+      });
+    } finally {
+      setHolidayLoading(false);
+    }
+  };
+
   // Notification category toggles mapped to preference keys
   const categoryToggles: {
     type: NotificationType;
@@ -921,13 +968,14 @@ export const SettingsPage: React.FC = () => {
                   <div className="space-y-0">
                     {categoryToggles.map((item, i) => {
                       const cfg = notificationCategoryConfig[item.type];
+                      const isLastCategory = i === categoryToggles.length - 1;
                       return (
                         <SettingRow
                           key={item.type}
                           icon={item.icon}
                           label={cfg.label}
                           description={`Receive notifications for ${cfg.label.toLowerCase()} events`}
-                          noBorder={i === categoryToggles.length - 1}
+                          noBorder={isLastCategory && !isAdminUser}
                         >
                           <Toggle
                             enabled={preferences[item.prefKey] as boolean}
@@ -936,6 +984,20 @@ export const SettingsPage: React.FC = () => {
                         </SettingRow>
                       );
                     })}
+                    {isAdminUser && (
+                      <SettingRow
+                        icon={<span className="text-base">🏖️</span>}
+                        label="Holidays"
+                        description="Keeps the database active while the team is away (admins only)"
+                        noBorder
+                      >
+                        <Toggle
+                          enabled={holidayEnabled}
+                          onChange={handleHolidayToggle}
+                          disabled={holidayLoading}
+                        />
+                      </SettingRow>
+                    )}
                   </div>
                 </CardContent>
               </Card>
