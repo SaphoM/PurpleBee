@@ -987,7 +987,7 @@ export const SettingsPage: React.FC = () => {
                     {isAdminUser && (
                       <SettingRow
                         icon={<span className="text-base">🏖️</span>}
-                        label="Holidays"
+                        label="Data holiday mode"
                         description="Keeps the database active while the team is away (admins only)"
                         noBorder
                       >
