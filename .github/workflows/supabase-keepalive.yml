@@ -1,0 +1,42 @@
+name: Supabase Keepalive
+
+on:
+  schedule:
+    - cron: "0 6 */2 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Supabase to keep project active
+        env:
+          KEEPALIVE_SUPABASE_URL: ${{ secrets.KEEPALIVE_SUPABASE_URL }}
+          KEEPALIVE_SUPABASE_ANON_KEY: ${{ secrets.KEEPALIVE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "${KEEPALIVE_SUPABASE_URL}" ] || [ -z "${KEEPALIVE_SUPABASE_ANON_KEY}" ]; then
+            echo "Missing required keepalive secrets: KEEPALIVE_SUPABASE_URL and/or KEEPALIVE_SUPABASE_ANON_KEY"
+            exit 1
+          fi
+
+          URL="${KEEPALIVE_SUPABASE_URL%/}/rest/v1/user_settings?select=id&limit=1"
+          HTTP_CODE=$(curl --silent --show-error --retry 3 --max-time 30 \
+            --output /tmp/keepalive-response.txt \
+            --write-out "%{http_code}" \
+            -H "apikey: ${KEEPALIVE_SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${KEEPALIVE_SUPABASE_ANON_KEY}" \
+            "${URL}")
+
+          echo "HTTP status: ${HTTP_CODE}"
+
+          case "${HTTP_CODE}" in
+            2*) exit 0 ;;
+            *)
+              echo "Keepalive ping failed with non-2xx status."
+              exit 1
+              ;;
+          esac
