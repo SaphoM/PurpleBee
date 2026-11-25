@@ -341,21 +341,21 @@ const SettingRow: React.FC<{
   noBorder?: boolean;
 }> = ({ icon, label, description, children, noBorder }) => (
   <div className={clsx(
-    'flex items-center justify-between py-4',
+    'flex items-start justify-between gap-3 py-4 sm:items-center',
     !noBorder && 'border-b border-gray-100 dark:border-slate-700/40'
   )}>
-    <div className="flex items-start gap-3">
+    <div className="flex min-w-0 flex-1 items-start gap-3">
       <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-gray-100 dark:bg-slate-700/50 flex items-center justify-center text-gray-500 dark:text-slate-400 mt-0.5">
         {icon}
       </div>
-      <div>
-        <p className="text-sm font-medium text-gray-900 dark:text-slate-100">{label}</p>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-gray-900 dark:text-slate-100 break-words">{label}</p>
         {description && (
-          <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 max-w-sm">{description}</p>
+          <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5 max-w-sm break-words">{description}</p>
         )}
       </div>
     </div>
-    <div className="flex-shrink-0 ml-4">{children}</div>
+    <div className="flex flex-shrink-0 items-center pl-1 sm:pl-4">{children}</div>
   </div>
 );
 
